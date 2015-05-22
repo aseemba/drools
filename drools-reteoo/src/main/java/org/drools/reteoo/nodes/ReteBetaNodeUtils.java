@@ -1,7 +1,6 @@
 package org.drools.reteoo.nodes;
 
 import org.drools.core.common.InternalFactHandle;
-import org.drools.core.common.InternalRuleBase;
 import org.drools.core.common.InternalWorkingMemory;
 import org.drools.core.common.PropagationContextFactory;
 import org.drools.core.reteoo.AccumulateNode;
@@ -10,17 +9,12 @@ import org.drools.core.reteoo.BetaMemory;
 import org.drools.core.reteoo.BetaNode;
 import org.drools.core.reteoo.LeftTuple;
 import org.drools.core.reteoo.ModifyPreviousTuples;
-import org.drools.core.reteoo.NodeSet;
-import org.drools.core.reteoo.ObjectSource;
 import org.drools.core.reteoo.ReteooBuilder;
-import org.drools.core.reteoo.RightInputAdapterNode;
 import org.drools.core.reteoo.RightTuple;
 import org.drools.core.reteoo.RuleRemovalContext;
 import org.drools.core.reteoo.builder.BuildContext;
 import org.drools.core.spi.PropagationContext;
 import org.drools.core.util.FastIterator;
-
-import static org.drools.core.util.BitMaskUtil.intersect;
 
 public class ReteBetaNodeUtils {
 
@@ -60,7 +54,7 @@ public class ReteBetaNodeUtils {
         }
 
         for ( InternalWorkingMemory workingMemory : context.getWorkingMemories() ) {
-            PropagationContextFactory pctxFactory =((InternalRuleBase)workingMemory.getRuleBase()).getConfiguration().getComponentFactory().getPropagationContextFactory();
+            PropagationContextFactory pctxFactory = workingMemory.getKnowledgeBase().getConfiguration().getComponentFactory().getPropagationContextFactory();
             final PropagationContext propagationContext = pctxFactory.createPropagationContext(workingMemory.getNextPropagationIdCounter(), PropagationContext.RULE_ADDITION,
                                                                                                null, null, null);
 
@@ -189,14 +183,14 @@ public class ReteBetaNodeUtils {
                 // things staged as inserts, are left as inserts and use the pctx associated from the time of insertion
                 rightTuple.setPropagationContext(context);
             }
-            if (intersect(context.getModificationMask(), betaNode.getRightInferredMask())) {
+            if (context.getModificationMask().intersects( betaNode.getRightInferredMask())) {
                 // RightTuple previously existed, so continue as modify
                 betaNode.modifyRightTuple(rightTuple,
                                           context,
                                           wm);
             }
         } else {
-            if (intersect(context.getModificationMask(), betaNode.getRightInferredMask())) {
+            if (context.getModificationMask().intersects( betaNode.getRightInferredMask())) {
                 // RightTuple does not exist for this node, so create and continue as assert
                 betaNode.assertObject(factHandle,
                                       context,

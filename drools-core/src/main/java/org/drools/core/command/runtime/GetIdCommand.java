@@ -18,6 +18,7 @@ package org.drools.core.command.runtime;
 
 import javax.xml.bind.annotation.XmlAccessType;
 import javax.xml.bind.annotation.XmlAccessorType;
+import javax.xml.bind.annotation.XmlRootElement;
 
 import org.drools.core.command.impl.GenericCommand;
 import org.drools.core.command.impl.KnowledgeCommandContext;
@@ -25,10 +26,11 @@ import org.drools.core.impl.StatefulKnowledgeSessionImpl;
 import org.kie.internal.command.Context;
 import org.kie.api.runtime.KieSession;
 
+@XmlRootElement(name="get-id-command")
 @XmlAccessorType(XmlAccessType.NONE)
 public class GetIdCommand
     implements
-    GenericCommand<Integer> {
+    GenericCommand<Long> {
 
     private static final long serialVersionUID = 510l;
 
@@ -36,9 +38,9 @@ public class GetIdCommand
     public GetIdCommand() {
     }
 
-    public Integer execute(Context context) {
+    public Long execute(Context context) {
         KieSession ksession = ((KnowledgeCommandContext) context).getKieSession();
-        return ((StatefulKnowledgeSessionImpl)ksession).getId();
+        return ((StatefulKnowledgeSessionImpl)ksession).getIdentifier();
     }
 
     public String toString() {

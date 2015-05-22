@@ -1,13 +1,25 @@
 package org.drools.games.adventures;
 
-import java.awt.Color;
-import java.awt.Component;
-import java.awt.Dimension;
-import java.awt.Font;
-import java.awt.Frame;
-import java.awt.KeyEventDispatcher;
-import java.awt.KeyboardFocusManager;
-import java.awt.LayoutManager;
+import net.miginfocom.layout.ConstraintParser;
+import net.miginfocom.swing.MigLayout;
+import org.drools.games.adventures.model.Character;
+import org.drools.games.adventures.model.DropCommand;
+import org.drools.games.adventures.model.GiveCommand;
+import org.drools.games.adventures.model.LookCommand;
+import org.drools.games.adventures.model.MoveCommand;
+import org.drools.games.adventures.model.PickupCommand;
+import org.drools.games.adventures.model.Room;
+import org.drools.games.adventures.model.Thing;
+import org.drools.games.adventures.model.UseCommand;
+import org.kie.api.runtime.Channel;
+
+import javax.swing.*;
+import javax.swing.border.EmptyBorder;
+import javax.swing.event.InternalFrameEvent;
+import javax.swing.event.InternalFrameListener;
+import javax.swing.table.DefaultTableCellRenderer;
+import javax.swing.table.DefaultTableModel;
+import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.KeyAdapter;
@@ -20,45 +32,10 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.List;
-
-import javax.swing.BoxLayout;
-import javax.swing.DefaultComboBoxModel;
-import javax.swing.JButton;
-import javax.swing.JComboBox;
-import javax.swing.JComponent;
-import javax.swing.JDialog;
-import javax.swing.JFormattedTextField;
-import javax.swing.JFrame;
-import javax.swing.JInternalFrame;
-import javax.swing.JLabel;
-import javax.swing.JOptionPane;
-import javax.swing.JPanel;
-import javax.swing.JScrollPane;
-import javax.swing.JSplitPane;
-import javax.swing.JTable;
-import javax.swing.JTextArea;
-import javax.swing.JTextField;
-import javax.swing.JToggleButton;
-import javax.swing.JToolBar;
-import javax.swing.JViewport;
-import javax.swing.ScrollPaneConstants;
-import javax.swing.SwingConstants;
-import javax.swing.SwingUtilities;
-import javax.swing.Timer;
-import javax.swing.UIManager;
-import javax.swing.border.EmptyBorder;
-import javax.swing.event.InternalFrameEvent;
-import javax.swing.event.InternalFrameListener;
-import javax.swing.table.DefaultTableModel;
-
-import net.miginfocom.layout.ConstraintParser;
-import net.miginfocom.swing.MigLayout;
-
-import org.kie.api.runtime.Channel;
+import java.util.Map;
+import java.util.Vector;
 
 public class AdventureFrame extends JFrame {
-    private final ToolTipListener    toolTipListener    = new ToolTipListener();
-    private final ConstraintListener constraintListener = new ConstraintListener();
     private static final Font        BUTT_FONT          = new Font( "monospaced",
                                                                     Font.PLAIN,
                                                                     12 );
@@ -73,7 +50,7 @@ public class AdventureFrame extends JFrame {
     private JTable                   inventoryTable;
     private JFormattedTextField      cmdTextField;
 
-    private JTextArea                globalEventsTextArea;
+    //private JTextArea                globalEventsTextArea;
 
     private GameEngine               gameEngine;
 
@@ -86,7 +63,11 @@ public class AdventureFrame extends JFrame {
      * Create the frame.
      */
     public AdventureFrame(UserSession session,
+                          final GameEngine gameEngine,
                           int onClose) {
+
+        this.session = session;
+        this.gameEngine = gameEngine;
         setDefaultCloseOperation( onClose );
         setBounds( 100,
                    100,
@@ -131,9 +112,6 @@ public class AdventureFrame extends JFrame {
         createCharacterPanel( test );
         createBuildActionsPanel( test );
         createSendCommandPanel( test );
-
-        this.session = session;
-
     }
 
     public UserSession getSession() {
@@ -179,9 +157,10 @@ public class AdventureFrame extends JFrame {
     private Component createEventsAndInvetoryPanel() {
         JSplitPane leftSplitPanel = new JSplitPane();
         leftSplitPanel.setOrientation( JSplitPane.VERTICAL_SPLIT );
-        leftSplitPanel.setDividerLocation( 500 );
+        leftSplitPanel.setDividerLocation( 400 );
 
-        Component eventsPanel = createEventsPanel();
+        //Component eventsPanel = createEventsPanel();
+        Component eventsPanel = createLocalEventsPanel();
         leftSplitPanel.setLeftComponent( eventsPanel );
 
         Component inventoryPanel = createInventoryPanel();
@@ -195,7 +174,7 @@ public class AdventureFrame extends JFrame {
         splitPanel.setResizeWeight( 0.4 );
         splitPanel.setOrientation( JSplitPane.VERTICAL_SPLIT );
 
-        splitPanel.setRightComponent( createGlobalEventsPanel() );
+        //splitPanel.setRightComponent( createGlobalEventsPanel() );
 
         splitPanel.setLeftComponent( createLocalEventsPanel() );
 
@@ -216,7 +195,7 @@ public class AdventureFrame extends JFrame {
                                                   50,
                                                   true,
                                                   true );
-        globalEventsTextArea = (JTextArea) ((JViewport) pane1.getComponents()[0]).getComponents()[0];
+        //globalEventsTextArea = (JTextArea) ((JViewport) pane1.getComponents()[0]).getComponents()[0];
         globalEventsPanel.add( pane1 );
         return globalEventsPanel;
     }
@@ -227,7 +206,7 @@ public class AdventureFrame extends JFrame {
         localEventsPanel.setLayout( new BoxLayout( localEventsPanel,
                                                    BoxLayout.Y_AXIS ) );
 
-        JLabel localEventsLabel = new JLabel( "Local Events" );
+        JLabel localEventsLabel = new JLabel( "Events" );
         localEventsPanel.add( localEventsLabel );
 
         //        JScrollPane pane2 = createTextAreaScroll( "",
@@ -255,7 +234,7 @@ public class AdventureFrame extends JFrame {
     private Component createInventoryPanel() {
         inventoryTable = new JTable();
         inventoryTable.setBorder( null );
-        inventoryTable.setModel( new DefaultTableModel(
+        inventoryTable.setModel( new NonEditableTableMode(
                                                         new Object[][]{
                                                         },
                                                         new String[]{
@@ -282,10 +261,10 @@ public class AdventureFrame extends JFrame {
                 }
                 int row = inventoryTable.rowAtPoint( e.getPoint() );
                 int col = inventoryTable.columnAtPoint( e.getPoint() );
-                Object o = inventoryTable.getModel().getValueAt( row,
+                Thing t = (Thing) inventoryTable.getModel().getValueAt( row,
                                                                  col );
-                cmdTextField.setText( cmdTextField.getText() + o.toString() + " " );
-                cmd.add( o );
+                cmdTextField.setText( cmdTextField.getText() + t.getName() + " " );
+                cmd.add( t );
             }
         } );
 
@@ -325,11 +304,23 @@ public class AdventureFrame extends JFrame {
         characterSelectCombo.setModel( new DefaultComboBoxModel( new Object[]{null, null} ) );
         parent.add( characterSelectCombo,
                     "top, left" );
+
+        Map<String, Character> characterMap = ( Map<String, Character> ) gameEngine.getData().get("characters");
+        Character[] characters = characterMap.values().toArray( new Character[characterMap.size()] );
+
+        characterSelectCombo.setModel( new DefaultComboBoxModel( characters ) );
+        characterSelectCombo.setSelectedItem( characterMap.get("hero"));
+
         characterSelectCombo.addActionListener( new ActionListener() {
             public void actionPerformed(ActionEvent e) {
+
+                Character c = (Character) characterSelectCombo.getSelectedObjects()[0];
+                org.kie.api.runtime.rule.FactHandle fh = gameEngine.getKieSession().getFactHandle(session);
+                session.setCharacter(c);
+                gameEngine.getKieSession().update(fh, session);
+
                 cmd = new ArrayList();
-                cmd.add( Action.SELECT_CHARACTER );
-                cmd.add( session );
+                cmd.add( LookCommand.class );
                 cmd.add( characterSelectCombo.getSelectedObjects()[0] );
                 gameEngine.receiveMessage( session,
                                            cmd );
@@ -341,7 +332,7 @@ public class AdventureFrame extends JFrame {
         characterPropertiesTable.setPreferredScrollableViewportSize( new Dimension( 240,
                                                                                     200 ) );
         characterPropertiesTable.setBorder( null );
-        characterPropertiesTable.setModel( new DefaultTableModel(
+        characterPropertiesTable.setModel( new NonEditableTableMode(
                                                                   new Object[][]{
                                                                           {"strength", "100"},
                                                                           {"health", "100"},
@@ -368,6 +359,7 @@ public class AdventureFrame extends JFrame {
                                                BoxLayout.Y_AXIS ) );
 
         JButton moveBtn = new JButton( "Move" );
+        moveBtn.setToolTipText("Select one Room from the Exits, then press Send");
         actionsPanel.add( moveBtn );
 //        msg = new ACLMessage();
 //        msg.setPerformative( Performative.REQUEST );
@@ -376,51 +368,67 @@ public class AdventureFrame extends JFrame {
             public void actionPerformed(ActionEvent e) {
                 cmdTextField.setText( "Move " );
                 cmd = new ArrayList();
-                cmd.add( Action.MOVE );
+                cmd.add(MoveCommand.class );
                 cmd.add( characterSelectCombo.getSelectedObjects()[0] );
             }
         } );
 
         JButton pickupBtn = new JButton( "Pick Up" );
+        pickupBtn.setToolTipText("Select one from the Items list, then press Send");
         actionsPanel.add( pickupBtn );
         pickupBtn.addActionListener( new ActionListener() {
             public void actionPerformed(ActionEvent e) {
                 cmdTextField.setText( "Pickup " );
                 cmd = new ArrayList();
-                cmd.add( Action.PICKUP );
+                cmd.add(PickupCommand.class);
                 cmd.add( characterSelectCombo.getSelectedObjects()[0] );
             }
         } );
 
         JButton dropBtn = new JButton( "Drop" );
+        dropBtn.setToolTipText("Select one from the Inventory, then press Send");
         actionsPanel.add( dropBtn );
         dropBtn.addActionListener( new ActionListener() {
             public void actionPerformed(ActionEvent e) {
                 cmdTextField.setText( "Drop " );
                 cmd = new ArrayList();
-                cmd.add( Action.DROP );
+                cmd.add(DropCommand.class);
                 cmd.add( characterSelectCombo.getSelectedObjects()[0] );
             }
         } );
 
         JButton giveBtn = new JButton( "Give" );
+        giveBtn.setToolTipText("Select one from the Inventory, then Select the target Character, then press Send");
         actionsPanel.add( giveBtn );
         giveBtn.addActionListener( new ActionListener() {
             public void actionPerformed(ActionEvent e) {                
-                cmdTextField.setText( "Request Give " );
+                cmdTextField.setText( "Give " );
                 cmd = new ArrayList();
-                cmd.add( Action.GIVE );
+                cmd.add(GiveCommand.class);
+                cmd.add( characterSelectCombo.getSelectedObjects()[0] );
+            }
+        } );
+
+        JButton useBtn = new JButton( "Use" );
+        useBtn.setToolTipText("Select one from the Inventory, then Select the target Thing or Room");
+        actionsPanel.add( useBtn );
+        useBtn.addActionListener( new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                cmdTextField.setText( "Use " );
+                cmd = new ArrayList();
+                cmd.add(UseCommand.class);
                 cmd.add( characterSelectCombo.getSelectedObjects()[0] );
             }
         } );
 
         JButton lookBtn = new JButton( "Look" );
+        giveBtn.setToolTipText("Just press Send");
         actionsPanel.add( lookBtn );
         lookBtn.addActionListener( new ActionListener() {
             public void actionPerformed(ActionEvent e) {
                 cmdTextField.setText( "Look " );
                 cmd = new ArrayList();
-                cmd.add( Action.LOOK );
+                cmd.add( LookCommand.class );
                 cmd.add( characterSelectCombo.getSelectedObjects()[0] );
             }
         } );
@@ -432,11 +440,11 @@ public class AdventureFrame extends JFrame {
         thingsTable.setPreferredScrollableViewportSize( new Dimension( 245,
                                                                        250 ) );
         thingsTable.setBorder( null );
-        thingsTable.setModel( new DefaultTableModel(
+        thingsTable.setModel( new NonEditableTableMode(
                                                      new Object[][]{
                                                      },
                                                      new String[]{
-                                                             "Items"
+                                                             "Things"
                                                      }
                 ) );
         thingsTable.addMouseListener( new MouseListener() {
@@ -459,10 +467,10 @@ public class AdventureFrame extends JFrame {
                 }
                 int row = thingsTable.rowAtPoint( e.getPoint() );
                 int col = thingsTable.columnAtPoint( e.getPoint() );
-                Object o = thingsTable.getModel().getValueAt( row,
+                Thing t = (Thing) thingsTable.getModel().getValueAt( row,
                                                               col );
-                cmdTextField.setText( cmdTextField.getText() + o.toString() + " " );
-                cmd.add( o );
+                cmdTextField.setText( cmdTextField.getText() + t.getName() + " " );
+                cmd.add( t );
             }
         } );
 
@@ -474,7 +482,7 @@ public class AdventureFrame extends JFrame {
         exitsTable.setPreferredScrollableViewportSize( new Dimension( 245,
                                                                       250 ) );
         exitsTable.setBorder( null );
-        exitsTable.setModel( new DefaultTableModel(
+        exitsTable.setModel( new NonEditableTableMode(
                                                     new Object[][]{
                                                     },
                                                     new String[]{
@@ -502,10 +510,10 @@ public class AdventureFrame extends JFrame {
                 }
                 int row = exitsTable.rowAtPoint( e.getPoint() );
                 int col = exitsTable.columnAtPoint( e.getPoint() );
-                Object o = exitsTable.getModel().getValueAt( row,
+                Room r = (Room) exitsTable.getModel().getValueAt( row,
                                                              col );
-                cmdTextField.setText( cmdTextField.getText() + o.toString() + " " );
-                cmd.add( o );
+                cmdTextField.setText( cmdTextField.getText() + r.getName() + " " );
+                cmd.add( r );
             }
         } );
 
@@ -875,35 +883,53 @@ public class AdventureFrame extends JFrame {
         }
     }
 
-    public static class JComboBoxChannel
-        implements
-        Channel {
-        private JComboBox jcomboBox;
-
-        public JComboBoxChannel(JComboBox jcomboBox) {
-            this.jcomboBox = jcomboBox;
-        }
-
-        public void send(Object object) {
-            List list = (List) object;
-            jcomboBox.setModel( new DefaultComboBoxModel( list.toArray() ) );
-            //jcomboBox.setModel( new DefaultComboBoxModel( new Object[] { "xxxxx", "yyyyyy" } ) ) ;
-        }
-    }
+//    public static class JComboBoxChannel
+//        implements
+//        Channel {
+//        private JComboBox jcomboBox;
+//
+//        public JComboBoxChannel(JComboBox jcomboBox) {
+//            this.jcomboBox = jcomboBox;
+//        }
+//
+//        public void send(Object object) {
+//            List list = (List) object;
+//            jcomboBox.setModel( new DefaultComboBoxModel( list.toArray() ) );
+//            //jcomboBox.setModel( new DefaultComboBoxModel( new Object[] { "xxxxx", "yyyyyy" } ) ) ;
+//        }
+//    }
 
     public static class JTableChannel
         implements
         Channel {
         private JTable jTable;
 
-        public JTableChannel(JTable exitsTable) {
-            this.jTable = exitsTable;
+        public JTableChannel(JTable jTable) {
+            this.jTable = jTable;
+            String name = jTable.getColumnName(0);
+
+            jTable.getColumn( name ).setCellRenderer(new DefaultTableCellRenderer() {
+                public void setValue(Object value) {
+                    if ( value == null ) {
+                        return;
+                    } else if ( value instanceof Thing ) {
+                        setText(((Thing) value).getName());
+                    } else {
+                        setText( value.toString() );
+                    }
+                }
+            });
+
         }
 
         public void send(Object object) {
+            List<Thing> things = (List<Thing>) object;
+            addRows( things );
+        }
+
+        public void addRows(List list) {
             DefaultTableModel model = (DefaultTableModel) jTable.getModel();
 
-            List list = (List) object;
 
             if ( model.getRowCount() < list.size() ) {
                 Object[][] exits = new Object[list.size()][];
@@ -913,11 +939,17 @@ public class AdventureFrame extends JFrame {
                                       0 );
                 }
                 for ( int i = model.getRowCount(), length = exits.length; i < length; i++ ) {
+                    if ( list.get( i ) == null ) {
+                        continue;
+                    }
                     model.addRow( new Object[]{list.get( i )} );
                 }
             } else {
                 Object[][] exits = new Object[list.size()][];
                 for ( int i = 0; i < exits.length; i++ ) {
+                    if ( list.get( i ) == null ) {
+                        continue;
+                    }
                     model.setValueAt( list.get( i ),
                                       i,
                                       0 );
@@ -929,4 +961,36 @@ public class AdventureFrame extends JFrame {
             }
         }
     }
+
+    public static class NonEditableTableMode extends DefaultTableModel {
+        public NonEditableTableMode() {
+        }
+
+        public NonEditableTableMode(int rowCount, int columnCount) {
+            super(rowCount, columnCount);
+        }
+
+        public NonEditableTableMode(Vector columnNames, int rowCount) {
+            super(columnNames, rowCount);
+        }
+
+        public NonEditableTableMode(Object[] columnNames, int rowCount) {
+            super(columnNames, rowCount);
+        }
+
+        public NonEditableTableMode(Vector data, Vector columnNames) {
+            super(data, columnNames);
+        }
+
+        public NonEditableTableMode(Object[][] data, Object[] columnNames) {
+            super(data, columnNames);
+        }
+
+        @Override
+        public boolean isCellEditable(int row, int column) {
+            //all cells false
+            return false;
+        }
+    }
+
 }

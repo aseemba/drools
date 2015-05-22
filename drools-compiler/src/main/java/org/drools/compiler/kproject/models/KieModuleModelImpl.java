@@ -7,6 +7,7 @@ import com.thoughtworks.xstream.io.HierarchicalStreamReader;
 import com.thoughtworks.xstream.io.HierarchicalStreamWriter;
 import com.thoughtworks.xstream.io.xml.DomDriver;
 import org.drools.core.util.AbstractXStreamConverter;
+import org.drools.core.util.IoUtils;
 import org.kie.api.builder.model.KieBaseModel;
 import org.kie.api.builder.model.KieModuleModel;
 import org.xml.sax.SAXException;
@@ -28,15 +29,29 @@ import static org.drools.core.util.IoUtils.readBytesFromInputStream;
 
 public class KieModuleModelImpl implements KieModuleModel {
 
-    public static String KMODULE_FILE_NAME = "kmodule.xml";
-    public static String KMODULE_JAR_PATH = "META-INF/" + KMODULE_FILE_NAME;
-    public static String KMODULE_INFO_JAR_PATH = "META-INF/kmodule.info";
-    public static String KMODULE_SRC_PATH = "src/main/resources/" + KMODULE_JAR_PATH;
-    public static String KMODULE_SPRING_JAR_PATH = "META-INF/kmodule-spring.xml";
+    public static final String KMODULE_FILE_NAME = "kmodule.xml";
+    public static final String KMODULE_JAR_PATH = "META-INF/" + KMODULE_FILE_NAME;
+    public static final String KMODULE_INFO_JAR_PATH = "META-INF/kmodule.info";
+    public static final String KMODULE_SRC_PATH = "src/main/resources/" + KMODULE_JAR_PATH;
+    public static final String KMODULE_SPRING_JAR_PATH = "META-INF/kmodule-spring.xml";
 
-    private Map<String, KieBaseModel>  kBases  = new HashMap<String, KieBaseModel>();
-    
+    private Map<String, String> confProps = new HashMap<String, String>();
+    private Map<String, KieBaseModel> kBases = new HashMap<String, KieBaseModel>();
+
     public KieModuleModelImpl() { }
+
+    public KieModuleModel setConfigurationProperty(String key, String value) {
+        confProps.put(key, value);
+        return this;
+    }
+
+    public String getConfigurationProperty(String key) {
+        return confProps.get(key);
+    }
+
+    public Map<String, String> getConfigurationProperties() {
+        return confProps;
+    }
 
     /* (non-Javadoc)
      * @see org.kie.kModule.KieProject#addKBase(org.kie.kModule.KieBaseModelImpl)
@@ -189,6 +204,7 @@ public class KieModuleModelImpl implements KieModuleModel {
 
         public void marshal(Object value, HierarchicalStreamWriter writer, MarshallingContext context) {
             KieModuleModelImpl kModule = (KieModuleModelImpl) value;
+            writePropertyMap(writer, context, "configuration", kModule.confProps);
             for ( KieBaseModel kBaseModule : kModule.getKieBaseModels().values() ) {
                 writeObject( writer, context, "kbase", kBaseModule);
             }
@@ -203,6 +219,8 @@ public class KieModuleModelImpl implements KieModuleModel {
                         KieBaseModelImpl kBaseModule = readObject( reader, context, KieBaseModelImpl.class );
                         kModule.getRawKieBaseModels().put( kBaseModule.getName(), kBaseModule );
                         kBaseModule.setKModule(kModule);
+                    } else if ("configuration".equals(name)) {
+                        kModule.confProps = readPropertyMap(reader, context);
                     }
                 }
             });
@@ -241,7 +259,7 @@ public class KieModuleModelImpl implements KieModuleModel {
         }
 
         private static void validate(String kModuleString) {
-            validate(new StreamSource(new ByteArrayInputStream(kModuleString.getBytes())));
+            validate(new StreamSource(new ByteArrayInputStream(kModuleString.getBytes(IoUtils.UTF8_CHARSET))));
         }
 
         private static void validate(Source source) {

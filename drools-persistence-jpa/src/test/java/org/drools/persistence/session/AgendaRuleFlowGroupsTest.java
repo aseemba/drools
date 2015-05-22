@@ -29,9 +29,8 @@ import java.util.List;
 import org.drools.core.command.impl.CommandBasedStatefulKnowledgeSession;
 import org.drools.core.command.impl.GenericCommand;
 import org.drools.core.command.impl.KnowledgeCommandContext;
+import org.drools.core.common.InternalAgenda;
 import org.drools.core.io.impl.ClassPathResource;
-import org.drools.core.runtime.rule.impl.AgendaImpl;
-import org.drools.core.runtime.rule.impl.InternalAgenda;
 import org.drools.persistence.util.PersistenceUtil;
 import org.junit.After;
 import org.junit.Before;
@@ -39,6 +38,8 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 import org.junit.runners.Parameterized.Parameters;
+import org.kie.api.builder.Message;
+import org.kie.api.builder.Results;
 import org.kie.api.io.ResourceType;
 import org.kie.api.runtime.Environment;
 import org.kie.api.runtime.EnvironmentName;
@@ -49,6 +50,7 @@ import org.kie.internal.builder.KnowledgeBuilder;
 import org.kie.internal.builder.KnowledgeBuilderFactory;
 import org.kie.internal.command.Context;
 import org.kie.internal.persistence.jpa.JPAKnowledgeService;
+import org.kie.internal.utils.KieHelper;
 
 @RunWith(Parameterized.class)
 public class AgendaRuleFlowGroupsTest {
@@ -81,11 +83,11 @@ public class AgendaRuleFlowGroupsTest {
 		
 		CommandBasedStatefulKnowledgeSession ksession = createSession(-1, "ruleflow-groups.drl");
 		
-		org.drools.core.spi.AgendaGroup[] groups = ((AgendaImpl)stripSession(ksession).getAgenda()).getAgenda().getAgendaGroups();
+		org.drools.core.spi.AgendaGroup[] groups = ((InternalAgenda)stripSession(ksession).getAgenda()).getAgendaGroups();
 		// only main is available
 		assertEquals(1, groups.length);
 		assertEquals("MAIN", groups[0].getName());
-		int id = ksession.getId();
+		long id = ksession.getIdentifier();
 		List<String> list = new ArrayList<String>();
 		list.add("Test");
 		
@@ -95,7 +97,7 @@ public class AgendaRuleFlowGroupsTest {
 		ksession.dispose();        
         ksession = createSession(id, "ruleflow-groups.drl");
         
-        groups = ((AgendaImpl)stripSession(ksession).getAgenda()).getAgenda().getAgendaGroups();
+        groups = ((InternalAgenda)stripSession(ksession).getAgenda()).getAgendaGroups();
         // main and rule flow is now on the agenda
         assertEquals(2, groups.length);
         assertEquals("MAIN", groups[0].getName());
@@ -107,11 +109,11 @@ public class AgendaRuleFlowGroupsTest {
         
         CommandBasedStatefulKnowledgeSession ksession = createSession(-1, "agenda-groups.drl");
         
-        org.drools.core.spi.AgendaGroup[] groups = ((AgendaImpl)stripSession(ksession).getAgenda()).getAgenda().getAgendaGroups();
+        org.drools.core.spi.AgendaGroup[] groups = ((InternalAgenda)stripSession(ksession).getAgenda()).getAgendaGroups();
         // only main is available
         assertEquals(1, groups.length);
         assertEquals("MAIN", groups[0].getName());
-        int id = ksession.getId();
+        long id = ksession.getIdentifier();
         List<String> list = new ArrayList<String>();
         list.add("Test");
         
@@ -121,7 +123,7 @@ public class AgendaRuleFlowGroupsTest {
         ksession.dispose();        
         ksession = createSession(id, "agenda-groups.drl");
         
-        groups = ((AgendaImpl)stripSession(ksession).getAgenda()).getAgenda().getAgendaGroups();
+        groups = ((InternalAgenda)stripSession(ksession).getAgenda()).getAgendaGroups();
         // main and agenda group is now on the agenda
         assertEquals(2, groups.length);
         assertEquals("MAIN", groups[0].getName());
@@ -134,11 +136,11 @@ public class AgendaRuleFlowGroupsTest {
         
         CommandBasedStatefulKnowledgeSession ksession = createSession(-1, "agenda-groups.drl", "ruleflow-groups.drl");
         
-        org.drools.core.spi.AgendaGroup[] groups = ((AgendaImpl)stripSession(ksession).getAgenda()).getAgenda().getAgendaGroups();
+        org.drools.core.spi.AgendaGroup[] groups = ((InternalAgenda)stripSession(ksession).getAgenda()).getAgendaGroups();
         // only main is available
         assertEquals(1, groups.length);
         assertEquals("MAIN", groups[0].getName());
-        int id = ksession.getId();
+        long id = ksession.getIdentifier();
         List<String> list = new ArrayList<String>();
         list.add("Test");
         
@@ -149,7 +151,7 @@ public class AgendaRuleFlowGroupsTest {
         ksession.dispose();        
         ksession = createSession(id, "agenda-groups.drl", "ruleflow-groups.drl");
         
-        groups = ((AgendaImpl)stripSession(ksession).getAgenda()).getAgenda().getAgendaGroups();
+        groups = ((InternalAgenda)stripSession(ksession).getAgenda()).getAgendaGroups();
         // main and agenda group is now on the agenda
         assertEquals(3, groups.length);
         assertEquals("MAIN", groups[0].getName());
@@ -167,7 +169,7 @@ public class AgendaRuleFlowGroupsTest {
         return ksession;
     }
 	
-	private CommandBasedStatefulKnowledgeSession createSession(int id, String...rules) {
+	private CommandBasedStatefulKnowledgeSession createSession(long id, String...rules) {
 		
 		KnowledgeBuilder kbuilder = KnowledgeBuilderFactory.newKnowledgeBuilder();
 		for (String rule : rules) {
@@ -234,5 +236,29 @@ public class AgendaRuleFlowGroupsTest {
 	    }
 
 	}
-	
+
+    @Test
+    public void testConflictingAgendaAndRuleflowGroups() throws Exception {
+
+        String drl = "package org.drools.test; " +
+                     "" +
+                     "rule Test " +
+                     "  agenda-group 'ag' " +
+                     "  ruleflow-group 'rf' " +
+                     "when " +
+                     "then " +
+                     "end ";
+
+        KieHelper helper = new KieHelper();
+        helper.addContent( drl, ResourceType.DRL );
+        Results res = helper.verify();
+
+        System.err.println( res.getMessages() );
+
+        assertEquals( 1, res.getMessages( Message.Level.WARNING ).size() );
+        assertEquals( 0, res.getMessages( Message.Level.ERROR ).size() );
+
+    }
+
+
 }

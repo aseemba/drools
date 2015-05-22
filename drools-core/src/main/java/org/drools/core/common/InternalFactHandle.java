@@ -16,7 +16,8 @@
 
 package org.drools.core.common;
 
-import org.drools.core.FactHandle;
+import org.drools.core.factmodel.traits.TraitTypeEnum;
+import org.kie.api.runtime.rule.FactHandle;
 import org.drools.core.reteoo.LeftTuple;
 import org.drools.core.reteoo.RightTuple;
 import org.kie.api.runtime.rule.EntryPoint;
@@ -29,6 +30,8 @@ public interface InternalFactHandle
     long getRecency();
 
     Object getObject();
+
+    String getObjectClassName();
 
     void setObject(Object object);
 
@@ -62,6 +65,8 @@ public interface InternalFactHandle
     boolean isTraitable();
 
     boolean isTraiting();
+
+    TraitTypeEnum getTraitType();
     
     RightTuple getFirstRightTuple();
 
@@ -108,4 +113,10 @@ public interface InternalFactHandle
     void removeRightTuple( RightTuple rightTuple );
     
     InternalFactHandle quickClone();
+
+    public boolean isNegated();
+
+    public void setNegated(boolean negated);
+
+    public <K> K as( Class<K> klass ) throws ClassCastException;
 }

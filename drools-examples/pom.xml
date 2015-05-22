@@ -4,8 +4,8 @@
   <modelVersion>4.0.0</modelVersion>
   <parent>
     <groupId>org.drools</groupId>
-    <artifactId>drools-multiproject</artifactId>
-    <version>6.1.0-SNAPSHOT</version>
+    <artifactId>drools</artifactId>
+    <version>6.3.0-SNAPSHOT</version>
   </parent>
 
   <artifactId>drools-examples</artifactId>
@@ -19,7 +19,7 @@
     <repository>
       <id>jboss-public-repository-group</id>
       <name>JBoss Public Repository Group</name>
-      <url>http://repository.jboss.org/nexus/content/groups/public/</url>
+      <url>https://repository.jboss.org/nexus/content/groups/public/</url>
       <layout>default</layout>
       <releases>
         <enabled>true</enabled>
@@ -103,6 +103,10 @@
       <groupId>org.drools</groupId>
       <artifactId>drools-templates</artifactId>
     </dependency>
+    <dependency>
+      <groupId>org.kie</groupId>
+      <artifactId>kie-internal</artifactId>
+    </dependency>
 
     <!-- Needed for logging -->
     <dependency>
@@ -116,6 +120,11 @@
       <artifactId>slf4j-api</artifactId>
     </dependency>
 
+    <dependency>
+      <groupId>org.mvel</groupId>
+      <artifactId>mvel2</artifactId>
+    </dependency>
+
     <!-- Examples only dependencies. -->
     <!--
       WARNING: every examples only dependency must be properly dealt with in
@@ -124,7 +133,6 @@
     <dependency>
        <groupId>com.miglayout</groupId>
        <artifactId>miglayout</artifactId>
-       <version>3.7.4</version>
     </dependency>
     <dependency>
       <groupId>commons-io</groupId>

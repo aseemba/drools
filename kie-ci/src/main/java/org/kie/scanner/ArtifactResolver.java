@@ -1,6 +1,7 @@
 package org.kie.scanner;
 
 import org.apache.maven.project.MavenProject;
+import org.drools.compiler.kie.builder.impl.InternalKieContainer;
 import org.drools.compiler.kproject.xml.MinimalPomParser;
 import org.drools.compiler.kproject.xml.PomModel;
 import org.kie.api.builder.KieScanner;
@@ -8,7 +9,7 @@ import org.kie.scanner.embedder.EmbeddedPomParser;
 import org.kie.api.builder.ReleaseId;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.sonatype.aether.artifact.Artifact;
+import org.eclipse.aether.artifact.Artifact;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -68,8 +69,19 @@ class ArtifactResolver {
         return dependencies;
     }
 
+    public static ArtifactResolver getResolverFor(InternalKieContainer kieContainer, boolean allowDefaultPom) {
+        InputStream pomStream = kieContainer.getPomAsStream();
+        if (pomStream != null) {
+            ArtifactResolver artifactResolver = getResolverFor(pomStream);
+            if (artifactResolver != null) {
+                return artifactResolver;
+            }
+        }
+        return getResolverFor(kieContainer.getReleaseId(), allowDefaultPom);
+    }
+
     public static ArtifactResolver getResolverFor(ReleaseId releaseId, boolean allowDefaultPom) {
-        File pomFile = getPomFileForGAV(releaseId);
+        File pomFile = getPomFileForGAV(releaseId, allowDefaultPom);
         if (pomFile != null) {
             ArtifactResolver artifactResolver = getResolverFor(pomFile);
             if (artifactResolver != null) {
@@ -101,9 +113,9 @@ class ArtifactResolver {
         return new ArtifactResolver(mavenProject);
     }
 
-    private static File getPomFileForGAV(ReleaseId releaseId) {
+    private static File getPomFileForGAV(ReleaseId releaseId, boolean allowDefaultPom) {
         String artifactName = releaseId.getGroupId() + ":" + releaseId.getArtifactId() + ":pom:" + releaseId.getVersion();
-        Artifact artifact = MavenRepository.getMavenRepository().resolveArtifact(artifactName);
+        Artifact artifact = MavenRepository.getMavenRepository().resolveArtifact(artifactName, !allowDefaultPom);
         return artifact != null ? artifact.getFile() : null;
     }
 

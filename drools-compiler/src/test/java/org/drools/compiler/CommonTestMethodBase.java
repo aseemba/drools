@@ -1,25 +1,13 @@
 package org.drools.compiler;
 
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.Reader;
-import java.util.Collection;
-
-import org.drools.compiler.compiler.DrlParser;
-import org.drools.compiler.compiler.DroolsParserException;
-import org.drools.compiler.compiler.PackageBuilder;
-import org.drools.compiler.compiler.PackageBuilderConfiguration;
+import org.drools.compiler.builder.impl.KnowledgeBuilderConfigurationImpl;
 import org.drools.compiler.integrationtests.SerializationHelper;
 import org.drools.compiler.kie.builder.impl.InternalKieModule;
 import org.drools.compiler.lang.descr.PackageDescr;
-import org.drools.core.RuleBase;
-import org.drools.core.RuleBaseConfiguration;
-import org.drools.core.RuleBaseFactory;
 import org.drools.core.common.InternalAgenda;
-import org.drools.core.common.InternalRuleBase;
-import org.drools.core.impl.KnowledgeBaseImpl;
-import org.drools.core.runtime.rule.impl.AgendaImpl;
+import org.drools.core.impl.InternalKnowledgeBase;
 import org.junit.Assert;
+import org.kie.api.KieBase;
 import org.kie.api.KieBaseConfiguration;
 import org.kie.api.KieServices;
 import org.kie.api.builder.KieBuilder;
@@ -28,7 +16,9 @@ import org.kie.api.builder.KieModule;
 import org.kie.api.builder.ReleaseId;
 import org.kie.api.io.Resource;
 import org.kie.api.io.ResourceType;
+import org.kie.api.marshalling.Marshaller;
 import org.kie.api.runtime.Environment;
+import org.kie.api.runtime.KieSession;
 import org.kie.api.runtime.KieSessionConfiguration;
 import org.kie.api.runtime.conf.KieSessionOption;
 import org.kie.internal.KnowledgeBase;
@@ -36,14 +26,16 @@ import org.kie.internal.KnowledgeBaseFactory;
 import org.kie.internal.builder.KnowledgeBuilder;
 import org.kie.internal.builder.KnowledgeBuilderConfiguration;
 import org.kie.internal.builder.KnowledgeBuilderFactory;
-import org.kie.internal.builder.conf.LanguageLevelOption;
 import org.kie.internal.builder.conf.RuleEngineOption;
 import org.kie.internal.definition.KnowledgePackage;
 import org.kie.internal.io.ResourceFactory;
+import org.kie.internal.marshalling.MarshallerFactory;
 import org.kie.internal.runtime.StatefulKnowledgeSession;
 import org.kie.internal.runtime.StatelessKnowledgeSession;
 
-import ch.qos.logback.classic.Level;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.util.Collection;
 
 /**
  * This contains methods common to many of the tests in drools-compiler. </p>
@@ -53,65 +45,6 @@ import ch.qos.logback.classic.Level;
  */
 public class CommonTestMethodBase extends Assert {
 	public static RuleEngineOption phreak = RuleEngineOption.PHREAK;
-
-	// ***********************************************
-	// METHODS TO BE REMOVED FOR 6.0.0
-
-	protected RuleBase getRuleBase() throws Exception {
-		return RuleBaseFactory.newRuleBase(RuleBase.RETEOO, null);
-	}
-
-	protected RuleBase getRuleBase(final RuleBaseConfiguration config) throws Exception {
-		return RuleBaseFactory.newRuleBase(RuleBase.RETEOO, config);
-	}
-
-	protected RuleBase getSinglethreadRuleBase() throws Exception {
-		RuleBaseConfiguration config = new RuleBaseConfiguration();
-		config.setMultithreadEvaluation(false);
-		return RuleBaseFactory.newRuleBase(RuleBase.RETEOO, config);
-	}
-
-	protected org.drools.core.rule.Package loadPackage(final String classPathResource) throws DroolsParserException, IOException {
-		final PackageBuilder builder = new PackageBuilder();
-		builder.addPackageFromDrl(new InputStreamReader(getClass().getResourceAsStream(classPathResource)));
-
-		if (builder.hasErrors()) {
-			fail(builder.getErrors().toString());
-		}
-
-		final org.drools.core.rule.Package pkg = builder.getPackage();
-		return pkg;
-	}
-
-	protected RuleBase loadRuleBase(final Reader reader) throws IOException,
-			DroolsParserException, Exception {
-		final DrlParser parser = new DrlParser(LanguageLevelOption.DRL5);
-		final PackageDescr packageDescr = parser.parse(reader);
-		if (parser.hasErrors()) {
-			fail("Error messages in parser, need to sort this our (or else collect error messages):\n"
-					+ parser.getErrors());
-		}
-		// pre build the package
-		final PackageBuilder builder = new PackageBuilder();
-		builder.addPackage(packageDescr);
-
-		if (builder.hasErrors()) {
-			fail(builder.getErrors().toString());
-		}
-
-		org.drools.core.rule.Package pkg = builder.getPackage();
-		pkg = SerializationHelper.serializeObject(pkg);
-
-		// add the package to a rulebase
-		RuleBase ruleBase = getSinglethreadRuleBase();
-		ruleBase.addPackage(pkg);
-		ruleBase = SerializationHelper.serializeObject(ruleBase);
-		// load up the rulebase
-		return ruleBase;
-	}
-
-	// END - METHODS TO BE REMOVED FOR 6.0.0
-	// ****************************************************************************************
 
 	protected StatefulKnowledgeSession createKnowledgeSession(KnowledgeBase kbase) {
 		return kbase.newStatefulKnowledgeSession();
@@ -255,7 +188,7 @@ public class CommonTestMethodBase extends Assert {
 		Collection<KnowledgePackage> knowledgePackages = null;
         if ( serialize ) {
             try {
-                knowledgePackages = SerializationHelper.serializeObject(kbuilder.getKnowledgePackages(),  ((PackageBuilderConfiguration)kbuilderConf).getClassLoader() );
+                knowledgePackages = SerializationHelper.serializeObject(kbuilder.getKnowledgePackages(),  ((KnowledgeBuilderConfigurationImpl)kbuilderConf).getClassLoader() );
             } catch (Exception e) {
                 throw new RuntimeException(e);
             }
@@ -303,7 +236,7 @@ public class CommonTestMethodBase extends Assert {
         kBaseConfig.setOption(phreak);
         KnowledgeBase kbase = KnowledgeBaseFactory.newKnowledgeBase(kBaseConfig);
         try {
-            kbase = SerializationHelper.serializeObject(kbase, ((InternalRuleBase)((KnowledgeBaseImpl) kbase).ruleBase).getRootClassLoader() );
+            kbase = SerializationHelper.serializeObject(kbase, ((InternalKnowledgeBase) kbase).getRootClassLoader());
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -315,7 +248,7 @@ public class CommonTestMethodBase extends Assert {
 	}
 
 	protected InternalAgenda getInternalAgenda(StatefulKnowledgeSession session) {
-		return ((AgendaImpl) session.getAgenda()).getAgenda();
+		return (InternalAgenda) session.getAgenda();
 	}
 
 	public static byte[] createJar(KieServices ks, 
@@ -429,4 +362,25 @@ public class CommonTestMethodBase extends Assert {
         return km;
     }
 
+    public static KieSession marshallAndUnmarshall(KieServices ks, KieBase kbase, KieSession ksession) {
+        return marshallAndUnmarshall(ks, kbase, ksession, null);
+    }
+
+    public static KieSession marshallAndUnmarshall(KieServices ks, KieBase kbase, KieSession ksession, KieSessionConfiguration sessionConfig) {
+        // Serialize and Deserialize
+        try {
+            Marshaller marshaller = ks.getMarshallers().newMarshaller(kbase);
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            marshaller.marshall(baos, ksession);
+            marshaller = MarshallerFactory.newMarshaller(kbase);
+            ByteArrayInputStream bais = new ByteArrayInputStream(baos.toByteArray());
+            baos.close();
+            ksession = marshaller.unmarshall(bais, sessionConfig, null);
+            bais.close();
+        } catch (Exception e) {
+            e.printStackTrace();
+            fail("unexpected exception :" + e.getMessage());
+        }
+        return ksession;
+    }
 }

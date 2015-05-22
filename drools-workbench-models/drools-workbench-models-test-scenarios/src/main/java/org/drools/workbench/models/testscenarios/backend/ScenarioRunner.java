@@ -25,10 +25,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import org.drools.core.RuleBase;
 import org.drools.core.base.ClassTypeResolver;
-import org.drools.core.common.InternalRuleBase;
-import org.drools.core.impl.KnowledgeBaseImpl;
+import org.drools.core.impl.InternalKnowledgeBase;
 import org.drools.workbench.models.testscenarios.backend.populators.FactPopulator;
 import org.drools.workbench.models.testscenarios.backend.populators.FactPopulatorFactory;
 import org.drools.workbench.models.testscenarios.shared.ActivateRuleFlowGroup;
@@ -83,29 +81,32 @@ public class ScenarioRunner {
         this.maximumAmountOfRuleFirings = maximumAmountOfRuleFirings;
     }
 
-    public void run( final Scenario scenario ) throws ClassNotFoundException, IllegalAccessException, InstantiationException, InvocationTargetException, NoSuchMethodException {
+    public void run( final Scenario scenario )
+            throws ClassNotFoundException,
+            IllegalAccessException,
+            InstantiationException,
+            InvocationTargetException,
+            NoSuchMethodException,
+            InvalidClockTypeException {
 
         final Map<String, Object> populatedData = new HashMap<String, Object>();
         final Map<String, Object> globalData = new HashMap<String, Object>();
-        final ClassLoader classloader = Thread.currentThread().getContextClassLoader();
 
         // This looks safe!
         final KieBase kieBase = ksession.getKieBase();
-        final RuleBase ruleBase = ( (KnowledgeBaseImpl) kieBase ).getRuleBase();
-        final ClassLoader classloader2 = ( (InternalRuleBase) ruleBase ).getRootClassLoader();
+        final ClassLoader classloader2 = ( (InternalKnowledgeBase) kieBase ).getRootClassLoader();
 
         final ClassTypeResolver resolver = new ClassTypeResolver( getImports( scenario ),
                                                                   classloader2 );
 
         this.workingMemoryWrapper = new TestScenarioKSessionWrapper( ksession,
                                                                      resolver,
-                                                                     classloader,
                                                                      populatedData,
-                                                                     globalData );
+                                                                     globalData,
+                                                                     scenarioUsesTimeWalk(scenario));
         this.factPopulatorFactory = new FactPopulatorFactory( populatedData,
                                                               globalData,
-                                                              resolver,
-                                                              classloader );
+                                                              resolver );
         this.factPopulator = new FactPopulator( ksession,
                                                 populatedData );
 
@@ -116,6 +117,17 @@ public class ScenarioRunner {
 
         applyFixtures( scenario.getFixtures(),
                        createScenarioSettings( scenario ) );
+    }
+
+    private boolean scenarioUsesTimeWalk(Scenario scenario) {
+        for (Fixture fixture : scenario.getFixtures()) {
+            if (fixture instanceof ExecutionTrace) {
+                if (((ExecutionTrace) fixture).getScenarioSimulatedDate() != null) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private Set<String> getImports( final Scenario scenario ) {
@@ -143,8 +155,13 @@ public class ScenarioRunner {
         }
     }
 
-    private void applyFixtures( final List<Fixture> fixtures,
-                                final ScenarioSettings scenarioSettings ) throws ClassNotFoundException, InstantiationException, IllegalAccessException, InvocationTargetException, NoSuchMethodException {
+    private void applyFixtures(final List<Fixture> fixtures,
+                               final ScenarioSettings scenarioSettings)
+            throws ClassNotFoundException,
+            InstantiationException,
+            IllegalAccessException,
+            InvocationTargetException,
+            NoSuchMethodException, InvalidClockTypeException {
 
         for ( Iterator<Fixture> iterator = fixtures.iterator(); iterator.hasNext(); ) {
             Fixture fixture = iterator.next();

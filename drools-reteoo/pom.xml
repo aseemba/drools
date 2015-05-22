@@ -6,8 +6,8 @@
   <modelVersion>4.0.0</modelVersion>
   <parent>
     <groupId>org.drools</groupId>
-    <artifactId>drools-multiproject</artifactId>
-    <version>6.1.0-SNAPSHOT</version>
+    <artifactId>drools</artifactId>
+    <version>6.3.0-SNAPSHOT</version>
   </parent>
 
   <artifactId>drools-reteoo</artifactId>
@@ -26,6 +26,14 @@
       <artifactId>drools-core</artifactId>
       <type>test-jar</type>
       <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.kie</groupId>
+      <artifactId>kie-api</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.kie</groupId>
+      <artifactId>kie-internal</artifactId>
     </dependency>
 
       <dependency>
@@ -98,6 +106,13 @@
         <artifactId>maven-javadoc-plugin</artifactId>
         <configuration>
           <excludePackageNames>org.kie.asm*,org.kie.objenesis.*,org.kie.commons.jci.*</excludePackageNames>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>findbugs-maven-plugin</artifactId>
+        <configuration>
+          <excludeFilterFile>${project.basedir}/src/main/findbugs/findbugs-exclude.xml</excludeFilterFile>
         </configuration>
       </plugin>
     </plugins>

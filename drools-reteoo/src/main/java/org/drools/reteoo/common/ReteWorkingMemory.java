@@ -1,58 +1,82 @@
 package org.drools.reteoo.common;
 
-import org.drools.core.FactException;
 import org.drools.core.SessionConfiguration;
 import org.drools.core.WorkingMemoryEntryPoint;
 import org.drools.core.base.DroolsQuery;
-import org.drools.core.common.AbstractWorkingMemory;
 import org.drools.core.common.BaseNode;
 import org.drools.core.common.InternalAgenda;
 import org.drools.core.common.InternalFactHandle;
-import org.drools.core.common.InternalRuleBase;
+import org.drools.core.common.InternalWorkingMemory;
+import org.drools.core.common.WorkingMemoryAction;
 import org.drools.core.event.AgendaEventSupport;
 import org.drools.core.event.RuleEventListenerSupport;
-import org.drools.core.event.WorkingMemoryEventSupport;
+import org.drools.core.event.RuleRuntimeEventSupport;
+import org.drools.core.impl.InternalKnowledgeBase;
+import org.drools.core.impl.StatefulKnowledgeSessionImpl;
+import org.drools.core.phreak.PropagationEntry;
+import org.drools.core.phreak.SynchronizedBypassPropagationList;
 import org.drools.core.reteoo.LIANodePropagation;
-import org.drools.core.spi.AgendaFilter;
 import org.drools.core.spi.FactHandleFactory;
 import org.drools.core.spi.PropagationContext;
 import org.kie.api.runtime.Environment;
+import org.kie.api.runtime.rule.AgendaFilter;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
-public class ReteWorkingMemory extends AbstractWorkingMemory {
+public class ReteWorkingMemory extends StatefulKnowledgeSessionImpl {
 
     private List<LIANodePropagation> liaPropagations;
+
+    private Queue<WorkingMemoryAction> actionQueue;
 
     public ReteWorkingMemory() {
     }
 
-    public ReteWorkingMemory(int id, InternalRuleBase ruleBase) {
-        super(id, ruleBase);
+    public ReteWorkingMemory(long id, InternalKnowledgeBase kBase) {
+        super(id, kBase);
     }
 
-    public ReteWorkingMemory(int id, InternalRuleBase ruleBase, boolean initInitFactHandle, SessionConfiguration config, Environment environment) {
-        super(id, ruleBase, initInitFactHandle, config, environment);
+    public ReteWorkingMemory(long id, InternalKnowledgeBase kBase, boolean initInitFactHandle, SessionConfiguration config, Environment environment) {
+        super(id, kBase, initInitFactHandle, config, environment);
     }
 
-    public ReteWorkingMemory(int id, InternalRuleBase ruleBase, FactHandleFactory handleFactory, InternalFactHandle initialFactHandle, long propagationContext, SessionConfiguration config, InternalAgenda agenda, Environment environment) {
-        super(id, ruleBase, handleFactory, initialFactHandle, propagationContext, config, agenda, environment);
+    public ReteWorkingMemory(long id, InternalKnowledgeBase kBase, FactHandleFactory handleFactory, long propagationContext, SessionConfiguration config, InternalAgenda agenda, Environment environment) {
+        super(id, kBase, handleFactory, propagationContext, config, agenda, environment);
     }
 
-    public ReteWorkingMemory(int id, InternalRuleBase ruleBase, FactHandleFactory handleFactory, InternalFactHandle initialFactHandle, long propagationContext, SessionConfiguration config, Environment environment, WorkingMemoryEventSupport workingMemoryEventSupport, AgendaEventSupport agendaEventSupport, RuleEventListenerSupport ruleEventListenerSupport, InternalAgenda agenda) {
-        super(id, ruleBase, handleFactory, false, propagationContext, config, environment, workingMemoryEventSupport, agendaEventSupport, ruleEventListenerSupport, agenda);
+    public ReteWorkingMemory(long id, InternalKnowledgeBase kBase, FactHandleFactory handleFactory, InternalFactHandle initialFactHandle, long propagationContext, SessionConfiguration config, Environment environment, RuleRuntimeEventSupport workingMemoryEventSupport, AgendaEventSupport agendaEventSupport, RuleEventListenerSupport ruleEventListenerSupport, InternalAgenda agenda) {
+        super(id, kBase, handleFactory, false, propagationContext, config, environment, workingMemoryEventSupport, agendaEventSupport, ruleEventListenerSupport, agenda);
     }
 
+    @Override
+    protected void init() {
+        super.init();
 
+        actionQueue = new ConcurrentLinkedQueue<WorkingMemoryAction>();
+        this.propagationList = new SynchronizedBypassPropagationList(this);
+    }
+
+    @Override
+    public void reset() {
+        super.reset();
+        actionQueue.clear();
+    }
+
+    @Override
     public void reset(int handleId,
                       long handleCounter,
                       long propagationCounter) {
         super.reset(handleId, handleCounter, propagationCounter );
         if (liaPropagations != null) liaPropagations.clear();
+        actionQueue.clear();
     }
 
+    @Override
     public WorkingMemoryEntryPoint getWorkingMemoryEntryPoint(String name) {
         WorkingMemoryEntryPoint ep = this.entryPoints.get(name);
         return ep != null ? new ReteWorkingMemoryEntryPoint( this, ep ) : null;
@@ -69,44 +93,31 @@ public class ReteWorkingMemory extends AbstractWorkingMemory {
             synchronized ( syncLock ) {
                 if ( initialFactHandle == null ) {
                     // double check, inside of sync point incase some other thread beat us to it.
-                    initInitialFact(ruleBase, null);
+                    initInitialFact(kBase, null);
                 }
             }
         }
     }
 
+    @Override
     public void fireUntilHalt(final AgendaFilter agendaFilter) {
         initInitialFact();
         super.fireUntilHalt( agendaFilter );
     }
 
+    @Override
     public int fireAllRules(final AgendaFilter agendaFilter,
-                            int fireLimit) throws FactException {
+                            int fireLimit) {
+        checkAlive();
         if ( this.firing.compareAndSet( false,
                                         true ) ) {
             initInitialFact();
 
             try {
                 startOperation();
-                ruleBase.readLock();
 
-                // If we're already firing a rule, then it'll pick up the firing for any other assertObject(..) that get
-                // nested inside, avoiding concurrent-modification exceptions, depending on code paths of the actions.
-                if ( liaPropagations != null && isSequential() ) {
-                    for ( Iterator it = liaPropagations.iterator(); it.hasNext(); ) {
-                        ((LIANodePropagation) it.next()).doPropagation( this );
-                    }
-                }
-
-                // do we need to call this in advance?
-                executeQueuedActions();
-
-                int fireCount = 0;
-                fireCount = this.agenda.fireAllRules( agendaFilter,
-                                                      fireLimit );
-                return fireCount;
+                return internalFireAllRules(agendaFilter, fireLimit);
             } finally {
-                ruleBase.readUnlock();
                 endOperation();
                 this.firing.set( false );
             }
@@ -114,11 +125,39 @@ public class ReteWorkingMemory extends AbstractWorkingMemory {
         return 0;
     }
 
+    private int internalFireAllRules(AgendaFilter agendaFilter, int fireLimit) {
+        int fireCount = 0;
+        try {
+            kBase.readLock();
+
+            // If we're already firing a rule, then it'll pick up the firing for any other assertObject(..) that get
+            // nested inside, avoiding concurrent-modification exceptions, depending on code paths of the actions.
+            if ( liaPropagations != null && isSequential() ) {
+                for ( Iterator it = liaPropagations.iterator(); it.hasNext(); ) {
+                    ((LIANodePropagation) it.next()).doPropagation( this );
+                }
+            }
+
+            // do we need to call this in advance?
+            executeQueuedActionsForRete();
+
+            fireCount = this.agenda.fireAllRules( agendaFilter,
+                                                  fireLimit );
+        } finally {
+            kBase.readUnlock();
+            if (kBase.flushModifications()) {
+                fireCount += internalFireAllRules(agendaFilter, fireLimit);
+            }
+        }
+        return fireCount;
+    }
+
+    @Override
     public void closeLiveQuery(final InternalFactHandle factHandle) {
 
         try {
             startOperation();
-            this.ruleBase.readLock();
+            this.kBase.readLock();
             this.lock.lock();
 
             final PropagationContext pCtx = pctxFactory.createPropagationContext(getNextPropagationIdCounter(), PropagationContext.INSERTION,
@@ -128,21 +167,22 @@ public class ReteWorkingMemory extends AbstractWorkingMemory {
                                               pCtx,
                                               this );
 
-            pCtx.evaluateActionQueue( this );
+            pCtx.evaluateActionQueue(this);
 
             getFactHandleFactory().destroyFactHandle( factHandle );
 
         } finally {
             this.lock.unlock();
-            this.ruleBase.readUnlock();
+            this.kBase.readUnlock();
             endOperation();
         }
     }
 
+    @Override
     protected BaseNode[] evalQuery(String queryName, DroolsQuery queryObject, InternalFactHandle handle, PropagationContext pCtx) {
         initInitialFact();
 
-        BaseNode[] tnodes = ( BaseNode[] ) ruleBase.getReteooBuilder().getTerminalNodes(queryName);
+        BaseNode[] tnodes = ( BaseNode[] ) kBase.getReteooBuilder().getTerminalNodes(queryName);
         // no need to call retract, as no leftmemory used.
         getEntryPointNode().assertQuery( handle,
                                          pCtx,
@@ -152,4 +192,60 @@ public class ReteWorkingMemory extends AbstractWorkingMemory {
         return tnodes;
     }
 
+    public Collection<WorkingMemoryAction> getActionQueue() {
+        return actionQueue;
+    }
+
+    @Override
+    public void queueWorkingMemoryAction(final WorkingMemoryAction action) {
+        try {
+            startOperation();
+            actionQueue.add(action);
+            this.agenda.notifyHalt();
+        } finally {
+            endOperation();
+        }
+    }
+
+    public void addPropagation(PropagationEntry propagationEntry) {
+        if (propagationEntry instanceof WorkingMemoryAction) {
+            actionQueue.add((WorkingMemoryAction) propagationEntry);
+        } else {
+            super.addPropagation(propagationEntry);
+        }
+    }
+
+    @Override
+    public void executeQueuedActionsForRete() {
+        try {
+            startOperation();
+            if ( evaluatingActionQueue.compareAndSet( false,
+                                                      true ) ) {
+                try {
+                    if ( actionQueue!= null && !actionQueue.isEmpty() ) {
+                        WorkingMemoryAction action = null;
+
+                        while ( (action = actionQueue.poll()) != null ) {
+                            try {
+                                action.execute( (InternalWorkingMemory) this );
+                            } catch ( Exception e ) {
+                                throw new RuntimeException( "Unexpected exception executing action " + action.toString(),
+                                                            e );
+                            }
+                        }
+                    }
+                } finally {
+                    evaluatingActionQueue.compareAndSet( true,
+                                                         false );
+                }
+            }
+        } finally {
+            endOperation();
+        }
+    }
+
+    @Override
+    public Iterator<? extends PropagationEntry> getActionsIterator() {
+        return actionQueue.iterator();
+    }
 }

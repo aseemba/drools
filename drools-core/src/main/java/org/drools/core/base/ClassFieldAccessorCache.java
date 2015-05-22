@@ -16,14 +16,13 @@
 
 package org.drools.core.base;
 
+import org.drools.core.util.asm.ClassFieldInspector;
+
 import java.security.ProtectionDomain;
 import java.util.Map;
 import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-
-import org.drools.core.RuntimeDroolsException;
-import org.drools.core.util.asm.ClassFieldInspector;
 
 public class ClassFieldAccessorCache {
 
@@ -41,9 +40,9 @@ public class ClassFieldAccessorCache {
         return this.classLoader;
     }
 
-    public ClassObjectType getClassObjectType(ClassObjectType objectType) {
-        // always lookup the class, as the ClassObjectType might refer to the class from another ClassLoader
-        Class cls = getClass( objectType.getClassName() );
+    public ClassObjectType getClassObjectType(ClassObjectType objectType, boolean lookupClass) {
+        // lookup the class when the ClassObjectType might refer to the class from another ClassLoader
+        Class cls = lookupClass ? getClass( objectType.getClassName() ) : objectType.getClassType();
         CacheEntry cache = getCacheEntry( cls );
         return cache.getClassObjectType( cls,
                                          objectType );
@@ -121,7 +120,7 @@ public class ClassFieldAccessorCache {
         try {
             return this.classLoader.loadClass( className );
         } catch ( ClassNotFoundException e ) {
-            throw new RuntimeDroolsException( "Unable to resolve class '" + className + "'" );
+            throw new RuntimeException( "Unable to resolve class '" + className + "'" );
         }
     }
 
@@ -151,7 +150,7 @@ public class ClassFieldAccessorCache {
 
         public CacheEntry(ClassLoader parentClassLoader) {
             if ( parentClassLoader == null ) {
-                throw new RuntimeDroolsException( "ClassFieldAccessorFactory cannot have a null parent ClassLoader" );
+                throw new RuntimeException( "ClassFieldAccessorFactory cannot have a null parent ClassLoader" );
             }
             this.byteArrayClassLoader = new ByteArrayClassLoader( parentClassLoader );
         }

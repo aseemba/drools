@@ -1,7 +1,7 @@
 package org.drools.scorecards;
 
-import org.dmg.pmml.pmml_4_1.descr.PMML;
-import org.drools.pmml.pmml_4_1.PMML4Compiler;
+import org.dmg.pmml.pmml_4_2.descr.PMML;
+import org.drools.pmml.pmml_4_2.PMML4Compiler;
 import org.junit.Before;
 import org.junit.Test;
 import org.kie.api.KieBase;
@@ -51,7 +51,7 @@ public class DrlFromPMMLTest {
 
     @Test
     public void testRuleCount() throws Exception {
-        assertEquals( 55, StringUtil.countMatches( drl, "rule \"" ) );
+        assertEquals( 61, StringUtil.countMatches( drl, "rule \"" ) );
     }
 
     @Test

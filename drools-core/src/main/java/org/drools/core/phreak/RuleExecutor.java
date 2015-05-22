@@ -1,41 +1,38 @@
 package org.drools.core.phreak;
 
-import java.util.Comparator;
-
 import org.drools.core.base.SalienceInteger;
 import org.drools.core.common.AgendaItem;
+import org.drools.core.common.DefaultAgenda;
 import org.drools.core.common.EventSupport;
 import org.drools.core.common.InternalAgenda;
 import org.drools.core.common.InternalWorkingMemory;
-import org.drools.core.common.LeftTupleSets;
-import org.drools.core.common.TupleEntryQueue;
-import org.drools.core.reteoo.BetaMemory;
+import org.drools.core.conflict.PhreakConflictResolver;
+import org.drools.core.definitions.rule.impl.RuleImpl;
 import org.drools.core.reteoo.LeftTuple;
 import org.drools.core.reteoo.PathMemory;
 import org.drools.core.reteoo.RuleTerminalNode;
 import org.drools.core.reteoo.RuleTerminalNodeLeftTuple;
-import org.drools.core.reteoo.SegmentMemory;
-import org.drools.core.rule.Rule;
 import org.drools.core.spi.Activation;
-import org.drools.core.spi.AgendaFilter;
-import org.drools.core.spi.PropagationContext;
 import org.drools.core.util.BinaryHeapQueue;
 import org.drools.core.util.LinkedList;
 import org.drools.core.util.index.LeftTupleList;
 import org.kie.api.event.rule.MatchCancelledCause;
+import org.kie.api.runtime.rule.AgendaFilter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Comparator;
+
 public class RuleExecutor {
 
-    protected static transient Logger         log               = LoggerFactory.getLogger(RuleExecutor.class);
+    protected static final transient Logger   log               = LoggerFactory.getLogger(RuleExecutor.class);
     private static final RuleNetworkEvaluator NETWORK_EVALUATOR = new RuleNetworkEvaluator();
     private final PathMemory                  pmem;
-    private RuleAgendaItem                    ruleAgendaItem;
-    private LeftTupleList                     tupleList;
+    private final RuleAgendaItem              ruleAgendaItem;
+    private final LeftTupleList               tupleList;
     private BinaryHeapQueue                   queue;
     private volatile boolean                  dirty;
-    private boolean                           declarativeAgendaEnabled;
+    private final boolean                     declarativeAgendaEnabled;
     private boolean                           fireExitedEarly;
 
     public RuleExecutor(final PathMemory pmem,
@@ -53,70 +50,56 @@ public class RuleExecutor {
     public synchronized void evaluateNetwork(InternalWorkingMemory wm) {
         NETWORK_EVALUATOR.evaluateNetwork(pmem, null, this, wm);
         setDirty(false);
-        wm.executeQueuedActions();
+        wm.flushPropagations();
     }
 
-    public synchronized int evaluateNetworkAndFire(InternalWorkingMemory wm,
-            final AgendaFilter filter,
-            int fireCount,
-            int fireLimit) {
+    public synchronized int evaluateNetworkAndFire( InternalWorkingMemory wm,
+                                                    final AgendaFilter filter,
+                                                    int fireCount,
+                                                    int fireLimit ) {
         LinkedList<StackEntry> outerStack = new LinkedList<StackEntry>();
 
-        InternalAgenda agenda = (InternalAgenda) wm.getAgenda();
-        boolean fireUntilHalt = agenda.isFireUntilHalt();
-
-        reEvaluateNetwork(wm, outerStack, fireUntilHalt);
-        wm.executeQueuedActions();
-
-        return fire(wm, filter, fireCount, fireLimit, outerStack, agenda, fireUntilHalt);
+        reEvaluateNetwork(wm, outerStack);
+        wm.flushPropagations();
+        return fire(wm, filter, fireCount, fireLimit, outerStack, (InternalAgenda) wm.getAgenda());
     }
 
     public synchronized void fire(InternalWorkingMemory wm, LinkedList<StackEntry> outerStack) {
-        InternalAgenda agenda = (InternalAgenda) wm.getAgenda();
-        boolean fireUntilHalt = agenda.isFireUntilHalt();
-        fire(wm, null, 0, Integer.MAX_VALUE, outerStack, agenda, fireUntilHalt);
+        fire(wm, null, 0, Integer.MAX_VALUE, outerStack, (InternalAgenda) wm.getAgenda());
     }
 
-    private int fire(InternalWorkingMemory wm,
-            AgendaFilter filter,
-            int fireCount,
-            int fireLimit,
-            LinkedList<StackEntry> outerStack,
-            InternalAgenda agenda,
-            boolean fireUntilHalt) {
+    private int fire( InternalWorkingMemory wm,
+                      AgendaFilter filter,
+                      int fireCount,
+                      int fireLimit,
+                      LinkedList<StackEntry> outerStack,
+                      InternalAgenda agenda) {
         int localFireCount = 0;
-        if (!tupleList.isEmpty()) {
-            RuleTerminalNode rtn = (RuleTerminalNode) pmem.getNetworkNode();
 
+        if (!tupleList.isEmpty()) {
             if (!fireExitedEarly && isDeclarativeAgendaEnabled()) {
                 // Network Evaluation can notify meta rules, which should be given a chance to fire first
                 RuleAgendaItem nextRule = agenda.peekNextRule();
-                if (!isHighestSalience(nextRule, ruleAgendaItem.getSalience())) {
+                if (!isHighestSalience(nextRule)) {
                     fireExitedEarly = true;
                     return localFireCount;
                 }
             }
 
-            while (!tupleList.isEmpty()) {
-                LeftTuple leftTuple;
-                if (queue != null) {
-                    leftTuple = (LeftTuple) queue.dequeue();
-                    tupleList.remove(leftTuple);
-                } else {
-                    leftTuple = tupleList.removeFirst();
-                    ((Activation) leftTuple).setQueued(false);
-                }
+            RuleTerminalNode rtn = (RuleTerminalNode) pmem.getNetworkNode();
+            RuleImpl rule = rtn.getRule();
+            LeftTuple leftTuple = getNextLeftTuple();
+            
+            if (rule.isAllMatches()) {
+                agenda.fireConsequenceEvent((AgendaItem) leftTuple, DefaultAgenda.ON_BEFORE_ALL_FIRES_CONSEQUENCE_NAME);
+            }
 
-                rtn = (RuleTerminalNode) leftTuple.getSink(); // branches result in multiple RTN's for a given rule, so unwrap per LeftTuple
-                Rule rule = rtn.getRule();
-
-                PropagationContext pctx = leftTuple.getPropagationContext();
-                pctx = RuleTerminalNode.findMostRecentPropagationContext(leftTuple,
-                        pctx);
+            LeftTuple lastLeftTuple = null;
+            for (; leftTuple != null; lastLeftTuple = leftTuple, leftTuple = getNextLeftTuple()) {
 
                 //check if the rule is not effective or
                 // if the current Rule is no-loop and the origin rule is the same then return
-                if (cancelAndContinue(wm, rtn, rule, leftTuple, pctx, filter)) {
+                if (cancelAndContinue(wm, rtn, rule, leftTuple, filter)) {
                     continue;
                 }
 
@@ -138,15 +121,15 @@ public class RuleExecutor {
                     ruleAgendaItem.dequeue();
                     ruleAgendaItem.setSalience(queue.peek().getSalience());
                     ruleAgendaItem.getAgendaGroup().add(ruleAgendaItem);
-                    salience = ruleAgendaItem.getSalience();
                 }
 
-                RuleAgendaItem nextRule = agenda.peekNextRule();
-                if (haltRuleFiring(nextRule, fireCount, fireLimit, localFireCount, agenda, salience)) {
-                    break; // another rule has high priority and is on the agenda, so evaluate it first
+                if (!rule.isAllMatches()) { // if firing rule is @All don't give way to other rules
+                    RuleAgendaItem nextRule = agenda.peekNextRule();
+                    if (haltRuleFiring(nextRule, fireCount, fireLimit, localFireCount, agenda)) {
+                        break; // another rule has high priority and is on the agenda, so evaluate it first
+                    }
+                    wm.flushPropagations();
                 }
-                reEvaluateNetwork(wm, outerStack, fireUntilHalt);
-                wm.executeQueuedActions();
 
                 if (tupleList.isEmpty() && !outerStack.isEmpty()) {
                     // the outer stack is nodes needing evaluation, once all rule firing is done
@@ -155,12 +138,31 @@ public class RuleExecutor {
                     NETWORK_EVALUATOR.evalStackEntry(entry, outerStack, outerStack, this, wm);
                 }
             }
+
+            if (rule.isAllMatches()) {
+                agenda.fireConsequenceEvent((AgendaItem) lastLeftTuple, DefaultAgenda.ON_AFTER_ALL_FIRES_CONSEQUENCE_NAME);
+            }
         }
 
         removeRuleAgendaItemWhenEmpty(wm);
 
         fireExitedEarly = false;
         return localFireCount;
+    }
+
+    private LeftTuple getNextLeftTuple() {
+        if (tupleList.isEmpty()) {
+            return null;
+        }
+        LeftTuple leftTuple;
+        if (queue != null) {
+            leftTuple = (LeftTuple) queue.dequeue();
+            tupleList.remove(leftTuple);
+        } else {
+            leftTuple = tupleList.removeFirst();
+            ((Activation) leftTuple).setQueued(false);
+        }
+        return leftTuple;
     }
 
     public PathMemory getPathMemory() {
@@ -176,7 +178,9 @@ public class RuleExecutor {
                         log.trace("Removing RuleAgendaItem " + ruleAgendaItem);
                     }
                     ruleAgendaItem.remove();
-                    if (ruleAgendaItem.getRule().isEager()) {
+                    if ( ruleAgendaItem.getRule().isQuery() ) {
+                        ((InternalAgenda)wm.getAgenda()).removeQueryAgendaItem( ruleAgendaItem );
+                    } else if ( ruleAgendaItem.getRule().isEager() ) {
                         ((InternalAgenda) wm.getAgenda()).removeEagerRuleAgendaItem(ruleAgendaItem);
                     }
                 }
@@ -184,91 +188,10 @@ public class RuleExecutor {
         }
     }
 
-    public synchronized void reEvaluateNetwork(InternalWorkingMemory wm, LinkedList<StackEntry> outerStack, boolean fireUntilHalt) {
-        if (isDirty() || (pmem.getTupleQueue() != null && !pmem.getTupleQueue().isEmpty())) {
+    public synchronized void reEvaluateNetwork(InternalWorkingMemory wm, LinkedList<StackEntry> outerStack) {
+        if ( isDirty() ) {
             setDirty(false);
-            TupleEntryQueue queue = pmem.getTupleQueue() != null ? pmem.getTupleQueue().takeAll() : null;
-
-            if ( queue == null || queue.isEmpty() ) {
-                NETWORK_EVALUATOR.evaluateNetwork(pmem, outerStack, this, wm);
-            } else {
-                while (!queue.isEmpty()) {
-                    removeQueuedTupleEntry( queue );
-                    NETWORK_EVALUATOR.evaluateNetwork(pmem, outerStack, this, wm);
-                }
-            }
-        }
-    }
-
-    public static void flushTupleQueue( TupleEntryQueue tupleQueue ) {
-        if ( tupleQueue != null ) {
-            while ( ! tupleQueue.isEmpty() ) {
-                removeQueuedTupleEntry( tupleQueue );
-            }
-        }
-    }
-
-    public static void removeQueuedTupleEntry( TupleEntryQueue tupleQueue ) {
-        TupleEntry tupleEntry = tupleQueue.remove();
-        PropagationContext originalPctx = tupleEntry.getPropagationContext();
-
-        boolean repeat = true;
-        while (repeat) {
-            if (log.isTraceEnabled()) {
-                log.trace("Stream removed entry {} {} size {}", System.identityHashCode(tupleQueue), tupleEntry, tupleQueue.size());
-            }
-            if (tupleEntry.getLeftTuple() != null) {
-                SegmentMemory sm = tupleEntry.getNodeMemory().getSegmentMemory();
-                LeftTupleSets tuples = sm.getStagedLeftTuples();
-                tupleEntry.getLeftTuple().setPropagationContext(tupleEntry.getPropagationContext());
-                switch (tupleEntry.getPropagationType()) {
-                    case PropagationContext.INSERTION:
-                    case PropagationContext.RULE_ADDITION:
-                        tuples.addInsert(tupleEntry.getLeftTuple());
-                        break;
-                    case PropagationContext.MODIFICATION:
-                        tuples.addUpdate(tupleEntry.getLeftTuple());
-                        break;
-                    case PropagationContext.DELETION:
-                    case PropagationContext.EXPIRATION:
-                    case PropagationContext.RULE_REMOVAL:
-                        tuples.addDelete(tupleEntry.getLeftTuple());
-                        break;
-                }
-            } else {
-                BetaMemory bm = (BetaMemory) tupleEntry.getNodeMemory();
-                tupleEntry.getRightTuple().setPropagationContext(tupleEntry.getPropagationContext());
-                switch (tupleEntry.getPropagationType()) {
-                    case PropagationContext.INSERTION:
-                    case PropagationContext.RULE_ADDITION:
-                        bm.getStagedRightTuples().addInsert(tupleEntry.getRightTuple());
-                        break;
-                    case PropagationContext.MODIFICATION:
-                        bm.getStagedRightTuples().addUpdate(tupleEntry.getRightTuple());
-                        break;
-                    case PropagationContext.DELETION:
-                    case PropagationContext.EXPIRATION:
-                    case PropagationContext.RULE_REMOVAL:
-                        bm.getStagedRightTuples().addDelete(tupleEntry.getRightTuple());
-                        break;
-                }
-            }
-            if (!tupleQueue.isEmpty()) {
-                tupleEntry = tupleQueue.peek();
-                PropagationContext pctx = tupleEntry.getPropagationContext();
-
-                // repeat if either the pctx number is the same, or the event time is the same or before
-                if (pctx.getPropagationNumber() == originalPctx.getPropagationNumber()) {
-                    repeat = true;
-                } else {
-                    repeat = false;
-                }
-            } else {
-                repeat = false;
-            }
-            if (repeat) {
-                tupleEntry = tupleQueue.remove();
-            }
+            NETWORK_EVALUATOR.evaluateNetwork(pmem, outerStack, this, wm);
         }
     }
 
@@ -278,9 +201,9 @@ public class RuleExecutor {
 
     private boolean cancelAndContinue(InternalWorkingMemory wm,
             RuleTerminalNode rtn,
-            Rule rule,
+            RuleImpl rule,
             LeftTuple leftTuple,
-            PropagationContext pctx, AgendaFilter filter) {
+            AgendaFilter filter) {
         // NB. stopped setting the LT.object to Boolean.TRUE, that Reteoo did.
         if ( !rule.isEffective(leftTuple, rtn, wm) ) {
             return true;
@@ -302,18 +225,16 @@ public class RuleExecutor {
                                    int fireCount,
                                    int fireLimit,
                                    int localFireCount,
-                                   InternalAgenda agenda,
-                                   int salience) {
+                                   InternalAgenda agenda) {
 
 
         return !agenda.continueFiring(0) ||
-               ( (nextRule != null) && (!ruleAgendaItem.getRule().getAgendaGroup().equals( nextRule.getAgendaGroup() ) || !isHighestSalience(nextRule, salience)) )
+               ( (nextRule != null) && (!ruleAgendaItem.getAgendaGroup().equals( nextRule.getAgendaGroup() ) || !isHighestSalience(nextRule)) )
                || (fireLimit >= 0 && (localFireCount + fireCount >= fireLimit));
     }
 
-    public boolean isHighestSalience(RuleAgendaItem nextRule,
-                                     int currentSalience) {
-        return nextRule.getSalience() <= currentSalience;
+    public boolean isHighestSalience(RuleAgendaItem nextRule) {
+        return PhreakConflictResolver.doCompare(ruleAgendaItem,nextRule) > 0;
     }
 
     public LeftTupleList getLeftTupleList() {

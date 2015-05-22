@@ -22,6 +22,7 @@ import org.drools.core.base.ValueType;
 import org.drools.core.common.BaseNode;
 import org.drools.core.common.BetaConstraints;
 import org.drools.core.common.RuleBasePartitionId;
+import org.drools.core.definitions.rule.impl.RuleImpl;
 import org.drools.core.factmodel.traits.TraitProxy;
 import org.drools.core.reteoo.AccumulateNode;
 import org.drools.core.reteoo.AlphaNode;
@@ -39,8 +40,27 @@ import org.drools.core.reteoo.ObjectTypeNode;
 import org.drools.core.reteoo.PropagationQueuingNode;
 import org.drools.core.reteoo.QueryElementNode;
 import org.drools.core.reteoo.QueryRiaFixerNode;
+import org.drools.core.reteoo.RightInputAdapterNode;
+import org.drools.core.reteoo.TerminalNode;
+import org.drools.core.reteoo.TraitObjectTypeNode;
 import org.drools.core.reteoo.TraitProxyObjectTypeNode;
+import org.drools.core.reteoo.WindowNode;
+import org.drools.core.reteoo.builder.BuildContext;
+import org.drools.core.reteoo.builder.NodeFactory;
+import org.drools.core.rule.Accumulate;
+import org.drools.core.rule.Behavior;
+import org.drools.core.rule.Declaration;
+import org.drools.core.rule.EntryPointId;
+import org.drools.core.rule.EvalCondition;
+import org.drools.core.rule.From;
+import org.drools.core.rule.GroupElement;
+import org.drools.core.rule.QueryElement;
+import org.drools.core.spi.AlphaNodeFieldConstraint;
+import org.drools.core.spi.DataProvider;
+import org.drools.core.spi.ObjectType;
+import org.drools.core.time.impl.Timer;
 import org.drools.reteoo.nodes.ReteAccumulateNode;
+import org.drools.reteoo.nodes.ReteAlphaNode;
 import org.drools.reteoo.nodes.ReteConditionalBranchNode;
 import org.drools.reteoo.nodes.ReteEntryPointNode;
 import org.drools.reteoo.nodes.ReteEvalConditionNode;
@@ -49,31 +69,14 @@ import org.drools.reteoo.nodes.ReteFromNode;
 import org.drools.reteoo.nodes.ReteJoinNode;
 import org.drools.reteoo.nodes.ReteLeftInputAdapterNode;
 import org.drools.reteoo.nodes.ReteNotNode;
-import org.drools.core.reteoo.ReteObjectTypeNode;
-import org.drools.core.reteoo.RightInputAdapterNode;
-import org.drools.core.reteoo.TerminalNode;
-import org.drools.core.reteoo.TraitObjectTypeNode;
-import org.drools.reteoo.nodes.ReteAlphaNode;
-import org.drools.core.reteoo.builder.BuildContext;
-import org.drools.core.reteoo.builder.NodeFactory;
-import org.drools.core.rule.Accumulate;
-import org.drools.core.rule.Declaration;
-import org.drools.core.rule.EntryPointId;
-import org.drools.core.rule.EvalCondition;
-import org.drools.core.rule.From;
-import org.drools.core.rule.GroupElement;
-import org.drools.core.rule.QueryElement;
-import org.drools.core.rule.Rule;
-import org.drools.core.spi.AlphaNodeFieldConstraint;
-import org.drools.core.spi.DataProvider;
-import org.drools.core.spi.ObjectType;
-import org.drools.core.time.impl.Timer;
 import org.drools.reteoo.nodes.ReteQueryElementNode;
 import org.drools.reteoo.nodes.ReteQueryTerminalNode;
 import org.drools.reteoo.nodes.ReteRightInputAdapterNode;
 import org.drools.reteoo.nodes.ReteRuleTerminalNode;
+import org.drools.reteoo.nodes.ReteWindowNode;
 
 import java.io.Serializable;
+import java.util.List;
 
 public class ReteNodeFactory implements NodeFactory, Serializable {
 
@@ -90,7 +93,7 @@ public class ReteNodeFactory implements NodeFactory, Serializable {
         return new ReteAlphaNode( id, constraint, objectSource, context );
     }
 
-    public TerminalNode buildTerminalNode( int id, LeftTupleSource source, Rule rule, GroupElement subrule, int subruleIndex, BuildContext context ) {
+    public TerminalNode buildTerminalNode( int id, LeftTupleSource source, RuleImpl rule, GroupElement subrule, int subruleIndex, BuildContext context ) {
         return new ReteRuleTerminalNode( id, source, rule, subrule, subruleIndex, context );
     }
 
@@ -150,7 +153,7 @@ public class ReteNodeFactory implements NodeFactory, Serializable {
         return new ReteLeftInputAdapterNode( id, objectSource, context );
     }
 
-    public TerminalNode buildQueryTerminalNode(int id, LeftTupleSource source, Rule rule, GroupElement subrule, int subruleIndex, BuildContext context) {
+    public TerminalNode buildQueryTerminalNode(int id, LeftTupleSource source, RuleImpl rule, GroupElement subrule, int subruleIndex, BuildContext context) {
         return new ReteQueryTerminalNode( id, source, rule, subrule, subruleIndex, context );
     }
 
@@ -160,6 +163,10 @@ public class ReteNodeFactory implements NodeFactory, Serializable {
 
     public BaseNode buildFromNode(int id, DataProvider dataProvider, LeftTupleSource tupleSource, AlphaNodeFieldConstraint[] alphaNodeFieldConstraints, BetaConstraints betaConstraints, boolean tupleMemoryEnabled, BuildContext context, From from) {
         return new ReteFromNode( id, dataProvider, tupleSource, alphaNodeFieldConstraints, betaConstraints, tupleMemoryEnabled, context, from );
+    }
+
+    public BaseNode buildReactiveFromNode(int id, DataProvider dataProvider, LeftTupleSource tupleSource, AlphaNodeFieldConstraint[] alphaNodeFieldConstraints, BetaConstraints betaConstraints, boolean tupleMemoryEnabled, BuildContext context, From from) {
+        throw new UnsupportedOperationException("Cannot create a ReactiveFromNode with RETE engine");
     }
 
     public BaseNode buildTimerNode( int id,
@@ -177,5 +184,13 @@ public class ReteNodeFactory implements NodeFactory, Serializable {
                                                             BuildContext context) {
         return new ReteConditionalBranchNode( id, tupleSource, branchEvaluator, context );
 
+    }
+
+    public WindowNode buildWindowNode(int id,
+                                      List<AlphaNodeFieldConstraint> constraints,
+                                      List<Behavior> behaviors,
+                                      ObjectSource objectSource,
+                                      BuildContext context) {
+        return new ReteWindowNode(id, constraints, behaviors, objectSource, context);
     }
 }

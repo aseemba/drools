@@ -2,6 +2,9 @@ package org.drools.compiler.compiler.xml.rules;
 
 import org.junit.Test;
 
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+
 /**
  * Test the dump/convert format utilities.
  */
@@ -88,8 +91,38 @@ public class DumperTest {
     }
 
     @Test
+    public void testRoundTripDRLNamedConsequences() throws Exception {
+        DumperTestHelper.DrlFile( "test_NamedConsequences.drl" );
+    }
+
+    @Test
     public void testRoundTripPComplexXml() throws Exception {
         DumperTestHelper.XmlFile( "test_ParseComplex.xml" );
     }
 
+    @Test
+    public void testRoundTripTraitDeclarations() throws Exception {
+        DumperTestHelper.DrlFile( "test_TraitDeclaration.drl" );
+
+        String out = DumperTestHelper.dump( "test_TraitDeclaration.drl" );
+        assertTrue( out.contains( "declare trait Foo" ) );
+    }
+
+    @Test
+    public void testRoundTripEnumDeclarations() throws Exception {
+        DumperTestHelper.DrlFile( "test_EnumDeclaration.drl" );
+
+        String out = DumperTestHelper.dump( "test_EnumDeclaration.drl" );
+        assertTrue( out.contains( "declare enum Planets" ) );
+        assertTrue( out.contains( "MERCURY" ) );
+        assertTrue( out.contains( "7.1492e7" ) );
+    }
+
+    @Test
+    public void testRoundTripAccumulate() throws Exception {
+        String out = DumperTestHelper.dump( "test_Accumulate.drl" );
+        assertTrue( out.contains( "$sum : count( $s1 )" ) );
+        assertFalse( out.contains("null : count( $s2 )") );
+        assertTrue( out.contains("count( $s2 )") );
+    }
 }

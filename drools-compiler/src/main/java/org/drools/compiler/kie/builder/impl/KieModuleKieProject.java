@@ -1,20 +1,23 @@
 package org.drools.compiler.kie.builder.impl;
 
-import static org.drools.core.common.ProjectClassLoader.createProjectClassLoader;
-import static org.drools.core.util.ClassUtils.convertResourceToClassName;
-
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-
 import org.drools.core.common.ProjectClassLoader;
 import org.kie.api.builder.ReleaseId;
+import org.kie.api.builder.model.KieBaseModel;
+import org.kie.api.builder.model.KieSessionModel;
 import org.kie.internal.utils.ClassLoaderResolver;
 import org.kie.internal.utils.NoDepsClassLoaderResolver;
 import org.kie.internal.utils.ServiceRegistryImpl;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import static org.drools.core.common.ProjectClassLoader.createProjectClassLoader;
+import static org.drools.core.util.ClassUtils.convertResourceToClassName;
 
 /**
  * Discovers all KieModules on the classpath, via the kmodule.xml file.
@@ -49,7 +52,7 @@ public class KieModuleKieProject extends AbstractKieProject {
             }
             parent = resolver.getClassLoader( kieModule );
         }
-        this.cl = createProjectClassLoader( parent );
+        this.cl = createProjectClassLoader( parent, kieModule.createResourceProvider() );
     }
 
     public void init() {
@@ -81,6 +84,10 @@ public class KieModuleKieProject extends AbstractKieProject {
         return classes;
     }
 
+    public InputStream getPomAsStream() {
+        return kieModule.getPomAsStream();
+    }
+
     public ReleaseId getGAV() {
         return kieModule.getReleaseId();
     }
@@ -102,18 +109,53 @@ public class KieModuleKieProject extends AbstractKieProject {
     }
 
     public ClassLoader getClonedClassLoader() {
-        ProjectClassLoader clonedCL = createProjectClassLoader( cl.getParent() );
+        ProjectClassLoader clonedCL = createProjectClassLoader( cl.getParent(), kieModule.createResourceProvider() );
         initClassLoader( clonedCL );
         return clonedCL;
     }
 
-    public void updateToModule(InternalKieModule kieModule) {
+    public void updateToModule(InternalKieModule updatedKieModule) {
         this.kieModules = null;
         this.kJarFromKBaseName.clear();
-        cleanIndex();
-        
-        this.kieModule = kieModule;
-        //this.cl.getStore().clear(); // can we do this in order to preserve the reference to the classloader? 
-        this.init(); // this might override class definitions, not sure we can do it any other way though
+
+        ReleaseId currentReleaseId = this.kieModule.getReleaseId();
+        ReleaseId updatingReleaseId = updatedKieModule.getReleaseId();
+
+        if (currentReleaseId.getGroupId().equals(updatingReleaseId.getGroupId()) &&
+            currentReleaseId.getArtifactId().equals(updatingReleaseId.getArtifactId())) {
+            this.kieModule = updatedKieModule;
+        } else if (this.kieModule.getKieDependencies().keySet().contains(updatingReleaseId)) {
+            this.kieModule.addKieDependency(updatedKieModule);
+        }
+
+        synchronized (this) {
+            cleanIndex();
+            init(); // this might override class definitions, not sure we can do it any other way though
+        }
+    }
+
+    @Override
+    public synchronized KieBaseModel getDefaultKieBaseModel() {
+        return super.getDefaultKieBaseModel();
+    }
+
+    @Override
+    public synchronized KieSessionModel getDefaultKieSession() {
+        return super.getDefaultKieSession();
+    }
+
+    @Override
+    public synchronized KieSessionModel getDefaultStatelessKieSession() {
+        return super.getDefaultStatelessKieSession();
+    }
+
+    @Override
+    public synchronized KieBaseModel getKieBaseModel(String kBaseName) {
+        return super.getKieBaseModel(kBaseName);
+    }
+
+    @Override
+    public synchronized KieSessionModel getKieSessionModel(String kSessionName) {
+        return super.getKieSessionModel(kSessionName);
     }
 }

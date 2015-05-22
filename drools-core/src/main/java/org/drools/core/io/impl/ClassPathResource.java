@@ -33,6 +33,7 @@ import java.util.Collection;
 import java.util.List;
 
 import org.drools.core.common.ProjectClassLoader;
+import org.drools.core.util.IoUtils;
 import org.drools.core.util.StringUtils;
 import org.drools.core.io.internal.InternalResource;
 import org.kie.api.io.Resource;
@@ -126,12 +127,16 @@ public class ClassPathResource extends BaseResource
     }
 
     public void writeExternal(ObjectOutput out) throws IOException {
+        super.writeExternal( out );
         out.writeObject( this.path );
+        out.writeObject( this.encoding );
     }
 
     public void readExternal(ObjectInput in) throws IOException,
                                             ClassNotFoundException {
+        super.readExternal( in );
         this.path = (String) in.readObject();
+        this.encoding = (String) in.readObject();
     }
 
     /**
@@ -226,7 +231,7 @@ public class ClassPathResource extends BaseResource
         if ( this.encoding != null ) {
             return new InputStreamReader( getInputStream(), encoding );
         } else {
-            return new InputStreamReader( getInputStream() );
+            return new InputStreamReader( getInputStream(), IoUtils.UTF8_CHARSET );
         }
     }
 
@@ -302,7 +307,7 @@ public class ClassPathResource extends BaseResource
     }
 
     public String toString() {
-        return "[ClassPathResource path='" + this.path + "']";
+        return "ClassPathResource[path=" + this.path + "]";
     }
 
 }

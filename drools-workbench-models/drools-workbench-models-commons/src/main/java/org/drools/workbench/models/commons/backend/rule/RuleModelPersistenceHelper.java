@@ -4,11 +4,14 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
-import org.apache.commons.lang.NumberUtils;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.math.NumberUtils;
 import org.drools.core.util.DateUtils;
 import org.drools.workbench.models.datamodel.imports.Import;
 import org.drools.workbench.models.datamodel.imports.Imports;
@@ -24,14 +27,15 @@ import org.drools.workbench.models.datamodel.rule.RuleModel;
 
 class RuleModelPersistenceHelper {
 
-    static String unwrapParenthesis( String s ) {
+    static String unwrapParenthesis( final String s ) {
         int start = s.indexOf( '(' );
         int end = s.lastIndexOf( ')' );
-        return s.substring( start + 1, end ).trim();
+        return s.substring( start + 1,
+                            end ).trim();
     }
 
-    static String getSimpleFactType( String className,
-            PackageDataModelOracle dmo ) {
+    static String getSimpleFactType( final String className,
+                                     final PackageDataModelOracle dmo ) {
         for ( String type : dmo.getProjectModelFields().keySet() ) {
             if ( type.equals( className ) ) {
                 return type.substring( type.lastIndexOf( "." ) + 1 );
@@ -40,25 +44,29 @@ class RuleModelPersistenceHelper {
         return className;
     }
 
-    static int inferFieldNature( final Map<String, String> boundParams,
-                                 final String dataType,
-                                 final String value ) {
+    static int inferFieldNature( final String dataType,
+                                 final String value,
+                                 final Map<String, String> boundParams,
+                                 final boolean isJavaDialect ) {
 
         if ( boundParams.containsKey( value ) ) {
             return FieldNatureType.TYPE_VARIABLE;
         }
 
-        return inferFieldNature(dataType, value);
+        return inferFieldNature( dataType,
+                                 value,
+                                 isJavaDialect );
     }
 
     static int inferFieldNature( final String dataType,
-                                 final String value) {
-        int nature = ( StringUtils.isEmpty(value) ? FieldNatureType.TYPE_UNDEFINED : FieldNatureType.TYPE_LITERAL );
+                                 final String value,
+                                 final boolean isJavaDialect ) {
+        int nature = ( StringUtils.isEmpty( value ) ? FieldNatureType.TYPE_UNDEFINED : FieldNatureType.TYPE_LITERAL );
 
         if ( dataType == DataType.TYPE_COLLECTION ) {
             return FieldNatureType.TYPE_FORMULA;
 
-        } else if ( DataType.TYPE_BOOLEAN.equals(dataType) ) {
+        } else if ( DataType.TYPE_BOOLEAN.equals( dataType ) ) {
             if ( !( Boolean.TRUE.equals( Boolean.parseBoolean( value ) ) || Boolean.FALSE.equals( Boolean.parseBoolean( value ) ) ) ) {
                 return FieldNatureType.TYPE_FORMULA;
             } else {
@@ -67,7 +75,10 @@ class RuleModelPersistenceHelper {
 
         } else if ( DataType.TYPE_DATE.equals( dataType ) ) {
             try {
-                new SimpleDateFormat( DateUtils.getDateFormatMask() ).parse( value );
+                new SimpleDateFormat( DateUtils.getDateFormatMask(), Locale.ENGLISH ).parse( adjustParam( dataType,
+                                                                                                          value,
+                                                                                                          Collections.EMPTY_MAP,
+                                                                                                          isJavaDialect ) );
                 return FieldNatureType.TYPE_LITERAL;
             } catch ( ParseException e ) {
                 return FieldNatureType.TYPE_FORMULA;
@@ -81,14 +92,17 @@ class RuleModelPersistenceHelper {
             }
 
         } else if ( DataType.TYPE_NUMERIC.equals( dataType ) ) {
-            if ( !NumberUtils.isNumber(value) ) {
+            if ( !NumberUtils.isNumber( value ) ) {
                 return FieldNatureType.TYPE_FORMULA;
             }
             return FieldNatureType.TYPE_LITERAL;
 
         } else if ( DataType.TYPE_NUMERIC_BIGDECIMAL.equals( dataType ) ) {
             try {
-                new BigDecimal( value );
+                new BigDecimal( adjustParam( dataType,
+                                             value,
+                                             Collections.EMPTY_MAP,
+                                             isJavaDialect ) );
                 return FieldNatureType.TYPE_LITERAL;
             } catch ( NumberFormatException e ) {
                 return FieldNatureType.TYPE_FORMULA;
@@ -96,7 +110,10 @@ class RuleModelPersistenceHelper {
 
         } else if ( DataType.TYPE_NUMERIC_BIGINTEGER.equals( dataType ) ) {
             try {
-                new BigInteger( value );
+                new BigInteger( adjustParam( dataType,
+                                             value,
+                                             Collections.EMPTY_MAP,
+                                             isJavaDialect ) );
                 return FieldNatureType.TYPE_LITERAL;
             } catch ( NumberFormatException e ) {
                 return FieldNatureType.TYPE_FORMULA;
@@ -155,10 +172,9 @@ class RuleModelPersistenceHelper {
         return nature;
     }
 
-    static ModelField[] findFields(
-            PackageDataModelOracle dmo,
-            RuleModel m,
-            String type ) {
+    static ModelField[] findFields( final RuleModel m,
+                                    final PackageDataModelOracle dmo,
+                                    final String type ) {
         ModelField[] fields = dmo.getProjectModelFields().get( type );
         if ( fields != null ) {
             return fields;
@@ -175,9 +191,8 @@ class RuleModelPersistenceHelper {
         return dmo.getProjectModelFields().get( m.getPackageName() + "." + type );
     }
 
-    static ModelField findField(
-            ModelField[] typeFields,
-            String fieldName ) {
+    static ModelField findField( final ModelField[] typeFields,
+                                 final String fieldName ) {
         if ( typeFields != null && fieldName != null ) {
             for ( ModelField typeField : typeFields ) {
                 if ( typeField.getName().equals( fieldName ) ) {
@@ -188,11 +203,51 @@ class RuleModelPersistenceHelper {
         return null;
     }
 
-    static String inferDataType( ActionFieldList action,
-                                 String field,
-                                 Map<String, String> boundParams,
-                                 PackageDataModelOracle dmo,
-                                 Imports imports ) {
+    static MethodInfo findMethodInfo( final List<MethodInfo> methodInfos,
+                                      final String expressionPart ) {
+        if ( methodInfos != null && expressionPart != null ) {
+            //Find a MethodInfo that matches name and parameter count
+            final int expressionParameterCount = parseExpressionParameters( expressionPart ).size();
+            final String normalizedExpressionPart = normalizeExpressionPart( expressionPart );
+            for ( MethodInfo methodInfo : methodInfos ) {
+                if ( methodInfo.getName().equals( normalizedExpressionPart ) && methodInfo.getParams().size() == expressionParameterCount ) {
+                    return methodInfo;
+                }
+            }
+        }
+        return null;
+
+    }
+
+    //TODO This is a naive implementation that won't handle parameter values containing ","
+    //TODO for example callMyMethod("Anstis, Michael", 41). This would parse as 3 parameters
+    static List<String> parseExpressionParameters( String expressionPart ) {
+        int parenthesisOpenPos = expressionPart.indexOf( '(' );
+        int parenthesisClosePos = expressionPart.lastIndexOf( ')' );
+        if ( parenthesisOpenPos > 0 && parenthesisClosePos > 0 ) {
+            expressionPart = expressionPart.substring( parenthesisOpenPos + 1,
+                                                       parenthesisClosePos );
+        }
+        if ( expressionPart.isEmpty() ) {
+            return Collections.emptyList();
+        }
+        return Arrays.asList( expressionPart.split( "," ) );
+    }
+
+    private static String normalizeExpressionPart( String expressionPart ) {
+        int parenthesisPos = expressionPart.indexOf( '(' );
+        if ( parenthesisPos > 0 ) {
+            expressionPart = expressionPart.substring( 0,
+                                                       parenthesisPos );
+        }
+        return expressionPart.trim();
+    }
+
+    static String inferDataType( final ActionFieldList action,
+                                 final String field,
+                                 final Map<String, String> boundParams,
+                                 final PackageDataModelOracle dmo,
+                                 final Imports imports ) {
         String factType = null;
         if ( action instanceof ActionInsertFact ) {
             factType = ( (ActionInsertFact) action ).getFactType();
@@ -236,9 +291,9 @@ class RuleModelPersistenceHelper {
         return null;
     }
 
-    static String inferDataType( String param,
-                                 Map<String, String> boundParams,
-                                 boolean isJavaDialect ) {
+    static String inferDataType( final String param,
+                                 final Map<String, String> boundParams,
+                                 final boolean isJavaDialect ) {
         if ( param.startsWith( "sdf.parse(\"" ) ) {
             return DataType.TYPE_DATE;
         } else if ( param.startsWith( "\"" ) ) {
@@ -257,20 +312,38 @@ class RuleModelPersistenceHelper {
         return DataType.TYPE_NUMERIC;
     }
 
-    static String adjustParam(
-            String dataType,
-            String param,
-            Map<String, String> boundParams,
-            boolean isJavaDialect ) {
-        if ( dataType == DataType.TYPE_DATE ) {
-            return param.substring( "sdf.parse(\"".length(), param.length() - 2 );
-        } else if ( dataType == DataType.TYPE_STRING ) {
-            return param.substring( 1, param.length() - 1 );
-        } else if ( dataType == DataType.TYPE_NUMERIC_BIGDECIMAL || dataType == DataType.TYPE_NUMERIC_BIGINTEGER ) {
+    static String adjustParam( final String dataType,
+                               final String param,
+                               final Map<String, String> boundParams,
+                               final boolean isJavaDialect ) {
+        if ( DataType.TYPE_DATE.equals( dataType ) ) {
+            if ( param.contains( "sdf.parse(\"" ) ) {
+                return param.substring( "sdf.parse(\"".length(),
+                                        param.length() - 2 );
+            } else {
+                return param;
+            }
+        } else if ( DataType.TYPE_STRING.equals( dataType ) ) {
+            if ( param.startsWith( "\"" ) && param.endsWith( "\"" ) ) {
+                return param.substring( 1,
+                                        param.length() - 1 );
+            } else {
+                return param;
+            }
+        } else if ( DataType.TYPE_NUMERIC_BIGDECIMAL.equals( dataType ) ) {
             if ( isJavaDialect ) {
-                return param.substring( "new java.math.BigDecimal(\"".length(), param.length() - 2 );
+                return param.substring( "new java.math.BigDecimal(\"".length(),
+                                        param.length() - 2 );
             } else {
                 return param.substring( 0, param.length() - 1 );
+            }
+        } else if ( DataType.TYPE_NUMERIC_BIGINTEGER.equals( dataType ) ) {
+            if ( isJavaDialect ) {
+                return param.substring( "new java.math.BigInteger(\"".length(),
+                                        param.length() - 2 );
+            } else {
+                return param.substring( 0,
+                                        param.length() - 1 );
             }
         } else if ( boundParams.containsKey( param ) ) {
             return "=" + param;
@@ -278,9 +351,9 @@ class RuleModelPersistenceHelper {
         return param;
     }
 
-    static List<MethodInfo> getMethodInfosForType( RuleModel model,
-                                                   PackageDataModelOracle dmo,
-                                                   String variableType ) {
+    static List<MethodInfo> getMethodInfosForType( final RuleModel model,
+                                                   final PackageDataModelOracle dmo,
+                                                   final String variableType ) {
         List<MethodInfo> methods = dmo.getProjectMethodInformation().get( variableType );
         if ( methods == null ) {
             for ( String imp : model.getImports().getImportStrings() ) {
@@ -294,4 +367,5 @@ class RuleModelPersistenceHelper {
         }
         return methods;
     }
+
 }

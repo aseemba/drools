@@ -16,6 +16,7 @@
 
 package org.drools.core.common;
 
+import org.drools.core.factmodel.traits.TraitTypeEnum;
 import org.drools.core.reteoo.LeftTuple;
 import org.drools.core.reteoo.RightTuple;
 import org.kie.api.runtime.rule.EntryPoint;
@@ -33,6 +34,7 @@ public class QueryElementFactHandle
     private int id;
     private int identityHashCode;
     private long recency;
+    private boolean                 negated;
 
     protected QueryElementFactHandle() {}
 
@@ -45,8 +47,18 @@ public class QueryElementFactHandle
         this.id = id;
         this.recency = recency;
         this.identityHashCode = identityHashCode;
-    }    
-    
+    }
+
+    @Override
+    public boolean isNegated() {
+        return negated;
+    }
+
+    @Override
+    public void setNegated(boolean negated) {
+        this.negated = negated;
+    }
+
     public int getId() {
         return this.id;
     }
@@ -73,7 +85,11 @@ public class QueryElementFactHandle
         }
         throw new UnsupportedOperationException( "QueryElementFactHandle does not support this method" );
     }
-    
+
+    public String getObjectClassName() {
+        return this.object != null ? object.getClass().getName() : null;
+    }
+
     public void setObject(Object object) {
         this.object = object;
     }    
@@ -109,6 +125,10 @@ public class QueryElementFactHandle
 
     public boolean isTraiting() {
         return false;
+    }
+
+    public TraitTypeEnum getTraitType() {
+        return TraitTypeEnum.NON_TRAIT;
     }
 
     public boolean isValid() {
@@ -226,5 +246,10 @@ public class QueryElementFactHandle
     public void removeRightTuple( RightTuple rightTuple ) {
         throw new UnsupportedOperationException( "QueryElementFactHandle does not support this method" );
     }
-    
+
+    @Override
+    public <K> K as( Class<K> klass ) throws ClassCastException {
+        throw new UnsupportedOperationException( "QueryElementFactHandle does not yet support this method" );
+    }
+
 }

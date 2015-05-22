@@ -17,6 +17,7 @@
 package org.drools.core.io.impl;
 
 import org.drools.core.io.internal.InternalResource;
+import org.drools.core.util.IoUtils;
 import org.kie.api.io.Resource;
 
 import java.io.ByteArrayInputStream;
@@ -38,6 +39,7 @@ public class ByteArrayResource extends BaseResource
     Externalizable {
 
     private byte[] bytes;
+    private String encoding;
 
     public ByteArrayResource() { }
 
@@ -48,17 +50,28 @@ public class ByteArrayResource extends BaseResource
         this.bytes = bytes;
     }
 
+    public ByteArrayResource(byte[] bytes, String encoding) {
+        this(bytes);
+        this.encoding = encoding;
+    }
+
     @Override
     public void readExternal(ObjectInput in) throws IOException,
             ClassNotFoundException {
         super.readExternal( in );
         bytes = (byte[]) in.readObject();
+        encoding = (String) in.readObject();
     }
 
     @Override
     public void writeExternal(ObjectOutput out) throws IOException {
         super.writeExternal( out );
         out.writeObject( bytes );
+        out.writeObject(this.encoding);
+    }
+
+    public String getEncoding() {
+        return this.encoding;
     }
 
     public InputStream getInputStream() throws IOException {
@@ -66,7 +79,11 @@ public class ByteArrayResource extends BaseResource
     }
     
     public Reader getReader() throws IOException {
-        return new InputStreamReader( getInputStream() );
+        if (this.encoding != null) {
+            return new InputStreamReader( getInputStream(), encoding );
+        } else {
+            return new InputStreamReader( getInputStream(), IoUtils.UTF8_CHARSET );
+        }
     }
 
     @Override
@@ -108,7 +125,7 @@ public class ByteArrayResource extends BaseResource
     }
     
     public String toString() {
-        return "[ByteArrayResource resource=" + this.bytes + "]";
+        return "ByteArrayResource[resource=" + Arrays.toString(this.bytes) + "]";
     }
 
 

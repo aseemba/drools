@@ -1,9 +1,8 @@
 package org.drools.core.reteoo;
 
-import org.drools.core.RuleBase;
 import org.drools.core.common.BaseNode;
 import org.drools.core.impl.InternalKnowledgeBase;
-import org.drools.core.impl.KnowledgeBaseImpl;
+import org.kie.api.runtime.KieSession;
 import org.kie.internal.KnowledgeBase;
 import org.kie.internal.runtime.KnowledgeRuntime;
 
@@ -14,15 +13,19 @@ public class ReteDumper {
     private ReteDumper() { }
 
     public static void dumpRete(KnowledgeBase kbase) {
-        dumpRete(((InternalKnowledgeBase) kbase).getRuleBase());
+        dumpRete((InternalKnowledgeBase) kbase);
     }
 
     public static void dumpRete(KnowledgeRuntime session) {
-        dumpRete(((KnowledgeBaseImpl)session.getKieBase()).getRuleBase());
+        dumpRete((InternalKnowledgeBase)session.getKieBase());
     }
 
-    public static void dumpRete(RuleBase ruleBase) {
-        dumpRete(((ReteooRuleBase)ruleBase).getRete());
+    public static void dumpRete(KieSession session) {
+        dumpRete((InternalKnowledgeBase)session.getKieBase());
+    }
+
+    public static void dumpRete(InternalKnowledgeBase kBase) {
+        dumpRete(kBase.getRete());
     }
 
     public static void dumpRete(Rete rete) {

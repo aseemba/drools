@@ -1,19 +1,17 @@
 package org.drools.compiler.compiler;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.fail;
-
 import org.drools.compiler.builder.impl.KnowledgeBuilderImpl;
 import org.drools.core.rule.TypeDeclaration;
 import org.drools.core.rule.TypeDeclaration.Format;
-import org.drools.core.rule.TypeDeclaration.Role;
 import org.junit.Test;
+import org.kie.api.definition.type.Position;
+import org.kie.api.definition.type.Role;
+import org.kie.api.io.ResourceType;
 import org.kie.internal.builder.KnowledgeBuilder;
 import org.kie.internal.builder.KnowledgeBuilderFactory;
-import org.kie.api.definition.type.Position;
 import org.kie.internal.io.ResourceFactory;
-import org.kie.api.io.ResourceType;
+
+import static org.junit.Assert.*;
 
 
 public class TypeDeclarationMergingTest {
@@ -23,7 +21,7 @@ public class TypeDeclarationMergingTest {
         TypeDeclaration tdeclr = new TypeDeclaration(CImpl.class.getName() );
         assertEquals( 0, tdeclr.getSetMask() );
 
-        tdeclr.setRole( Role.EVENT );
+        tdeclr.setRole( Role.Type.EVENT );
         assertEquals( TypeDeclaration.ROLE_BIT, tdeclr.getSetMask() & TypeDeclaration.ROLE_BIT );
         assertFalse( TypeDeclaration.TYPESAFE_BIT == ( tdeclr.getSetMask() & TypeDeclaration.TYPESAFE_BIT ) );
         assertFalse( TypeDeclaration.FORMAT_BIT == ( tdeclr.getSetMask() & TypeDeclaration.FORMAT_BIT ) );
@@ -58,10 +56,10 @@ public class TypeDeclarationMergingTest {
            "declare " + DImpl.class.getCanonicalName() + "\n" +
            "    @typesafe(false)\n" +
            "end\n";
-        PackageBuilder builder = getPackageBuilder( str );
+        KnowledgeBuilderImpl builder = getPackageBuilder( str );
         TypeDeclaration tdecl = builder.getTypeDeclaration( DImpl.class );
         assertEquals( false, tdecl.isTypesafe() );
-        assertEquals( Role.EVENT, tdecl.getRole() );
+        assertEquals( Role.Type.EVENT, tdecl.getRole() );
     }
     
     @Test
@@ -75,10 +73,10 @@ public class TypeDeclarationMergingTest {
            "    @role(event)\n" +           
            "end\n";
 
-        PackageBuilder builder = getPackageBuilder( str );
+        KnowledgeBuilderImpl builder = getPackageBuilder( str );
         TypeDeclaration tdecl = builder.getTypeDeclaration( DImpl.class );
         assertEquals( true, tdecl.isTypesafe() );
-        assertEquals( Role.EVENT, tdecl.getRole() );
+        assertEquals( Role.Type.EVENT, tdecl.getRole() );
     }    
     
     @Test
@@ -92,12 +90,12 @@ public class TypeDeclarationMergingTest {
            "    @role(event)\n" +              
            "end\n" +
            "declare " + DImpl.class.getCanonicalName() + "\n" +
-           "end\n";           
+           "end\n";
 
-        PackageBuilder builder = getPackageBuilder( str );
+        KnowledgeBuilderImpl builder = getPackageBuilder( str );
         TypeDeclaration tdecl = builder.getTypeDeclaration( DImpl.class );
         assertEquals( true, tdecl.isTypesafe() );
-        assertEquals( Role.EVENT, tdecl.getRole() );        
+        assertEquals( Role.Type.EVENT, tdecl.getRole() );
     }    
     
     @Test
@@ -113,10 +111,10 @@ public class TypeDeclarationMergingTest {
            "declare " + DImpl.class.getCanonicalName() + "\n" +
            "    @typesafe(false)\n" +
            "end\n";
-        PackageBuilder builder = getPackageBuilder( str );
+        KnowledgeBuilderImpl builder = getPackageBuilder( str );
         TypeDeclaration tdecl = builder.getTypeDeclaration( DImpl.class );
         assertEquals( false, tdecl.isTypesafe() );
-        assertEquals( Role.EVENT, tdecl.getRole() );        
+        assertEquals( Role.Type.EVENT, tdecl.getRole() );
     }
     
     @Test
@@ -132,10 +130,10 @@ public class TypeDeclarationMergingTest {
            "declare " + DImpl.class.getCanonicalName() + "\n" +
            "    @typesafe(false)\n" +
            "end\n";
-        PackageBuilder builder = getPackageBuilder( str );
+        KnowledgeBuilderImpl builder = getPackageBuilder( str );
         TypeDeclaration tdecl = builder.getTypeDeclaration( DImpl.class );
         assertEquals( false, tdecl.isTypesafe() );
-        assertEquals( Role.EVENT, tdecl.getRole() );        
+        assertEquals( Role.Type.EVENT, tdecl.getRole() );
     }    
     
     @Test
@@ -153,10 +151,10 @@ public class TypeDeclarationMergingTest {
            "end\n" +             
            "declare " + DImpl.class.getCanonicalName() + "\n" +
            "end\n";
-        PackageBuilder builder = getPackageBuilder( str );
+        KnowledgeBuilderImpl builder = getPackageBuilder( str );
         TypeDeclaration tdecl = builder.getTypeDeclaration( DImpl.class );
         assertEquals( true, tdecl.isTypesafe() );
-        assertEquals( Role.FACT, tdecl.getRole() );        
+        assertEquals( Role.Type.FACT, tdecl.getRole() );
     }        
     
     @Test
@@ -170,10 +168,10 @@ public class TypeDeclarationMergingTest {
            "    @role(event)\n" +              
            "end\n";
 
-        PackageBuilder builder = getPackageBuilder( str );
+        KnowledgeBuilderImpl builder = getPackageBuilder( str );
         TypeDeclaration tdecl = builder.getTypeDeclaration( DImpl.class );
         assertEquals( true, tdecl.isTypesafe() );
-        assertEquals( Role.EVENT, tdecl.getRole() );
+        assertEquals( Role.Type.EVENT, tdecl.getRole() );
     }    
     
     @Test
@@ -187,12 +185,12 @@ public class TypeDeclarationMergingTest {
            "    @role(event)\n" +           
            "end\n" +
            "declare " + DImpl.class.getCanonicalName() + "\n" +
-           "end\n";           
+           "end\n";
 
-        PackageBuilder builder = getPackageBuilder( str );
+        KnowledgeBuilderImpl builder = getPackageBuilder( str );
         TypeDeclaration tdecl = builder.getTypeDeclaration( DImpl.class );
         assertEquals( true, tdecl.isTypesafe() );
-        assertEquals( Role.EVENT, tdecl.getRole() );
+        assertEquals( Role.Type.EVENT, tdecl.getRole() );
     }     
     
     @Test
@@ -210,13 +208,13 @@ public class TypeDeclarationMergingTest {
            "end\n" +             
            "declare " + DImpl.class.getCanonicalName() + "\n" +
            "end\n";
-        PackageBuilder builder = getPackageBuilder( str );
+        KnowledgeBuilderImpl builder = getPackageBuilder( str );
         TypeDeclaration tdecl = builder.getTypeDeclaration( DImpl.class );
         assertEquals( true, tdecl.isTypesafe() );
-        assertEquals( Role.FACT, tdecl.getRole() );        
+        assertEquals( Role.Type.FACT, tdecl.getRole() );
     }      
     
-    private PackageBuilder getPackageBuilder(String str) {
+    private KnowledgeBuilderImpl getPackageBuilder(String str) {
         KnowledgeBuilder kbuilder = KnowledgeBuilderFactory.newKnowledgeBuilder();
         kbuilder.add( ResourceFactory.newByteArrayResource(str.getBytes()), ResourceType.DRL );
         
@@ -224,7 +222,7 @@ public class TypeDeclarationMergingTest {
             fail( kbuilder.getErrors().toString() );
         }
 
-        return ((KnowledgeBuilderImpl)kbuilder).getPackageBuilder();
+        return (KnowledgeBuilderImpl)kbuilder;
     }
 
     @Test
@@ -272,6 +270,14 @@ public class TypeDeclarationMergingTest {
 
         public String getArg0() {
             return arg0;
+        }
+
+        public void setArg1( String arg1 ) {
+            this.arg1 = arg1;
+        }
+
+        public void setArg0( String arg0 ) {
+            this.arg0 = arg0;
         }
     }
 }

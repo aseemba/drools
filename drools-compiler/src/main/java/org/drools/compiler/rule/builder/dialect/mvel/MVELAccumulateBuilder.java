@@ -16,12 +16,6 @@
 
 package org.drools.compiler.rule.builder.dialect.mvel;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-
 import org.drools.compiler.compiler.AnalysisResult;
 import org.drools.compiler.compiler.BoundIdentifiers;
 import org.drools.compiler.compiler.DescrBuildError;
@@ -43,12 +37,26 @@ import org.drools.core.reteoo.RuleTerminalNode.SortDeclarations;
 import org.drools.core.rule.Accumulate;
 import org.drools.core.rule.Declaration;
 import org.drools.core.rule.MVELDialectRuntimeData;
+import org.drools.core.rule.MultiAccumulate;
+import org.drools.core.rule.MutableTypeConstraint;
 import org.drools.core.rule.Pattern;
 import org.drools.core.rule.RuleConditionElement;
+import org.drools.core.rule.SingleAccumulate;
+import org.drools.core.rule.constraint.MvelConstraint;
 import org.drools.core.spi.Accumulator;
+import org.drools.core.spi.Constraint;
 import org.drools.core.spi.InternalReadAccessor;
 import org.drools.core.spi.KnowledgeHelper;
+import org.drools.core.spi.MvelAccumulator;
+import org.drools.core.util.index.IndexUtil;
 import org.kie.api.runtime.rule.AccumulateFunction;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * A builder for the java dialect accumulate version
@@ -98,13 +106,13 @@ public class MVELAccumulateBuilder
             declarationClasses.putAll( context.getDeclarationResolver().getDeclarationClasses( sourceOuterDeclr ) );
 
             BoundIdentifiers boundIds = new BoundIdentifiers( declarationClasses,
-                                                              context.getPackageBuilder().getGlobals() );
+                                                              context.getKnowledgeBuilder().getGlobals() );
             boundIds.setDeclarations( mergedDecl );
 
             Accumulator[] accumulators = null;
 
-            final boolean readLocalsFromTuple = PackageBuilderUtil.isReadLocalsFromTuple(accumDescr, source);
-            
+            final boolean readLocalsFromTuple = PackageBuilderUtil.isReadLocalsFromTuple(context, accumDescr, source);
+
             if ( accumDescr.isExternalFunction() ) {
                 // uses accumulate functions
                 accumulators = buildExternalFunctions( context,
@@ -126,17 +134,34 @@ public class MVELAccumulateBuilder
                                                       readLocalsFromTuple );
             }
 
-            final Accumulate accumulate = new Accumulate( source,
-                                                          null,
-                                                          accumulators,
-                                                          accumDescr.isMultiFunction() );
+            List<Declaration> requiredDeclarations = new ArrayList<Declaration>();
+            for ( Accumulator acc : accumulators ) {
+                MvelAccumulator mvelAcc = (MvelAccumulator) acc;
+                for ( Declaration decl : mvelAcc.getRequiredDeclarations() ) {
+                    requiredDeclarations.add( decl );
+                }
+            }
 
             MVELDialectRuntimeData data = (MVELDialectRuntimeData) context.getPkg().getDialectRuntimeRegistry().getDialectData( "mvel" );
-            int index = 0;
-            for ( Accumulator accumulator : accumulators ) {
-                data.addCompileable( accumulate.new Wirer( index++ ),
-                                     (MVELCompileable) accumulator );
-                ((MVELCompileable) accumulator).compile( data );
+
+            Accumulate accumulate = null;
+            if (accumDescr.isMultiFunction()) {
+                accumulate = new MultiAccumulate( source,
+                                                  requiredDeclarations.toArray( new Declaration[ requiredDeclarations.size() ] ),
+                                                  accumulators );
+                int index = 0;
+                for ( Accumulator accumulator : accumulators ) {
+                    data.addCompileable( ((MultiAccumulate)accumulate).new Wirer( index++ ),
+                                         (MVELCompileable) accumulator );
+                    ((MVELCompileable) accumulator).compile( data, context.getRule() );
+                }
+            } else {
+                accumulate = new SingleAccumulate( source,
+                                                   requiredDeclarations.toArray( new Declaration[ requiredDeclarations.size() ] ),
+                                                   accumulators[0] );
+                    data.addCompileable( ((SingleAccumulate)accumulate).new Wirer( ),
+                                         (MVELCompileable) accumulators[0] );
+                    ((MVELCompileable) accumulators[0]).compile( data, context.getRule() );
             }
 
             return accumulate;
@@ -174,7 +199,7 @@ public class MVELAccumulateBuilder
             AccumulateFunction function = context.getConfiguration().getAccumulateFunction( func.getFunction() );
             if( function == null ) {
                 // might have been imported in the package
-                function = context.getPackageBuilder().getPackage().getAccumulateFunctions().get(func.getFunction());
+                function = context.getKnowledgeBuilder().getPackage().getAccumulateFunctions().get(func.getFunction());
             }
             if ( function == null ) {
                 context.addError( new DescrBuildError( accumDescr,
@@ -183,22 +208,6 @@ public class MVELAccumulateBuilder
                                                               "Unknown accumulate function: '" + func.getFunction() + "' on rule '" + context.getRuleDescr().getName()
                                                                       + "'. All accumulate functions must be registered before building a resource." ) );
                 return null;
-            }
-
-            // if there is a binding, create the binding
-            if ( func.getBind() != null ) {
-                if ( pattern.getDeclaration( func.getBind() ) != null ) {
-                    context.addError(new DescrBuildError(context.getParentDescr(),
-                            accumDescr,
-                            null,
-                            "Duplicate declaration for variable '" + func.getBind() + "' in the rule '" + context.getRule().getName() + "'"));
-                } else {
-                    createResultBind( pattern,
-                                  index,
-                                  arrayReader,
-                                  func,
-                                  function );
-                }
             }
 
             final AnalysisResult analysis = dialect.analyzeExpression( context,
@@ -218,8 +227,44 @@ public class MVELAccumulateBuilder
                                                                        KnowledgeHelper.class,
                                                                        readLocalsFromTuple );
 
-            accumulators[index++] = new MVELAccumulatorFunctionExecutor( unit,
+            accumulators[index] = new MVELAccumulatorFunctionExecutor( unit,
                                                                          function );
+            // if there is a binding, create the binding
+            if ( func.getBind() != null ) {
+                if ( context.getDeclarationResolver().isDuplicated( context.getRule(), func.getBind(), function.getResultType().getName() ) ) {
+                    if ( ! func.isUnification() ) {
+                        context.addError( new DescrBuildError( context.getParentDescr(),
+                                                               accumDescr,
+                                                               null,
+                                                               "Duplicate declaration for variable '" + func.getBind() + "' in the rule '" + context.getRule().getName() + "'" ) );
+                    } else {
+                        Declaration inner = context.getDeclarationResolver().getDeclaration( context.getRule(), func.getBind() );
+                        Constraint c = new MvelConstraint( Arrays.asList( context.getPkg().getName() ),
+                                                           accumDescr.isMultiFunction()
+                                                                ? "this[ " + index + " ] == " + func.getBind()
+                                                                : "this == " + func.getBind(),
+                                                           new Declaration[] { inner },
+                                                           null,
+                                                           IndexUtil.ConstraintType.EQUAL,
+                                                           context.getDeclarationResolver().getDeclaration( context.getRule(), func.getBind() ),
+                                                           accumDescr.isMultiFunction()
+                                                                ? new ArrayElementReader( arrayReader, index, function.getResultType() )
+                                                                : new SelfReferenceClassFieldReader( function.getResultType(), "this" ),
+                                                           true);
+                        ((MutableTypeConstraint) c).setType( Constraint.ConstraintType.BETA );
+                        pattern.addConstraint( c );
+                        index++;
+                    }
+                } else {
+                    Declaration declr = pattern.addDeclaration( func.getBind() );
+                    if (accumDescr.isMultiFunction()) {
+                        declr.setReadAccessor(new ArrayElementReader(arrayReader, index, function.getResultType()));
+                    } else {
+                        declr.setReadAccessor(new SelfReferenceClassFieldReader( function.getResultType(), "this" ));
+                    }
+                }
+            }
+            index++;
         }
         return accumulators;
     }
@@ -357,22 +402,4 @@ public class MVELAccumulateBuilder
 
         return usedDeclarations.toArray( new Declaration[usedDeclarations.size()] );
     }
-
-    private void createResultBind( final Pattern pattern,
-                                   int index,
-                                   InternalReadAccessor arrayReader,
-                                   AccumulateFunctionCallDescr fc,
-                                   AccumulateFunction function ) {
-        // bind function result on the result pattern
-        Declaration declr = pattern.addDeclaration( fc.getBind() );
-
-        Class< ? > type = function.getResultType();
-
-        // this bit is different, notice its the ArrayElementReader that we wire up to, not the declaration.
-        ArrayElementReader reader = new ArrayElementReader( arrayReader,
-                                                            index,
-                                                            type );
-        declr.setReadAccessor( reader );
-    }
-
 }

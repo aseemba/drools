@@ -19,11 +19,12 @@ import org.drools.core.base.extractors.SelfReferenceClassFieldReader;
 import org.drools.core.rule.Declaration;
 import org.drools.core.rule.MVELDialectRuntimeData;
 import org.drools.core.rule.Pattern;
-import org.drools.core.rule.Query;
+import org.drools.core.rule.QueryImpl;
 import org.drools.core.rule.QueryElement;
 import org.drools.core.rule.RuleConditionElement;
 import org.drools.core.spi.InternalReadAccessor;
 import org.drools.core.spi.ObjectType;
+import org.drools.core.util.ClassUtils;
 import org.drools.core.util.MVELSafeHelper;
 import org.drools.core.util.StringUtils;
 import org.kie.api.runtime.rule.Variable;
@@ -59,7 +60,7 @@ public class QueryElementBuilder
     public RuleConditionElement build( RuleBuildContext context,
                                        BaseDescr descr,
                                        Pattern prefixPattern,
-                                       Query query) {
+                                       QueryImpl query) {
         PatternDescr patternDescr = (PatternDescr) descr;
 
         Declaration[] params = query.getParameters();
@@ -204,6 +205,23 @@ public class QueryElementBuilder
             varIndexesArray[i] = varIndexes.get( i );
         }
 
+        for ( Integer declIndex : declrIndexes ) {
+            Declaration knownInputArg = (Declaration) arguments.get( declIndex );
+            Declaration formalArgument = query.getParameters()[ declIndex ];
+            Class actual = knownInputArg.getExtractor().getExtractToClass();
+            Class formal = formalArgument.getExtractor().getExtractToClass();
+
+            // with queries invoking each other, we won't know until runtime whether a declaration is input, output or else
+            // input argument require a broader type, while output types require a narrower type, so we check for both.
+            if ( ! ClassUtils.isTypeCompatibleWithArgumentType( actual, formal ) && ! ClassUtils.isTypeCompatibleWithArgumentType( formal, actual ) ) {
+                context.addError( new DescrBuildError( context.getParentDescr(),
+                                                       descr,
+                                                           null,
+                                                       "Query is being invoked with known argument of type " + actual +
+                                                       " at position " + declIndex + ", but the expected query argument is of type " + formal ) );
+            }
+        }
+
         return new QueryElement( pattern,
                                  query.getName(),
                                  arguments.toArray( new Object[arguments.size()] ),
@@ -276,7 +294,7 @@ public class QueryElementBuilder
                 try {
                     MVELDialectRuntimeData data = ( MVELDialectRuntimeData) context.getPkg().getDialectRuntimeRegistry().getDialectData( "mvel" );
                     ParserConfiguration conf = data.getParserConfiguration();
-                    conf.setClassLoader( context.getPackageBuilder().getRootClassLoader() );
+                    conf.setClassLoader( context.getKnowledgeBuilder().getRootClassLoader() );
 
                     arguments.set( pos,
                     MVELSafeHelper.getEvaluator().executeExpression( MVEL.compileExpression( expr, new ParserContext( conf ) ) ) );
@@ -320,7 +338,7 @@ public class QueryElementBuilder
     }
 
     private void processPositional( RuleBuildContext context,
-                                    Query query,
+                                    QueryImpl query,
                                     Declaration[] params,
                                     List<Integer> declrIndexes,
                                     List<Integer> varIndexes,
@@ -336,7 +354,7 @@ public class QueryElementBuilder
             context.addError( new DescrBuildError( context.getParentDescr(),
                                                           base,
                                                           null,
-                                                          "Unable to parse query '" + query.getName() + "', as postion " + (position-1) + " for expression '" + expression + "' does not exist on query size " + arguments.size()) );
+                                                          "Unable to parse query '" + query.getName() + "', as postion " + position + " for expression '" + expression + "' does not exist on query size " + arguments.size()) );
             return;            
         }
         if ( isVariable( expression ) ) {
@@ -373,7 +391,7 @@ public class QueryElementBuilder
             try {
                 MVELDialectRuntimeData data = ( MVELDialectRuntimeData) context.getPkg().getDialectRuntimeRegistry().getDialectData( "mvel" );
                 ParserConfiguration conf = data.getParserConfiguration();
-                conf.setClassLoader( context.getPackageBuilder().getRootClassLoader() );
+                conf.setClassLoader( context.getKnowledgeBuilder().getRootClassLoader() );
 
                 arguments.set( position, MVELSafeHelper.getEvaluator().executeExpression( MVEL.compileExpression( rewrittenExpr, new ParserContext( conf ) ) ) );
             } catch ( Exception e ) {

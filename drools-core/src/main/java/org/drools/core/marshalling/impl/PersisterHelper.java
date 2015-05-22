@@ -16,6 +16,26 @@
 
 package org.drools.core.marshalling.impl;
 
+import com.google.protobuf.ByteString;
+import com.google.protobuf.ByteString.Output;
+import com.google.protobuf.ExtensionRegistry;
+import com.google.protobuf.Message;
+import org.drools.core.beliefsystem.simple.BeliefSystemLogicalCallback;
+import org.drools.core.common.DroolsObjectInputStream;
+import org.drools.core.common.DroolsObjectOutputStream;
+import org.drools.core.common.WorkingMemoryAction;
+import org.drools.core.impl.StatefulKnowledgeSessionImpl.WorkingMemoryReteAssertAction;
+import org.drools.core.impl.StatefulKnowledgeSessionImpl.WorkingMemoryReteExpireAction;
+import org.drools.core.marshalling.impl.ProtobufMessages.Header;
+import org.drools.core.marshalling.impl.ProtobufMessages.Header.StrategyIndex.Builder;
+import org.drools.core.reteoo.LeftTuple;
+import org.drools.core.reteoo.PropagationQueuingNode.PropagateAction;
+import org.drools.core.rule.SlidingTimeWindow.BehaviorExpireWMAction;
+import org.drools.core.util.Drools;
+import org.drools.core.util.KeyStoreHelper;
+import org.kie.api.marshalling.ObjectMarshallingStrategy;
+import org.kie.api.marshalling.ObjectMarshallingStrategy.Context;
+
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -24,27 +44,6 @@ import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.SignatureException;
 import java.util.Map.Entry;
-
-import org.drools.core.RuntimeDroolsException;
-import org.drools.core.beliefsystem.simple.BeliefSystemLogicalCallback;
-import org.drools.core.common.AbstractWorkingMemory.WorkingMemoryReteAssertAction;
-import org.drools.core.common.AbstractWorkingMemory.WorkingMemoryReteExpireAction;
-import org.drools.core.common.DroolsObjectInputStream;
-import org.drools.core.common.DroolsObjectOutputStream;
-import org.drools.core.common.WorkingMemoryAction;
-import org.drools.core.util.KeyStoreHelper;
-import org.drools.core.marshalling.impl.ProtobufMessages.Header;
-import org.drools.core.marshalling.impl.ProtobufMessages.Header.StrategyIndex.Builder;
-import org.drools.core.reteoo.LeftTuple;
-import org.drools.core.reteoo.PropagationQueuingNode.PropagateAction;
-import org.drools.core.rule.SlidingTimeWindow.BehaviorExpireWMAction;
-import org.kie.api.marshalling.ObjectMarshallingStrategy;
-import org.kie.api.marshalling.ObjectMarshallingStrategy.Context;
-
-import com.google.protobuf.ByteString;
-import com.google.protobuf.ByteString.Output;
-import com.google.protobuf.ExtensionRegistry;
-import com.google.protobuf.Message;
 
 public class PersisterHelper {
     public static WorkingMemoryAction readWorkingMemoryAction(MarshallerReaderContext context) throws IOException,
@@ -190,11 +189,10 @@ public class PersisterHelper {
     public static void writeToStreamWithHeader( MarshallerWriteContext context,
                                                 Message payload ) throws IOException {
         ProtobufMessages.Header.Builder _header = ProtobufMessages.Header.newBuilder();
-        // need to automate this version numbering somehow
         _header.setVersion( ProtobufMessages.Version.newBuilder()
-                            .setVersionMajor( 5 )
-                            .setVersionMinor( 4 )
-                            .setVersionRevision( 0 )
+                                            .setVersionMajor( Drools.getMajorVersion() )
+                                            .setVersionMinor( Drools.getMinorVersion() )
+                                            .setVersionRevision( Drools.getRevisionVersion() )
                             .build() );
         
         writeStrategiesIndex( context, _header );
@@ -235,8 +233,8 @@ public class PersisterHelper {
                                       .setSignature( ByteString.copyFrom( helper.signDataWithPrivateKey( buff ) ) )
                                       .build() );
             } catch (Exception e) {
-                throw new RuntimeDroolsException( "Error signing session: " + e.getMessage(),
-                                                  e );
+                throw new RuntimeException( "Error signing session: " + e.getMessage(),
+                                            e );
             }
         }
     }
@@ -290,8 +288,8 @@ public class PersisterHelper {
 		ClassLoader classLoader = null;
                 if (context.classLoader != null ){
                     classLoader = context.classLoader;
-                } else if(context.ruleBase != null){
-                    classLoader = context.ruleBase.getRootClassLoader();
+                } else if(context.kBase != null){
+                    classLoader = context.kBase.getRootClassLoader();
                 }
                 ctx.read( new DroolsObjectInputStream( _entry.getData().newInput(), classLoader) );
             }
@@ -303,34 +301,33 @@ public class PersisterHelper {
         KeyStoreHelper helper = new KeyStoreHelper();
         boolean signed = _header.hasSignature();
         if ( helper.isSigned() != signed ) {
-            throw new RuntimeDroolsException( "This environment is configured to work with " +
-                                              (helper.isSigned() ? "signed" : "unsigned") +
-                                              " serialized objects, but the given object is " +
-                                              (signed ? "signed" : "unsigned") + ". Deserialization aborted." );
+            throw new RuntimeException( "This environment is configured to work with " +
+                                        (helper.isSigned() ? "signed" : "unsigned") +
+                                        " serialized objects, but the given object is " +
+                                        (signed ? "signed" : "unsigned") + ". Deserialization aborted." );
         }
         if ( signed ) {
             if ( helper.getPubKeyStore() == null ) {
-                throw new RuntimeDroolsException( "The session was serialized with a signature. Please configure a public keystore with the public key to check the signature. Deserialization aborted." );
+                throw new RuntimeException( "The session was serialized with a signature. Please configure a public keystore with the public key to check the signature. Deserialization aborted." );
             }
             try {
                 if ( !helper.checkDataWithPublicKey( _header.getSignature().getKeyAlias(),
                                                      sessionbuff,
                                                      _header.getSignature().getSignature().toByteArray() ) ) {
-                    throw new RuntimeDroolsException(
-                                                      "Signature does not match serialized package. This is a security violation. Deserialisation aborted." );
+                    throw new RuntimeException( "Signature does not match serialized package. This is a security violation. Deserialisation aborted." );
                 }
             } catch ( InvalidKeyException e ) {
-                throw new RuntimeDroolsException( "Invalid key checking signature: " + e.getMessage(),
-                                                  e );
+                throw new RuntimeException( "Invalid key checking signature: " + e.getMessage(),
+                                            e );
             } catch ( KeyStoreException e ) {
-                throw new RuntimeDroolsException( "Error accessing Key Store: " + e.getMessage(),
-                                                  e );
+                throw new RuntimeException( "Error accessing Key Store: " + e.getMessage(),
+                                            e );
             } catch ( NoSuchAlgorithmException e ) {
-                throw new RuntimeDroolsException( "No algorithm available: " + e.getMessage(),
-                                                  e );
+                throw new RuntimeException( "No algorithm available: " + e.getMessage(),
+                                            e );
             } catch ( SignatureException e ) {
-                throw new RuntimeDroolsException( "Signature Exception: " + e.getMessage(),
-                                                  e );
+                throw new RuntimeException( "Signature Exception: " + e.getMessage(),
+                                            e );
             }
         }
     }

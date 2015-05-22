@@ -1,32 +1,22 @@
 package org.drools.compiler.rule.builder.dialect.java;
 
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-
+import org.drools.compiler.builder.impl.KnowledgeBuilderConfigurationImpl;
+import org.drools.compiler.builder.impl.errors.ErrorHandler;
+import org.drools.compiler.builder.impl.errors.FunctionErrorHandler;
+import org.drools.compiler.builder.impl.errors.RuleErrorHandler;
+import org.drools.compiler.builder.impl.errors.RuleInvokerErrorHandler;
+import org.drools.compiler.builder.impl.errors.SrcErrorHandler;
 import org.drools.compiler.commons.jci.compilers.CompilationResult;
 import org.drools.compiler.commons.jci.compilers.JavaCompiler;
 import org.drools.compiler.commons.jci.compilers.JavaCompilerFactory;
-import org.drools.compiler.commons.jci.compilers.JavaCompilerSettings;
 import org.drools.compiler.commons.jci.problems.CompilationProblem;
 import org.drools.compiler.commons.jci.readers.MemoryResourceReader;
 import org.drools.compiler.compiler.AnalysisResult;
 import org.drools.compiler.compiler.BoundIdentifiers;
 import org.drools.compiler.compiler.DescrBuildError;
 import org.drools.compiler.compiler.Dialect;
-import org.drools.compiler.compiler.PackageBuilder;
-import org.drools.compiler.compiler.PackageBuilder.ErrorHandler;
-import org.drools.compiler.compiler.PackageBuilder.FunctionErrorHandler;
-import org.drools.compiler.compiler.PackageBuilder.RuleErrorHandler;
-import org.drools.compiler.compiler.PackageBuilder.RuleInvokerErrorHandler;
-import org.drools.compiler.compiler.PackageBuilder.SrcErrorHandler;
 import org.drools.compiler.compiler.PackageRegistry;
+import org.drools.compiler.kie.builder.impl.AbstractKieModule.CompilationCacheEntry;
 import org.drools.compiler.lang.descr.AccumulateDescr;
 import org.drools.compiler.lang.descr.AndDescr;
 import org.drools.compiler.lang.descr.BaseDescr;
@@ -78,57 +68,60 @@ import org.drools.compiler.rule.builder.dialect.mvel.MVELEnabledBuilder;
 import org.drools.compiler.rule.builder.dialect.mvel.MVELFromBuilder;
 import org.drools.compiler.rule.builder.dialect.mvel.MVELSalienceBuilder;
 import org.drools.core.base.TypeResolver;
+import org.drools.core.definitions.InternalKnowledgePackage;
+import org.drools.core.definitions.rule.impl.RuleImpl;
 import org.drools.core.io.internal.InternalResource;
 import org.drools.core.rule.Function;
 import org.drools.core.rule.JavaDialectRuntimeData;
 import org.drools.core.rule.LineMappings;
-import org.drools.core.rule.Package;
-import org.drools.core.rule.Rule;
+import org.drools.core.util.IoUtils;
 import org.drools.core.util.StringUtils;
 import org.kie.api.io.Resource;
 import org.kie.internal.builder.KnowledgeBuilderResult;
+
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 public class JavaDialect
     implements
     Dialect {
 
-    public static final String                   ID                            = "java";
+    public static final String                         ID                            = "java";
 
-    private final static String                  EXPRESSION_DIALECT_NAME       = "mvel";
+    private final static String                        EXPRESSION_DIALECT_NAME       = "mvel";
 
     // builders
-    protected static PatternBuilder              PATTERN_BUILDER               = new PatternBuilder();
-    protected static QueryBuilder QUERY_BUILDER                 = new QueryBuilder();
-    protected static SalienceBuilder             SALIENCE_BUILDER              = new MVELSalienceBuilder();
-    protected static EnabledBuilder ENABLED_BUILDER               = new MVELEnabledBuilder();
-    protected static JavaAccumulateBuilder       ACCUMULATE_BUILDER            = new JavaAccumulateBuilder();
+    protected static final PatternBuilder              PATTERN_BUILDER               = new PatternBuilder();
+    protected static final QueryBuilder                QUERY_BUILDER                 = new QueryBuilder();
+    protected static final SalienceBuilder             SALIENCE_BUILDER              = new MVELSalienceBuilder();
+    protected static final EnabledBuilder              ENABLED_BUILDER               = new MVELEnabledBuilder();
+    protected static final JavaAccumulateBuilder       ACCUMULATE_BUILDER            = new JavaAccumulateBuilder();
 
-    protected static RuleConditionBuilder        EVAL_BUILDER                  = new ASMEvalStubBuilder();
-    protected static PredicateBuilder            PREDICATE_BUILDER             = new ASMPredicateStubBuilder();
-    protected static ReturnValueBuilder RETURN_VALUE_BUILDER          = new ASMReturnValueStubBuilder();
-    protected static ConsequenceBuilder CONSEQUENCE_BUILDER           = new ASMConsequenceStubBuilder();
+    protected static final RuleConditionBuilder        EVAL_BUILDER                  = new ASMEvalStubBuilder();
+    protected static final PredicateBuilder            PREDICATE_BUILDER             = new ASMPredicateStubBuilder();
+    protected static final ReturnValueBuilder          RETURN_VALUE_BUILDER          = new ASMReturnValueStubBuilder();
+    protected static final ConsequenceBuilder          CONSEQUENCE_BUILDER           = new ASMConsequenceStubBuilder();
 
-    protected static JavaRuleClassBuilder        RULE_CLASS_BUILDER            = new JavaRuleClassBuilder();
-    protected static MVELFromBuilder             FROM_BUILDER                  = new MVELFromBuilder();
-    protected static JavaFunctionBuilder         FUNCTION_BUILDER              = new JavaFunctionBuilder();
-    protected static CollectBuilder              COLLECT_BUIDER                = new CollectBuilder();
-    protected static ForallBuilder               FORALL_BUILDER                = new ForallBuilder();
-    protected static EntryPointBuilder ENTRY_POINT_BUILDER           = new EntryPointBuilder();
-    protected static WindowReferenceBuilder WINDOW_REFERENCE_BUILDER      = new WindowReferenceBuilder();
-    protected static GroupElementBuilder GE_BUILDER                    = new GroupElementBuilder();
-    protected static NamedConsequenceBuilder     NAMED_CONSEQUENCE_BUILDER     = new NamedConsequenceBuilder();
-    protected static ConditionalBranchBuilder CONDITIONAL_BRANCH_BUILDER    = new ConditionalBranchBuilder();
+    protected static final JavaRuleClassBuilder        RULE_CLASS_BUILDER            = new JavaRuleClassBuilder();
+    protected static final MVELFromBuilder             FROM_BUILDER                  = new MVELFromBuilder();
+    protected static final JavaFunctionBuilder         FUNCTION_BUILDER              = new JavaFunctionBuilder();
+    protected static final CollectBuilder              COLLECT_BUIDER                = new CollectBuilder();
+    protected static final ForallBuilder               FORALL_BUILDER                = new ForallBuilder();
+    protected static final EntryPointBuilder           ENTRY_POINT_BUILDER           = new EntryPointBuilder();
+    protected static final WindowReferenceBuilder      WINDOW_REFERENCE_BUILDER      = new WindowReferenceBuilder();
+    protected static final GroupElementBuilder         GE_BUILDER                    = new GroupElementBuilder();
+    protected static final NamedConsequenceBuilder     NAMED_CONSEQUENCE_BUILDER     = new NamedConsequenceBuilder();
+    protected static final ConditionalBranchBuilder    CONDITIONAL_BRANCH_BUILDER    = new ConditionalBranchBuilder();
 
     // a map of registered builders
     private static Map<Class<?>, EngineElementBuilder> builders;
-
-    public static void setPatternBuilder( PatternBuilder PATTERN_BUILDER ) {
-        JavaDialect.PATTERN_BUILDER = PATTERN_BUILDER;
-    }
-
-    public static void setGEBuilder( GroupElementBuilder GE_BUILDER ) {
-        JavaDialect.GE_BUILDER = GE_BUILDER;
-    }
 
     static {
         initBuilder();
@@ -140,24 +133,27 @@ public class JavaDialect
     private final JavaDialectConfiguration           configuration;
 
     private JavaCompiler                             compiler;
-    private final Package                            pkg;
+    private final InternalKnowledgePackage           pkg;
+    private final ClassLoader                        rootClassLoader;
+    private final KnowledgeBuilderConfigurationImpl  pkgConf;
     private final List<String>                       generatedClassList;
     private final MemoryResourceReader               src;
     private final PackageStore                       packageStoreWrapper;
     private final Map<String, ErrorHandler>          errorHandlers;
     private final List<KnowledgeBuilderResult>       results;
-    private final PackageBuilder                     packageBuilder;
 
     private final PackageRegistry packageRegistry;
 
-    public JavaDialect(PackageBuilder builder,
+    public JavaDialect(ClassLoader rootClassLoader,
+                       KnowledgeBuilderConfigurationImpl pkgConf,
                        PackageRegistry pkgRegistry,
-                       Package pkg) {
-        this.packageBuilder = builder;
+                       InternalKnowledgePackage pkg) {
+        this.rootClassLoader = rootClassLoader;
+        this.pkgConf = pkgConf;
         this.pkg = pkg;
         this.packageRegistry = pkgRegistry;
 
-        this.configuration = (JavaDialectConfiguration) builder.getPackageBuilderConfiguration().getDialectConfiguration( "java" );
+        this.configuration = (JavaDialectConfiguration) pkgConf.getDialectConfiguration( "java" );
 
         this.errorHandlers = new HashMap<String, ErrorHandler>();
         this.results = new ArrayList<KnowledgeBuilderResult>();
@@ -174,7 +170,7 @@ public class JavaDialect
             this.pkg.getDialectRuntimeRegistry().setDialectData( ID,
                                                                  data );
             data.onAdd( this.pkg.getDialectRuntimeRegistry(),
-                        this.packageBuilder.getRootClassLoader() );
+                        rootClassLoader );
         } else {
             data = (JavaDialectRuntimeData) pkg.getDialectRuntimeRegistry().getDialectData( ID );
         }
@@ -391,6 +387,7 @@ public class JavaDialect
      */
     public void compileAll() {
         if ( this.generatedClassList.isEmpty() ) {
+            this.errorHandlers.clear();
             return;
         }
         final String[] classes = new String[this.generatedClassList.size()];
@@ -405,7 +402,7 @@ public class JavaDialect
         final CompilationResult result = this.compiler.compile( classes,
                                                                 this.src,
                                                                 this.packageStoreWrapper,
-                                                                this.packageBuilder.getRootClassLoader() );
+                                                                rootClassLoader );
 
         //this will sort out the errors based on what class/file they happened in
         if ( result.getErrors().length > 0 ) {
@@ -426,6 +423,7 @@ public class JavaDialect
 
         // We've compiled everthing, so clear it for the next set of additions
         this.generatedClassList.clear();
+        this.errorHandlers.clear();
     }
 
     /**
@@ -466,7 +464,7 @@ public class JavaDialect
      * It will not actually call the compiler
      */
     public void addRule(final RuleBuildContext context) {
-        final Rule rule = context.getRule();
+        final RuleImpl rule = context.getRule();
         final RuleDescr ruleDescr = context.getRuleDescr();
 
         RuleClassBuilder classBuilder = context.getDialect().getRuleClassBuilder();
@@ -603,10 +601,10 @@ public class JavaDialect
 
         if (src != null) {
             src.add( fileName,
-                     text.getBytes() );
+                     text.getBytes( IoUtils.UTF8_CHARSET ) );
         } else {
             this.src.add( fileName,
-                          text.getBytes() );
+                          text.getBytes( IoUtils.UTF8_CHARSET ) );
         }
 
         this.errorHandlers.put( fileName,
@@ -617,22 +615,24 @@ public class JavaDialect
 
     public void addClassName(final String className) {
         boolean found = false;
-        if( packageBuilder.getPackageBuilderConfiguration().isPreCompiled() ) {
+        if( pkgConf.isPreCompiled() ) {
             // recover bytecode from cache 
-            Map<String, byte[]> cache = packageBuilder.getPackageBuilderConfiguration().getCompilationCache().get( ID );
+            Map<String, List<CompilationCacheEntry>> cache = pkgConf.getCompilationCache().getCacheForDialect( ID );
             if( cache != null ) {
                 String resourceName = className.replace( ".java", ".class" );
-                byte[] bytecode = cache.get( resourceName );
-                if( bytecode != null ) {
-//                    System.out.println("Found in cache = "+className);
-                    this.packageStoreWrapper.write( resourceName, bytecode );
+                List<CompilationCacheEntry> bytecodes = cache.get( resourceName );
+                if( bytecodes != null ) {
+                    for( CompilationCacheEntry entry : bytecodes ) {
+                        //System.out.println("Found in cache = "+entry.className);
+                        this.packageStoreWrapper.write( entry.className, entry.bytecode );
+                    }
                     found = true;
                 }
             }
         }
         if( ! found ) {
             // compile as usual
-//            System.out.println("compiling = "+className);
+            //System.out.println("compiling = "+className);
             this.generatedClassList.add( className );
         }
     }
@@ -651,6 +651,11 @@ public class JavaDialect
 
     public List<KnowledgeBuilderResult> getResults() {
         return this.results;
+    }
+
+    public void clearResults() {
+        this.results.clear();
+        this.errorHandlers.clear();
     }
 
     public String getId() {

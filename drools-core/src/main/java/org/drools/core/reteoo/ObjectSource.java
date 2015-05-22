@@ -28,6 +28,9 @@ import org.drools.core.rule.Pattern;
 import org.drools.core.rule.TypeDeclaration;
 import org.drools.core.spi.ObjectType;
 import org.drools.core.spi.PropagationContext;
+import org.drools.core.util.bitmask.AllSetBitMask;
+import org.drools.core.util.bitmask.BitMask;
+import org.drools.core.util.bitmask.EmptyBitMask;
 
 import java.io.Externalizable;
 import java.io.IOException;
@@ -62,8 +65,8 @@ public abstract class ObjectSource extends BaseNode
     private int                    alphaNodeHashingThreshold;
 
 
-    protected long declaredMask;
-    protected long inferredMask;
+    protected BitMask declaredMask = EmptyBitMask.get();
+    protected BitMask inferredMask = EmptyBitMask.get();
     
     // ------------------------------------------------------------
     // Constructors
@@ -128,7 +131,7 @@ public abstract class ObjectSource extends BaseNode
     public void initDeclaredMask(BuildContext context) {
         if ( context == null || context.getLastBuiltPatterns() == null ) {
             // only happens during unit tests
-            declaredMask = -1L;
+            declaredMask = AllSetBitMask.get();
             return;
         }
         
@@ -137,35 +140,35 @@ public abstract class ObjectSource extends BaseNode
         
         if ( !(objectType instanceof ClassObjectType)) {
             // Only ClassObjectType can use property specific
-            declaredMask = -1L;
+            declaredMask = AllSetBitMask.get();
             return;
         }
         
         Class objectClass = ((ClassObjectType)objectType).getClassType();        
-        TypeDeclaration typeDeclaration = context.getRuleBase().getTypeDeclaration(objectClass);
+        TypeDeclaration typeDeclaration = context.getKnowledgeBase().getTypeDeclaration(objectClass);
         if ( typeDeclaration == null || !typeDeclaration.isPropertyReactive() ) {
             // if property specific is not on, then accept all modification propagations
-            declaredMask = -1L;
+            declaredMask = AllSetBitMask.get();
         } else {
-            List<String> settableProperties = getSettableProperties(context.getRuleBase(), objectClass);
+            List<String> settableProperties = getSettableProperties(context.getKnowledgeBase(), objectClass);
             declaredMask = calculateDeclaredMask(settableProperties);
         }
     }
     
-    public abstract long calculateDeclaredMask(List<String> settableProperties);
+    public abstract BitMask calculateDeclaredMask(List<String> settableProperties);
     
     public void resetInferredMask() {
-        this.inferredMask = 0;
+        this.inferredMask = EmptyBitMask.get();
     }
     
-    public long updateMask(long mask) {
-        long returnMask;
+    public BitMask updateMask(BitMask mask) {
+        BitMask returnMask;
         if ( source.getType() != NodeTypeEnums.ObjectTypeNode ) {
-            returnMask = source.updateMask( declaredMask | mask );
+            returnMask = source.updateMask( declaredMask.clone().setAll( mask ) );
         } else { // else ObjectTypeNode
-            returnMask = declaredMask | mask;
+            returnMask = declaredMask.clone().setAll( mask );
         }
-        inferredMask = inferredMask | returnMask;
+        inferredMask = inferredMask.setAll( returnMask );
         return returnMask;
     }
 
@@ -233,7 +236,7 @@ public abstract class ObjectSource extends BaseNode
     protected void doRemove(final RuleRemovalContext context,
                             final ReteooBuilder builder,
                             final InternalWorkingMemory[] workingMemories) {
-        if ( !context.getRuleBase().getConfiguration().isPhreakEnabled()  && !this.isInUse() && this instanceof MemoryFactory ) {
+        if ( !context.getKnowledgeBase().getConfiguration().isPhreakEnabled()  && !this.isInUse() && this instanceof MemoryFactory ) {
             for( InternalWorkingMemory workingMemory : workingMemories ) {
                 workingMemory.clearNodeMemory( (MemoryFactory) this );
             }
@@ -254,7 +257,7 @@ public abstract class ObjectSource extends BaseNode
         return null;
     }
 
-    public long getDeclaredMask() {
-        return 0L;
+    public BitMask getDeclaredMask() {
+        return EmptyBitMask.get();
     }
 }

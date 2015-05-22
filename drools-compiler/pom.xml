@@ -5,8 +5,8 @@
   <modelVersion>4.0.0</modelVersion>
   <parent>
     <groupId>org.drools</groupId>
-    <artifactId>drools-multiproject</artifactId>
-    <version>6.1.0-SNAPSHOT</version>
+    <artifactId>drools</artifactId>
+    <version>6.3.0-SNAPSHOT</version>
   </parent>
 
   <artifactId>drools-compiler</artifactId>
@@ -25,6 +25,14 @@
       <artifactId>drools-core</artifactId>
       <type>test-jar</type>
       <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.kie</groupId>
+      <artifactId>kie-api</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.kie</groupId>
+      <artifactId>kie-internal</artifactId>
     </dependency>
     <!-- External dependencies -->
     <dependency>
@@ -74,11 +82,6 @@
       <groupId>com.google.protobuf</groupId>
       <artifactId>protobuf-java</artifactId>
     </dependency>
-    <dependency>
-      <groupId>org.quartz-scheduler</groupId>
-      <artifactId>quartz</artifactId>
-      <scope>test</scope>
-    </dependency>
 
     <dependency>
       <groupId>com.sun.xml.bind</groupId>
@@ -91,8 +94,8 @@
       <scope>provided</scope>
     </dependency>
     <dependency>
-      <groupId>javax.xml.bind</groupId>
-      <artifactId>jaxb-api</artifactId>
+      <groupId>org.jboss.spec.javax.xml.bind</groupId>
+      <artifactId>jboss-jaxb-api_2.2_spec</artifactId>
       <scope>provided</scope>
     </dependency>
     <dependency>
@@ -250,15 +253,26 @@
               org.codehaus.janino.*;resolution:=optional,
               org.eclipse.jdt.*;resolution:=optional,
               org.osgi.*;resolution:=optional,
-              org.kie.spring*;resolution:=optional,
+              =org.kie.spring;resolution:=optional,
+              =org.kie.scanner.*;resolution:=optional,
               *
             </Import-Package>
             <Export-Package>
-              *
+              org.drools.compiler.*
             </Export-Package>
             <Bundle-Activator>org.drools.compiler.osgi.Activator</Bundle-Activator>
+            <Provide-Capability>
+              org.ops4j.pax.cdi.extension; extension=kie-cdi
+            </Provide-Capability>
             <_removeheaders>Private-Package</_removeheaders>
           </instructions>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>findbugs-maven-plugin</artifactId>
+        <configuration>
+          <excludeFilterFile>${project.basedir}/src/main/findbugs/findbugs-exclude.xml</excludeFilterFile>
         </configuration>
       </plugin>
     </plugins>

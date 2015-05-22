@@ -6,6 +6,8 @@ import javax.persistence.EntityManager;
 import javax.persistence.LockModeType;
 
 import org.drools.persistence.PersistenceContext;
+import org.drools.persistence.TransactionManager;
+import org.drools.persistence.TransactionManagerHelper;
 import org.drools.persistence.info.SessionInfo;
 import org.drools.persistence.info.WorkItemInfo;
 import org.slf4j.Logger;
@@ -18,38 +20,57 @@ public class JpaPersistenceContext implements PersistenceContext {
     private EntityManager em;
     protected final boolean isJTA;
     protected final boolean pessimisticLocking;
+    protected final TransactionManager txm;
     
-    public JpaPersistenceContext(EntityManager em) {
-        this(em, true, false);
+    public JpaPersistenceContext(EntityManager em, TransactionManager txm) {
+        this(em, true, false, txm);
     }
     
-    public JpaPersistenceContext(EntityManager em, boolean isJTA) {
-       this(em, isJTA, false); 
+    public JpaPersistenceContext(EntityManager em, boolean isJTA, TransactionManager txm) {
+       this(em, isJTA, false, txm);
     }
     
-    public JpaPersistenceContext(EntityManager em, boolean isJTA, boolean locking) {
+    public JpaPersistenceContext(EntityManager em, boolean isJTA, boolean locking, TransactionManager txm) {
         this.em = em;
         this.isJTA = isJTA;
         this.pessimisticLocking = locking;
+        this.txm = txm;
     }
 
     public SessionInfo persist(SessionInfo entity) {
         this.em.persist( entity );
-        if( this.pessimisticLocking ) { 
+        TransactionManagerHelper.addToUpdatableSet(txm, entity);
+        if( this.pessimisticLocking ) {
+            this.em.flush();
             return this.em.find(SessionInfo.class, entity.getId(), LockModeType.PESSIMISTIC_FORCE_INCREMENT );
         }
         return entity;
     }
 
-    public SessionInfo findSessionInfo(Integer id) {
-        if( this.pessimisticLocking ) { 
-            return this.em.find( SessionInfo.class, id, LockModeType.PESSIMISTIC_FORCE_INCREMENT );
+    public SessionInfo findSessionInfo(Long id) {
+
+        SessionInfo sessionInfo = null;
+        if( this.pessimisticLocking ) {
+            sessionInfo = this.em.find( SessionInfo.class, id, LockModeType.PESSIMISTIC_FORCE_INCREMENT );
+            TransactionManagerHelper.addToUpdatableSet(txm, sessionInfo);
+
+            return sessionInfo;
         }
-        return this.em.find( SessionInfo.class, id );
+        sessionInfo = this.em.find( SessionInfo.class, id );
+
+        TransactionManagerHelper.addToUpdatableSet(txm, sessionInfo);
+
+        return sessionInfo;
     }
 
     public void remove(SessionInfo sessionInfo) {
-        em.remove( sessionInfo );
+        if (!em.contains(sessionInfo)) {
+            SessionInfo s = em.getReference(SessionInfo.class, sessionInfo.getId());
+            em.remove( s );
+        } else {
+            em.remove(sessionInfo);
+        }
+        TransactionManagerHelper.removeFromUpdatableSet(txm, sessionInfo);
         em.flush();
     }
     
@@ -73,21 +94,33 @@ public class JpaPersistenceContext implements PersistenceContext {
 
     public WorkItemInfo persist(WorkItemInfo workItemInfo) {
         em.persist( workItemInfo );
-        if( this.pessimisticLocking ) { 
+        TransactionManagerHelper.addToUpdatableSet(txm, workItemInfo);
+        if( this.pessimisticLocking ) {
+            this.em.flush();
             return em.find(WorkItemInfo.class, workItemInfo.getId(), LockModeType.PESSIMISTIC_FORCE_INCREMENT);
         }
+
         return workItemInfo;
     }
 
     public WorkItemInfo findWorkItemInfo(Long id) {
-        if( this.pessimisticLocking ) { 
-            return this.em.find( WorkItemInfo.class, id, LockModeType.PESSIMISTIC_FORCE_INCREMENT );
+        WorkItemInfo workItemInfo = null;
+        if( this.pessimisticLocking ) {
+            workItemInfo = this.em.find( WorkItemInfo.class, id, LockModeType.PESSIMISTIC_FORCE_INCREMENT );
+            TransactionManagerHelper.addToUpdatableSet(txm, workItemInfo);
+
+            return workItemInfo;
         }
-        return em.find( WorkItemInfo.class, id );
+        workItemInfo = em.find( WorkItemInfo.class, id );
+
+        TransactionManagerHelper.addToUpdatableSet(txm, workItemInfo);
+
+        return workItemInfo;
     }
 
     public void remove(WorkItemInfo workItemInfo) {
         em.remove( workItemInfo );
+        TransactionManagerHelper.removeFromUpdatableSet(txm, workItemInfo);
     }
 
     public WorkItemInfo merge(WorkItemInfo workItemInfo) {
@@ -109,6 +142,7 @@ public class JpaPersistenceContext implements PersistenceContext {
                 }
             }
         }
+        TransactionManagerHelper.addToUpdatableSet(txm, workItemInfo);
         return em.merge( workItemInfo );
     }
     
@@ -119,5 +153,6 @@ public class JpaPersistenceContext implements PersistenceContext {
     protected EntityManager getEntityManager() {
         return this.em;
     }
+
 
  }  

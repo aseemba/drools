@@ -6,13 +6,12 @@ import org.drools.core.base.extractors.ArrayElementReader;
 import org.drools.core.base.extractors.MVELObjectClassFieldReader;
 import org.drools.core.base.mvel.MVELCompilationUnit;
 import org.drools.core.common.InternalFactHandle;
-import org.drools.core.common.InternalRuleBase;
 import org.drools.core.common.InternalWorkingMemory;
-import org.drools.core.util.AbstractHashTable.FieldIndex;
-import org.drools.core.util.BitMaskUtil;
-import org.drools.core.util.MemoryUtil;
-import org.drools.core.util.index.IndexUtil;
+import org.drools.core.definitions.InternalKnowledgePackage;
+import org.drools.core.impl.InternalKnowledgeBase;
 import org.drools.core.reteoo.LeftTuple;
+import org.drools.core.reteoo.PropertySpecificUtil;
+import org.drools.core.reteoo.builder.BuildContext;
 import org.drools.core.rule.ContextEntry;
 import org.drools.core.rule.Declaration;
 import org.drools.core.rule.IndexEvaluator;
@@ -30,22 +29,31 @@ import org.drools.core.rule.constraint.ConditionAnalyzer.SingleCondition;
 import org.drools.core.spi.AcceptsReadAccessor;
 import org.drools.core.spi.FieldValue;
 import org.drools.core.spi.InternalReadAccessor;
-import org.kie.internal.concurrent.ExecutorProviderFactory;
+import org.drools.core.util.AbstractHashTable.FieldIndex;
+import org.drools.core.util.MemoryUtil;
+import org.drools.core.util.bitmask.BitMask;
+import org.drools.core.util.index.IndexUtil;
 import org.kie.api.runtime.rule.Variable;
+import org.kie.internal.concurrent.ExecutorProviderFactory;
 import org.mvel2.ParserConfiguration;
 import org.mvel2.compiler.CompiledExpression;
 import org.mvel2.compiler.ExecutableStatement;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.Externalizable;
 import java.io.IOException;
 import java.io.ObjectInput;
 import java.io.ObjectOutput;
 import java.lang.reflect.Method;
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static org.drools.core.reteoo.PropertySpecificUtil.*;
 import static org.drools.core.util.ClassUtils.getter2property;
 import static org.drools.core.util.StringUtils.extractFirstIdentifier;
 import static org.drools.core.util.StringUtils.skipBlanks;
@@ -59,7 +67,7 @@ public class MvelConstraint extends MutableTypeConstraint implements IndexableCo
     protected final transient AtomicInteger invocationCounter = new AtomicInteger(1);
     protected transient boolean jitted = false;
 
-    private String packageName;
+    private Set<String> packageNames;
     protected String expression;
     private IndexUtil.ConstraintType constraintType = IndexUtil.ConstraintType.UNKNOWN;
     private Declaration[] declarations;
@@ -71,18 +79,20 @@ public class MvelConstraint extends MutableTypeConstraint implements IndexableCo
 
     protected MVELCompilationUnit compilationUnit;
 
+    private EvaluationContext evaluationContext = new EvaluationContext();
+
     protected transient volatile ConditionEvaluator conditionEvaluator;
     private transient volatile Condition analyzedCondition;
 
     public MvelConstraint() {}
 
-    public MvelConstraint(String packageName,
+    public MvelConstraint(final String packageName,
                           String expression,
                           MVELCompilationUnit compilationUnit,
                           IndexUtil.ConstraintType constraintType,
                           FieldValue fieldValue,
                           InternalReadAccessor extractor) {
-        this.packageName = packageName;
+        this.packageNames = new HashSet<String>() {{ add(packageName); }};
         this.expression = expression;
         this.compilationUnit = compilationUnit;
         this.constraintType = constraintType;
@@ -91,19 +101,19 @@ public class MvelConstraint extends MutableTypeConstraint implements IndexableCo
         this.extractor = extractor;
     }
 
-    public MvelConstraint(String packageName,
+    public MvelConstraint(final String packageName,
                           String expression,
                           Declaration[] declarations,
                           MVELCompilationUnit compilationUnit,
                           boolean isDynamic) {
-        this.packageName = packageName;
+        this.packageNames = new HashSet<String>() {{ add(packageName); }};
         this.expression = expression;
         this.declarations = declarations;
         this.compilationUnit = compilationUnit;
         this.isDynamic = isDynamic;
     }
 
-    public MvelConstraint(String packageName,
+    public MvelConstraint(Collection<String> packageNames,
                           String expression,
                           Declaration[] declarations,
                           MVELCompilationUnit compilationUnit,
@@ -111,7 +121,7 @@ public class MvelConstraint extends MutableTypeConstraint implements IndexableCo
                           Declaration indexingDeclaration,
                           InternalReadAccessor extractor,
                           boolean isUnification) {
-        this.packageName = packageName;
+        this.packageNames = new HashSet<String>(packageNames);
         this.expression = expression;
         this.compilationUnit = compilationUnit;
         this.constraintType = indexingDeclaration != null ? constraintType : IndexUtil.ConstraintType.UNKNOWN;
@@ -133,8 +143,12 @@ public class MvelConstraint extends MutableTypeConstraint implements IndexableCo
         this.extractor = readAccessor;
     }
 
-    public String getPackageName() {
-        return packageName;
+    public Collection<String> getPackageNames() {
+        return packageNames;
+    }
+
+    public void addPackageNames(Collection<String> otherPkgs) {
+        packageNames.addAll(otherPkgs);
     }
 
     public String getExpression() {
@@ -219,7 +233,7 @@ public class MvelConstraint extends MutableTypeConstraint implements IndexableCo
     protected void createMvelConditionEvaluator(InternalWorkingMemory workingMemory) {
         if (compilationUnit != null) {
             MVELDialectRuntimeData data = getMVELDialectRuntimeData(workingMemory);
-            ExecutableStatement statement = (ExecutableStatement)compilationUnit.getCompiledExpression(data);
+            ExecutableStatement statement = (ExecutableStatement)compilationUnit.getCompiledExpression(data, evaluationContext);
             ParserConfiguration configuration = statement instanceof CompiledExpression ?
                     ((CompiledExpression)statement).getParserConfiguration() :
                     data.getParserConfiguration();
@@ -276,13 +290,13 @@ public class MvelConstraint extends MutableTypeConstraint implements IndexableCo
     }
 
     private void executeJitting(InternalFactHandle handle, InternalWorkingMemory workingMemory, LeftTuple leftTuple) {
-        InternalRuleBase ruleBase = ((InternalRuleBase) workingMemory.getRuleBase());
-        if ( MemoryUtil.permGenStats.isUsageThresholdExceeded(ruleBase.getConfiguration().getPermGenThreshold()) ) {
+        InternalKnowledgeBase kBase = workingMemory.getKnowledgeBase();
+        if ( MemoryUtil.permGenStats.isUsageThresholdExceeded(kBase.getConfiguration().getPermGenThreshold()) ) {
             return;
         }
 
         try {
-            ClassLoader classLoader = ruleBase.getRootClassLoader();
+            ClassLoader classLoader = kBase.getRootClassLoader();
             if (analyzedCondition == null) {
                 analyzedCondition = ((MvelConditionEvaluator) conditionEvaluator).getAnalyzedCondition(handle, workingMemory, leftTuple);
             }
@@ -346,14 +360,14 @@ public class MvelConstraint extends MutableTypeConstraint implements IndexableCo
 
     // Slot specific
 
-    public long getListenedPropertyMask(List<String> settableProperties) {
+    public BitMask getListenedPropertyMask(List<String> settableProperties) {
         return analyzedCondition != null ?
                 calculateMask(analyzedCondition, settableProperties) :
                 calculateMaskFromExpression(settableProperties);
     }
 
-    private long calculateMaskFromExpression(List<String> settableProperties) {
-        long mask = 0;
+    private BitMask calculateMaskFromExpression(List<String> settableProperties) {
+        BitMask mask = getEmptyPropertyReactiveMask(settableProperties.size());
         String[] simpleExpressions = expression.split("\\Q&&\\E|\\Q||\\E");
 
         for (String simpleExpression : simpleExpressions) {
@@ -362,7 +376,7 @@ public class MvelConstraint extends MutableTypeConstraint implements IndexableCo
                 continue;
             }
             if (propertyName.equals("this")) {
-                return Long.MAX_VALUE;
+                return allSetButTraitBitMask();
             }
             int pos = settableProperties.indexOf(propertyName);
             if (pos < 0 && Character.isUpperCase(propertyName.charAt(0))) {
@@ -370,7 +384,7 @@ public class MvelConstraint extends MutableTypeConstraint implements IndexableCo
                 pos = settableProperties.indexOf(propertyName);
             }
             if (pos >= 0) { // Ignore not settable properties
-                mask = BitMaskUtil.set(mask, pos);
+                mask = mask.set(pos + PropertySpecificUtil.CUSTOM_BITS_OFFSET);
             }
         }
 
@@ -403,28 +417,18 @@ public class MvelConstraint extends MutableTypeConstraint implements IndexableCo
         return propertyName;
     }
 
-    private long calculateMask(Condition condition, List<String> settableProperties) {
+    private BitMask calculateMask(Condition condition, List<String> settableProperties) {
         if (condition instanceof SingleCondition) {
             return calculateMask((SingleCondition) condition, settableProperties);
         }
-        long mask = 0L;
+        BitMask mask = getEmptyPropertyReactiveMask(settableProperties.size());;
         for (Condition c : ((CombinedCondition)condition).getConditions()) {
-            mask |= calculateMask(c, settableProperties);
+            String propertyName = getFirstInvokedPropertyName(((SingleCondition) c).getLeft());
+            if (propertyName != null) {
+                mask = setPropertyOnMask(mask, settableProperties, propertyName);
+            }
         }
         return mask;
-    }
-
-    private long calculateMask(SingleCondition condition, List<String> settableProperties) {
-        String propertyName = getFirstInvokedPropertyName(condition.getLeft());
-        if (propertyName == null) {
-            return Long.MAX_VALUE;
-        }
-
-        int pos = settableProperties.indexOf(propertyName);
-        if (pos < 0) {
-            throw new RuntimeException("Unknown property: " + propertyName);
-        }
-        return 1L << pos;
     }
 
     private String getFirstInvokedPropertyName(Expression expression) {
@@ -462,7 +466,7 @@ public class MvelConstraint extends MutableTypeConstraint implements IndexableCo
 
     public void writeExternal(ObjectOutput out) throws IOException {
         super.writeExternal(out);
-        out.writeObject(packageName);
+        out.writeObject(packageNames);
         out.writeObject(expression);
         out.writeObject(declarations);
         out.writeObject(indexingDeclaration);
@@ -472,11 +476,12 @@ public class MvelConstraint extends MutableTypeConstraint implements IndexableCo
         out.writeBoolean(isDynamic);
         out.writeObject(fieldValue);
         out.writeObject(compilationUnit);
+        out.writeObject(evaluationContext);
     }
 
     public void readExternal(ObjectInput in) throws IOException, ClassNotFoundException {
         super.readExternal(in);
-        packageName = (String)in.readObject();
+        packageNames = (Set<String>)in.readObject();
         expression = (String)in.readObject();
         declarations = (Declaration[]) in.readObject();
         indexingDeclaration = (Declaration) in.readObject();
@@ -486,6 +491,7 @@ public class MvelConstraint extends MutableTypeConstraint implements IndexableCo
         isDynamic = in.readBoolean();
         fieldValue = (FieldValue) in.readObject();
         compilationUnit = (MVELCompilationUnit) in.readObject();
+        evaluationContext = (EvaluationContext) in.readObject();
     }
 
     public boolean isTemporal() {
@@ -507,8 +513,9 @@ public class MvelConstraint extends MutableTypeConstraint implements IndexableCo
 
         MvelConstraint clone = new MvelConstraint();
         clone.setType(getType());
-        clone.packageName = packageName;
+        clone.packageNames = packageNames;
         clone.expression = expression;
+        clone.fieldValue = fieldValue;
         clone.constraintType = constraintType;
         clone.declarations = clonedDeclarations;
         clone.indexingDeclaration = indexingDeclaration;
@@ -575,7 +582,13 @@ public class MvelConstraint extends MutableTypeConstraint implements IndexableCo
     }
 
     protected MVELDialectRuntimeData getMVELDialectRuntimeData(InternalWorkingMemory workingMemory) {
-        return ((MVELDialectRuntimeData)workingMemory.getRuleBase().getPackage(packageName).getDialectRuntimeRegistry().getDialectData( "mvel" ));
+        for (String packageName : packageNames) {
+            InternalKnowledgePackage pkg = workingMemory.getKnowledgeBase().getPackage(packageName);
+            if (pkg != null) {
+                return ((MVELDialectRuntimeData) pkg.getDialectRuntimeRegistry().getDialectData("mvel"));
+            }
+        }
+        return null;
     }
 
     // MvelArrayContextEntry
@@ -701,13 +714,10 @@ public class MvelConstraint extends MutableTypeConstraint implements IndexableCo
         public void updateFromTuple(InternalWorkingMemory workingMemory,
                                     LeftTuple tuple) {
             DroolsQuery query = ( DroolsQuery ) tuple.get( 0 ).getObject();
-            Variable v = query.getVariables()[ this.reader.getIndex() ];
-            if ( v == null ) {
+            this.variable = query.getVariables()[ this.reader.getIndex() ];
+            if ( this.variable == null ) {
                 // if there is no Variable, handle it as a normal constraint
-                this.variable = null;
                 this.contextEntry.updateFromTuple( workingMemory, tuple );
-            } else {
-                this.variable = v;
             }
         }
 
@@ -743,6 +753,34 @@ public class MvelConstraint extends MutableTypeConstraint implements IndexableCo
                 return value2 != null && value1.equals(value2.toString());
             }
             return value1.equals( value2 );
+        }
+    }
+
+    public void registerEvaluationContext(BuildContext buildContext) {
+        evaluationContext.addContext(buildContext);
+    }
+
+    public static class EvaluationContext implements Externalizable {
+
+        private Collection<String> evaluatedRules = new HashSet<String>();
+
+        public void addContext(BuildContext buildContext) {
+            evaluatedRules.add(buildContext.getRule().toRuleNameAndPathString());
+        }
+
+        @Override
+        public void writeExternal(ObjectOutput out) throws IOException {
+            out.writeObject(evaluatedRules);
+        }
+
+        @Override
+        public void readExternal(ObjectInput in) throws IOException, ClassNotFoundException {
+            evaluatedRules = (Collection<String>)in.readObject();
+        }
+
+        @Override
+        public String toString() {
+            return evaluatedRules.toString();
         }
     }
 }

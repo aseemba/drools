@@ -8,11 +8,11 @@ import org.drools.core.common.InternalAgendaGroup;
 import org.drools.core.common.InternalFactHandle;
 import org.drools.core.common.InternalWorkingMemory;
 import org.drools.core.common.LeftTupleSets;
+import org.drools.core.definitions.rule.impl.RuleImpl;
 import org.drools.core.reteoo.LeftTuple;
 import org.drools.core.reteoo.RuleTerminalNode;
 import org.drools.core.reteoo.RuleTerminalNodeLeftTuple;
 import org.drools.core.reteoo.TerminalNode;
-import org.drools.core.rule.Rule;
 import org.drools.core.spi.Activation;
 import org.drools.core.spi.PropagationContext;
 import org.drools.core.spi.Salience;
@@ -31,7 +31,7 @@ public class PhreakRuleTerminalNode {
                        LeftTupleSets srcLeftTuples,
                        RuleExecutor executor) {
         if (srcLeftTuples.getDeleteFirst() != null) {
-            doLeftDeletes(rtnNode, wm, srcLeftTuples, executor);
+            doLeftDeletes(wm, srcLeftTuples, executor);
         }
 
         if (srcLeftTuples.getUpdateFirst() != null) {
@@ -55,7 +55,7 @@ public class PhreakRuleTerminalNode {
         int salienceInt = 0;
         Salience salience = ruleAgendaItem.getRule().getSalience();
         if ( !salience.isDynamic() ) {
-            salienceInt = ruleAgendaItem.getRule().getSalience().getValue();
+            salienceInt = salience.getValue();
             salience = null;
         }
 
@@ -98,7 +98,7 @@ public class PhreakRuleTerminalNode {
               leftTuple.getPropagationContext().getType() != org.kie.api.runtime.rule.PropagationContext.RULE_ADDITION ) {
             long handleRecency = ((InternalFactHandle) pctx.getFactHandle()).getRecency();
             InternalAgendaGroup agendaGroup = executor.getRuleAgendaItem().getAgendaGroup();
-            if (blockedByLockOnActive(rtnNode.getRule(), agenda, pctx, handleRecency, agendaGroup)) {
+            if (blockedByLockOnActive(rtnNode.getRule(), pctx, handleRecency, agendaGroup)) {
                 es.getAgendaEventSupport().fireActivationCancelled(rtnLeftTuple, wm, MatchCancelledCause.FILTER );
                 return;
             }
@@ -132,8 +132,7 @@ public class PhreakRuleTerminalNode {
         int salienceInt = 0;
         Salience salience = ruleAgendaItem.getRule().getSalience();
         if ( !salience.isDynamic() ) {
-            salienceInt = ruleAgendaItem.getRule().getSalience().getValue();
-        } else {
+            salienceInt = salience.getValue();
             salience = null;
         }
 
@@ -182,7 +181,7 @@ public class PhreakRuleTerminalNode {
 
                 long handleRecency = ((InternalFactHandle) pctx.getFactHandle()).getRecency();
                 InternalAgendaGroup agendaGroup = executor.getRuleAgendaItem().getAgendaGroup();
-                if (blockedByLockOnActive(rtnNode.getRule(), agenda, pctx, handleRecency, agendaGroup)) {
+                if (blockedByLockOnActive(rtnNode.getRule(), pctx, handleRecency, agendaGroup)) {
                     addToExector = false;
                 }
             }
@@ -207,8 +206,7 @@ public class PhreakRuleTerminalNode {
         }
     }
 
-    public void doLeftDeletes(TerminalNode rtnNode,
-                              InternalWorkingMemory wm,
+    public void doLeftDeletes(InternalWorkingMemory wm,
                               LeftTupleSets srcLeftTuples,
                               RuleExecutor executor) {
 
@@ -246,8 +244,7 @@ public class PhreakRuleTerminalNode {
         leftTuple.setObject(null);
     }
 
-    private static boolean blockedByLockOnActive(Rule rule,
-                                          InternalAgenda agenda,
+    private static boolean blockedByLockOnActive(RuleImpl rule,
                                           PropagationContext pctx,
                                           long handleRecency,
                                           InternalAgendaGroup agendaGroup) {

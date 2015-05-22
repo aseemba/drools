@@ -17,19 +17,19 @@
 package org.drools.core.reteoo;
 
 import org.drools.core.RuleBaseConfiguration;
-import org.drools.core.RuntimeDroolsException;
 import org.drools.core.common.InternalFactHandle;
-import org.drools.core.common.InternalKnowledgeRuntime;
 import org.drools.core.common.InternalWorkingMemory;
 import org.drools.core.common.Memory;
 import org.drools.core.common.MemoryFactory;
 import org.drools.core.common.WorkingMemoryAction;
-import org.drools.core.impl.StatefulKnowledgeSessionImpl;
 import org.drools.core.marshalling.impl.MarshallerReaderContext;
 import org.drools.core.marshalling.impl.MarshallerWriteContext;
 import org.drools.core.marshalling.impl.ProtobufMessages;
+import org.drools.core.phreak.PropagationEntry;
 import org.drools.core.reteoo.builder.BuildContext;
 import org.drools.core.spi.PropagationContext;
+import org.drools.core.util.bitmask.BitMask;
+import org.drools.core.util.bitmask.EmptyBitMask;
 
 import java.io.Externalizable;
 import java.io.IOException;
@@ -38,8 +38,6 @@ import java.io.ObjectOutput;
 import java.util.List;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
-
-import static org.drools.core.util.BitMaskUtil.intersect;
 
 /**
  * A node that will add the propagation to the working memory actions queue,
@@ -77,16 +75,16 @@ public class PropagationQueuingNode extends ObjectSource
                                   final BuildContext context) {
         super( id,
                context.getPartitionId(),
-               context.getRuleBase().getConfiguration().isMultithreadEvaluation(),
+               context.getKnowledgeBase().getConfiguration().isMultithreadEvaluation(),
                objectSource,
-               context.getRuleBase().getConfiguration().getAlphaNodeHashingThreshold() );
+               context.getKnowledgeBase().getConfiguration().getAlphaNodeHashingThreshold() );
         this.action = new PropagateAction( this );
         initDeclaredMask(context);
     }
     
     @Override
-    public long calculateDeclaredMask(List<String> settableProperties) {
-        return 0;
+    public BitMask calculateDeclaredMask(List<String> settableProperties) {
+        return EmptyBitMask.get();
     }      
 
     public void readExternal( ObjectInput in ) throws IOException,
@@ -112,7 +110,7 @@ public class PropagationQueuingNode extends ObjectSource
 
         // this is just sanity code. We may remove it in the future, but keeping it for now.
         if ( !memory.isEmpty() ) {
-            throw new RuntimeDroolsException( "Error updating sink. Not safe to update sink as the PropagatingQueueingNode memory is not empty at node: " + this.toString() );
+            throw new RuntimeException( "Error updating sink. Not safe to update sink as the PropagatingQueueingNode memory is not empty at node: " + this.toString() );
         }
 
         // as this node is simply a queue, ask object source to update the child sink directly
@@ -212,14 +210,14 @@ public class PropagationQueuingNode extends ObjectSource
             if ( rightTuple != null && rightTuple.getRightTupleSink().getRightInputOtnId().equals( betaNode.getRightInputOtnId() ) ) {
                 modifyPreviousTuples.removeRightTuple();
                 rightTuple.reAdd();
-                if ( intersect( context.getModificationMask(), betaNode.getRightInferredMask() ) ) {
+                if ( context.getModificationMask().intersects( betaNode.getRightInferredMask() ) ) {
                     // RightTuple previously existed, so continue as modify
                     memory.addAction( new ModifyToSinkAction( rightTuple,
                                                               context,
                                                               betaNode ) );
                 }
             } else {
-                if ( intersect( context.getModificationMask(), betaNode.getRightInferredMask() ) ) {
+                if ( context.getModificationMask().intersects( betaNode.getRightInferredMask() ) ) {
                     // RightTuple does not exist for this node, so create and continue as assert
                     memory.addAction( new AssertToSinkAction( factHandle,
                                                               context,
@@ -375,7 +373,7 @@ public class PropagationQueuingNode extends ObjectSource
         }
 
         public SegmentMemory getSegmentMemory() {
-            throw new UnsupportedOperationException();
+            return null;
         }
 
         public void setSegmentMemory(SegmentMemory segmentMemory) {
@@ -384,6 +382,11 @@ public class PropagationQueuingNode extends ObjectSource
 
         public void nullPrevNext() {
             throw new UnsupportedOperationException();
+        }
+
+        public void reset() {
+            queue.clear();
+            isQueued.set(false);
         }
     }
 
@@ -541,7 +544,8 @@ public class PropagationQueuingNode extends ObjectSource
      * this node propagation can be triggered at a safe point
      */
     public static class PropagateAction
-        implements
+            extends PropagationEntry.AbstractPropagationEntry
+            implements
         WorkingMemoryAction {
 
         private static final long      serialVersionUID = 6765029029501617115L;
@@ -565,11 +569,6 @@ public class PropagationQueuingNode extends ObjectSource
             this.node = (PropagationQueuingNode) context.sinks.get( _action.getPropagate().getNodeId() );
         }
 
-        public void write( MarshallerWriteContext context ) throws IOException {
-            context.writeShort( WorkingMemoryAction.PropagateAction );
-            context.write( node.getId() );
-        }
-        
         public ProtobufMessages.ActionQueue.Action serialize( MarshallerWriteContext context ) {
             return ProtobufMessages.ActionQueue.Action.newBuilder()
                     .setType( ProtobufMessages.ActionQueue.ActionType.PROPAGATE )
@@ -579,21 +578,8 @@ public class PropagationQueuingNode extends ObjectSource
                     .build();
         }
 
-        public void readExternal( ObjectInput in ) throws IOException,
-                                                  ClassNotFoundException {
-            node = (PropagationQueuingNode) in.readObject();
-        }
-
-        public void writeExternal( ObjectOutput out ) throws IOException {
-            out.writeObject( node );
-        }
-
         public void execute( InternalWorkingMemory workingMemory ) {
             this.node.propagateActions( workingMemory );
-        }
-
-        public void execute( InternalKnowledgeRuntime kruntime ) {
-            execute( ((StatefulKnowledgeSessionImpl) kruntime).getInternalWorkingMemory() );
         }
     }
 

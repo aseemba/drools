@@ -30,7 +30,7 @@ public class RuleAgendaItem extends AgendaItemImpl implements LinkedListNode<Rul
                           final TerminalNode rtn,
                           boolean declarativeAgendaEnabled,
                           InternalAgendaGroup agendaGroup) {
-        super(activationNumber, tuple, salience, context, rtn, null, agendaGroup);
+        super(activationNumber, tuple, salience, context, rtn, agendaGroup);
         executor = new RuleExecutor(pmem, this, declarativeAgendaEnabled);
     }
 
@@ -73,5 +73,25 @@ public class RuleAgendaItem extends AgendaItemImpl implements LinkedListNode<Rul
     public void nullPrevNext() {
         previous = null;
         next = null;
+    }
+
+    @Override
+    public boolean equals(final Object object) {
+        if (object == this) {
+            return true;
+        }
+
+        return object instanceof RuleAgendaItem && getRule().equals(((RuleAgendaItem) object).getRule());
+    }
+
+    /**
+     * Return the hashCode of the
+     * <code>TupleKey<code> as the hashCode of the AgendaItem
+     *
+     * @return
+     */
+    @Override
+    public int hashCode() {
+        return getRule().hashCode();
     }
 }

@@ -21,6 +21,7 @@ import org.drools.workbench.models.datamodel.oracle.DataType;
 import org.drools.workbench.models.datamodel.rule.ActionFieldValue;
 import org.drools.workbench.models.datamodel.rule.ActionInsertFact;
 import org.drools.workbench.models.datamodel.rule.ActionSetField;
+import org.drools.workbench.models.datamodel.rule.ActionUpdateField;
 import org.drools.workbench.models.datamodel.rule.BaseSingleFieldConstraint;
 import org.drools.workbench.models.datamodel.rule.CompositeFactPattern;
 import org.drools.workbench.models.datamodel.rule.CompositeFieldConstraint;
@@ -33,7 +34,6 @@ import org.drools.workbench.models.datamodel.rule.RuleModel;
 import org.drools.workbench.models.datamodel.rule.SingleFieldConstraint;
 import org.drools.workbench.models.guided.template.shared.TemplateModel;
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import static org.junit.Assert.*;
@@ -57,6 +57,63 @@ public class RuleTemplateModelDRLPersistenceTest {
     }
 
     @Test
+    public void testInWithSimpleSingleLiteralValue() {
+        TemplateModel m = new TemplateModel();
+        m.name = "t1";
+
+        FactPattern p = new FactPattern( "Person" );
+        SingleFieldConstraint con = new SingleFieldConstraint();
+        con.setFieldType( DataType.TYPE_STRING );
+        con.setFieldName( "field1" );
+        con.setOperator( "in" );
+        con.setValue( "$f1" );
+        con.setConstraintValueType( SingleFieldConstraint.TYPE_TEMPLATE );
+        p.addConstraint( con );
+
+        m.addLhsItem( p );
+
+        m.addRow( new String[]{ "ak1,mk1" } );
+        m.addRow( new String[]{ "(ak2,mk2)" } );
+        m.addRow( new String[]{ "( ak3, mk3 )" } );
+        m.addRow( new String[]{ "( \"ak4\", \"mk4\" )" } );
+        m.addRow( new String[]{ "( \"ak5 \", \" mk5\" )" } );
+
+        String expected = "rule \"t1_4\"" +
+                "dialect \"mvel\"\n" +
+                "when \n" +
+                "  Person( field1 in (\"ak5 \",\" mk5\") )" +
+                "then \n" +
+                "end" +
+                "rule \"t1_3\"" +
+                "dialect \"mvel\"\n" +
+                "when \n" +
+                "  Person( field1 in (\"ak4\",\"mk4\") )" +
+                "then \n" +
+                "end" +
+                "rule \"t1_2\"" +
+                "dialect \"mvel\"\n" +
+                "when \n" +
+                "  Person( field1 in (\"ak3\",\"mk3\") )" +
+                "then \n" +
+                "end" +
+                "rule \"t1_1\"" +
+                "dialect \"mvel\"\n" +
+                "when \n" +
+                "  Person( field1 in (\"ak2\",\"mk2\") )" +
+                "then \n" +
+                "end" +
+                "rule \"t1_0\"" +
+                "dialect \"mvel\"\n" +
+                "when \n" +
+                "  Person( field1 in (\"ak1\",\"mk1\") )" +
+                "then \n" +
+                "end";
+
+        checkMarshall( expected,
+                       m );
+    }
+
+    @Test
     public void testSimpleSingleValue() {
         TemplateModel m = new TemplateModel();
         m.name = "t1";
@@ -76,10 +133,10 @@ public class RuleTemplateModelDRLPersistenceTest {
 
         String expected = "rule \"t1_0\"" +
                 "dialect \"mvel\"\n" +
-                "when \n"
-                + "Person( field1 == \"foo\" )"
-                + "then \n"
-                + "end";
+                "when \n" +
+                "Person( field1 == \"foo\" )" +
+                "then \n" +
+                "end";
 
         checkMarshall( expected,
                        m );
@@ -112,13 +169,13 @@ public class RuleTemplateModelDRLPersistenceTest {
 
         String expected = "rule \"t1_0\"" +
                 "dialect \"mvel\"\n" +
-                "when \n"
-                + "Person( field1 == \"foo\" )\n"
-                + "then \n"
-                + "  Applicant fact0 = new Applicant(); \n"
-                + "  fact0.setAge(123); \n"
-                + "  insert(fact0); \n"
-                + "end";
+                "when \n" +
+                "Person( field1 == \"foo\" )\n" +
+                "then \n" +
+                "  Applicant fact0 = new Applicant(); \n" +
+                "  fact0.setAge(123); \n" +
+                "  insert(fact0); \n" +
+                "end";
 
         checkMarshall( expected,
                        m );
@@ -152,10 +209,10 @@ public class RuleTemplateModelDRLPersistenceTest {
 
         String expected = "rule \"t1_0\"" +
                 "dialect \"mvel\"\n" +
-                "when \n"
-                + "Person( field1 == \"foo\", field2 == \"bar\" )"
-                + "then \n"
-                + "end";
+                "when \n" +
+                "Person( field1 == \"foo\", field2 == \"bar\" )" +
+                "then \n" +
+                "end";
 
         checkMarshall( expected,
                        m );
@@ -189,10 +246,10 @@ public class RuleTemplateModelDRLPersistenceTest {
 
         String expected = "rule \"t1_0\"" +
                 "dialect \"mvel\"\n" +
-                "when \n"
-                + "Person( field1 == \"foo\", field2 == \"bar\" )"
-                + "then \n"
-                + "end";
+                "when \n" +
+                "Person( field1 == \"foo\", field2 == \"bar\" )" +
+                "then \n" +
+                "end";
 
         checkMarshall( expected,
                        m );
@@ -226,10 +283,10 @@ public class RuleTemplateModelDRLPersistenceTest {
 
         String expected = "rule \"t1_0\"" +
                 "dialect \"mvel\"\n" +
-                "when \n"
-                + "Person( field1 == \"foo\" )"
-                + "then \n"
-                + "end";
+                "when \n" +
+                "Person( field1 == \"foo\" )" +
+                "then \n" +
+                "end";
 
         checkMarshall( expected,
                        m );
@@ -263,10 +320,10 @@ public class RuleTemplateModelDRLPersistenceTest {
 
         String expected = "rule \"t1_0\"" +
                 "dialect \"mvel\"\n" +
-                "when \n"
-                + "Person( field2 == \"bar\" )"
-                + "then \n"
-                + "end";
+                "when \n" +
+                "Person( field2 == \"bar\" )" +
+                "then \n" +
+                "end";
 
         checkMarshall( expected,
                        m );
@@ -300,10 +357,10 @@ public class RuleTemplateModelDRLPersistenceTest {
 
         String expected = "rule \"t1_0\"" +
                 "dialect \"mvel\"\n" +
-                "when \n"
-                + "Person( field1 == \"foo\", field2 == \"bar\" )"
-                + "then \n"
-                + "end";
+                "when \n" +
+                "Person( field1 == \"foo\", field2 == \"bar\" )" +
+                "then \n" +
+                "end";
 
         checkMarshall( expected,
                        m );
@@ -1490,7 +1547,6 @@ public class RuleTemplateModelDRLPersistenceTest {
     }
 
     @Test
-    @Ignore("Second CompositeFieldConstraint is incorrectly prefixed with ',' separator from the first CompositeFieldConstraint")
     public void testNestedCompositeConstraints4ThirdValue() {
         TemplateModel m = new TemplateModel();
         m.name = "t1";
@@ -1555,7 +1611,6 @@ public class RuleTemplateModelDRLPersistenceTest {
     }
 
     @Test
-    @Ignore("Second CompositeFieldConstraint is incorrectly prefixed with ',' separator from the first CompositeFieldConstraint")
     public void testNestedCompositeConstraints4FourthValue() {
         TemplateModel m = new TemplateModel();
         m.name = "t1";
@@ -1957,7 +2012,6 @@ public class RuleTemplateModelDRLPersistenceTest {
         String expected = "rule \"t1_0\"\n" +
                 "dialect \"mvel\"\n" +
                 "when\n" +
-                "Person( )\n" +
                 "then\n" +
                 "end\n";
 
@@ -2481,12 +2535,12 @@ public class RuleTemplateModelDRLPersistenceTest {
         fac.setFactPattern( new FactPattern( "java.util.List" ) );
         m.addLhsItem( fac );
 
-        String expected = "rule \"r1_0\"\n"
-                + "dialect \"mvel\"\n"
-                + "when\n"
-                + "java.util.List( ) from collect ( Person( field1 == \"foo\" ) ) \n"
-                + "then\n"
-                + "end";
+        String expected = "rule \"r1_0\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "java.util.List( ) from collect ( Person( field1 == \"foo\" ) ) \n" +
+                "then\n" +
+                "end";
 
         m.addRow( new String[]{ "foo" } );
 
@@ -2520,12 +2574,12 @@ public class RuleTemplateModelDRLPersistenceTest {
         fac.setFactPattern( fp2 );
         m.addLhsItem( fac );
 
-        String expected = "rule \"r1_0\"\n"
-                + "dialect \"mvel\"\n"
-                + "when\n"
-                + "java.util.List( size > 1 ) from collect ( Person( field1 == \"foo\" ) ) \n"
-                + "then\n"
-                + "end";
+        String expected = "rule \"r1_0\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "java.util.List( size > 1 ) from collect ( Person( field1 == \"foo\" ) ) \n" +
+                "then\n" +
+                "end";
 
         m.addRow( new String[]{ "1", "foo" } );
 
@@ -2559,12 +2613,12 @@ public class RuleTemplateModelDRLPersistenceTest {
         fac.setFactPattern( fp2 );
         m.addLhsItem( fac );
 
-        String expected = "rule \"r1_0\"\n"
-                + "dialect \"mvel\"\n"
-                + "when\n"
-                + "java.util.List( size > 1 ) from collect ( Person( ) )\n"
-                + "then\n"
-                + "end";
+        String expected = "rule \"r1_0\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "java.util.List( size > 1 ) from collect ( Person( ) )\n" +
+                "then\n" +
+                "end";
 
         m.addRow( new String[]{ "1", null } );
 
@@ -2598,12 +2652,12 @@ public class RuleTemplateModelDRLPersistenceTest {
         fac.setFactPattern( fp2 );
         m.addLhsItem( fac );
 
-        String expected = "rule \"r1_0\"\n"
-                + "dialect \"mvel\"\n"
-                + "when\n"
-                + "java.util.List() from collect ( Person( field1 == \"foo\" ) )"
-                + "then\n"
-                + "end";
+        String expected = "rule \"r1_0\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "java.util.List() from collect ( Person( field1 == \"foo\" ) )" +
+                "then\n" +
+                "end";
 
         m.addRow( new String[]{ null, "foo" } );
 
@@ -2626,12 +2680,12 @@ public class RuleTemplateModelDRLPersistenceTest {
         fac.setFactPattern( fp );
         m.addLhsItem( fac );
 
-        String expected = "rule \"r1_0\"\n"
-                + "dialect \"mvel\"\n"
-                + "when\n"
-                + "java.util.List() from collect ( Person( field1 == \"foo\", field2 == \"bar\" ) ) \n"
-                + "then\n"
-                + "end";
+        String expected = "rule \"r1_0\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "java.util.List() from collect ( Person( field1 == \"foo\", field2 == \"bar\" ) ) \n" +
+                "then\n" +
+                "end";
 
         m.addRow( new String[]{ "foo", "bar" } );
 
@@ -2654,11 +2708,11 @@ public class RuleTemplateModelDRLPersistenceTest {
         fac.setFactPattern( fp );
         m.addLhsItem( fac );
 
-        String expected = "rule \"r1_0\"\n"
-                + "dialect \"mvel\"\n"
-                + "when\n"
-                + "then\n"
-                + "end";
+        String expected = "rule \"r1_0\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "then\n" +
+                "end";
 
         m.addRow( new String[]{ "foo", null } );
 
@@ -2681,11 +2735,11 @@ public class RuleTemplateModelDRLPersistenceTest {
         fac.setFactPattern( fp );
         m.addLhsItem( fac );
 
-        String expected = "rule \"r1_0\"\n"
-                + "dialect \"mvel\"\n"
-                + "when\n"
-                + "then\n"
-                + "end";
+        String expected = "rule \"r1_0\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "then\n" +
+                "end";
 
         m.addRow( new String[]{ null, "foo" } );
 
@@ -2726,12 +2780,12 @@ public class RuleTemplateModelDRLPersistenceTest {
         fac.setFactPattern( fp2 );
         m.addLhsItem( fac );
 
-        String expected = "rule \"r1_0\"\n"
-                + "dialect \"mvel\"\n"
-                + "when\n"
-                + "java.util.List( size > 1 ) from collect ( Person( field1 == \"foo\", field2 == \"bar\" ) ) \n"
-                + "then\n"
-                + "end";
+        String expected = "rule \"r1_0\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "java.util.List( size > 1 ) from collect ( Person( field1 == \"foo\", field2 == \"bar\" ) ) \n" +
+                "then\n" +
+                "end";
 
         m.addRow( new String[]{ "1", "foo", "bar" } );
 
@@ -2772,12 +2826,12 @@ public class RuleTemplateModelDRLPersistenceTest {
         fac.setFactPattern( fp2 );
         m.addLhsItem( fac );
 
-        String expected = "rule \"r1_0\"\n"
-                + "dialect \"mvel\"\n"
-                + "when\n"
-                + "java.util.List( size > 1 ) from collect ( Person( field1 == \"foo\" ) ) \n"
-                + "then\n"
-                + "end";
+        String expected = "rule \"r1_0\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "java.util.List( size > 1 ) from collect ( Person( field1 == \"foo\" ) ) \n" +
+                "then\n" +
+                "end";
 
         m.addRow( new String[]{ "1", "foo", null } );
 
@@ -2818,12 +2872,12 @@ public class RuleTemplateModelDRLPersistenceTest {
         fac.setFactPattern( fp2 );
         m.addLhsItem( fac );
 
-        String expected = "rule \"r1_0\"\n"
-                + "dialect \"mvel\"\n"
-                + "when\n"
-                + "java.util.List( size > 1 ) from collect ( Person( field2 == \"bar\" ) ) \n"
-                + "then\n"
-                + "end";
+        String expected = "rule \"r1_0\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "java.util.List( size > 1 ) from collect ( Person( field2 == \"bar\" ) ) \n" +
+                "then\n" +
+                "end";
 
         m.addRow( new String[]{ "1", null, "bar" } );
 
@@ -2840,12 +2894,12 @@ public class RuleTemplateModelDRLPersistenceTest {
         ffl.setText( "Person( field1 == \"@{f1}\", field2 == \"@{f2}\" )" );
         m.addLhsItem( ffl );
 
-        String expected = "rule \"r1_0\"\n"
-                + "dialect \"mvel\"\n"
-                + "when\n"
-                + "Person( field1 == \"foo\", field2 == \"bar\" ) \n"
-                + "then\n"
-                + "end";
+        String expected = "rule \"r1_0\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "Person( field1 == \"foo\", field2 == \"bar\" ) \n" +
+                "then\n" +
+                "end";
 
         m.addRow( new String[]{ "foo", "bar" } );
 
@@ -2862,11 +2916,11 @@ public class RuleTemplateModelDRLPersistenceTest {
         ffl.setText( "Person( field1 == \"@{f1}\", field2 == \"@{f2}\" )" );
         m.addLhsItem( ffl );
 
-        String expected = "rule \"r1_0\"\n"
-                + "dialect \"mvel\"\n"
-                + "when\n"
-                + "then\n"
-                + "end";
+        String expected = "rule \"r1_0\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "then\n" +
+                "end";
 
         m.addRow( new String[]{ "foo", null } );
 
@@ -2883,11 +2937,11 @@ public class RuleTemplateModelDRLPersistenceTest {
         ffl.setText( "Person( field1 == \"@{f1}\", field2 == \"@{f2}\" )" );
         m.addLhsItem( ffl );
 
-        String expected = "rule \"r1_0\"\n"
-                + "dialect \"mvel\"\n"
-                + "when\n"
-                + "then\n"
-                + "end";
+        String expected = "rule \"r1_0\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "then\n" +
+                "end";
 
         m.addRow( new String[]{ null, "bar" } );
 
@@ -2904,12 +2958,12 @@ public class RuleTemplateModelDRLPersistenceTest {
         ffl.setText( "System.println( \"@{f1}\" + \"@{f2}\" );" );
         m.addRhsItem( ffl );
 
-        String expected = "rule \"r1_0\"\n"
-                + "dialect \"mvel\"\n"
-                + "when\n"
-                + "then\n"
-                + "System.println( \"foo\" + \"bar\" );"
-                + "end";
+        String expected = "rule \"r1_0\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "then\n" +
+                "System.println( \"foo\" + \"bar\" );" +
+                "end";
 
         m.addRow( new String[]{ "foo", "bar" } );
 
@@ -2926,11 +2980,11 @@ public class RuleTemplateModelDRLPersistenceTest {
         ffl.setText( "System.println( \"@{f1}\" + \"@{f2}\" );" );
         m.addRhsItem( ffl );
 
-        String expected = "rule \"r1_0\"\n"
-                + "dialect \"mvel\"\n"
-                + "when\n"
-                + "then\n"
-                + "end";
+        String expected = "rule \"r1_0\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "then\n" +
+                "end";
 
         m.addRow( new String[]{ "foo", null } );
 
@@ -2947,11 +3001,11 @@ public class RuleTemplateModelDRLPersistenceTest {
         ffl.setText( "System.println( \"@{f1}\" + \"@{f2}\" );" );
         m.addRhsItem( ffl );
 
-        String expected = "rule \"r1_0\"\n"
-                + "dialect \"mvel\"\n"
-                + "when\n"
-                + "then\n"
-                + "end";
+        String expected = "rule \"r1_0\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "then\n" +
+                "end";
 
         m.addRow( new String[]{ null, "bar" } );
 
@@ -2983,16 +3037,16 @@ public class RuleTemplateModelDRLPersistenceTest {
 
         m.addRhsItem( aif );
 
-        String expected = "rule \"r1_0\"\n"
-                + "dialect \"mvel\"\n"
-                + "when\n"
-                + "$p : Person()\n"
-                + "then\n"
-                + "Present f0 = new Present();\n"
-                + "f0.setField1(\"foo\");\n"
-                + "f0.setField2(\"bar\");\n"
-                + "insert(f0);\n"
-                + "end";
+        String expected = "rule \"r1_0\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "$p : Person()\n" +
+                "then\n" +
+                "Present f0 = new Present();\n" +
+                "f0.setField1(\"foo\");\n" +
+                "f0.setField2(\"bar\");\n" +
+                "insert(f0);\n" +
+                "end";
 
         m.addRow( new String[]{ "foo", "bar" } );
 
@@ -3024,14 +3078,14 @@ public class RuleTemplateModelDRLPersistenceTest {
 
         m.addRhsItem( aif );
 
-        String expected = "rule \"r1_0\"\n"
-                + "dialect \"mvel\"\n"
-                + "when\n"
-                + "$p : Person()\n"
-                + "then\n"
-                + "Present f0 = new Present();\n"
-                + "insert(f0);\n"
-                + "end";
+        String expected = "rule \"r1_0\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "$p : Person()\n" +
+                "then\n" +
+                "Present f0 = new Present();\n" +
+                "insert(f0);\n" +
+                "end";
 
         m.addRow( new String[]{ null, null } );
 
@@ -3063,15 +3117,15 @@ public class RuleTemplateModelDRLPersistenceTest {
 
         m.addRhsItem( aif );
 
-        String expected = "rule \"r1_0\"\n"
-                + "dialect \"mvel\"\n"
-                + "when\n"
-                + "$p : Person()\n"
-                + "then\n"
-                + "Present f0 = new Present();\n"
-                + "f0.setField1(\"foo\");\n"
-                + "insert(f0);\n"
-                + "end";
+        String expected = "rule \"r1_0\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "$p : Person()\n" +
+                "then\n" +
+                "Present f0 = new Present();\n" +
+                "f0.setField1(\"foo\");\n" +
+                "insert(f0);\n" +
+                "end";
 
         m.addRow( new String[]{ "foo", null } );
 
@@ -3103,15 +3157,15 @@ public class RuleTemplateModelDRLPersistenceTest {
 
         m.addRhsItem( aif );
 
-        String expected = "rule \"r1_0\"\n"
-                + "dialect \"mvel\"\n"
-                + "when\n"
-                + "$p : Person()\n"
-                + "then\n"
-                + "Present f0 = new Present();\n"
-                + "f0.setField2(\"bar\");\n"
-                + "insert(f0);\n"
-                + "end";
+        String expected = "rule \"r1_0\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "$p : Person()\n" +
+                "then\n" +
+                "Present f0 = new Present();\n" +
+                "f0.setField2(\"bar\");\n" +
+                "insert(f0);\n" +
+                "end";
 
         m.addRow( new String[]{ null, "bar" } );
 
@@ -3142,14 +3196,14 @@ public class RuleTemplateModelDRLPersistenceTest {
 
         m.addRhsItem( asf );
 
-        String expected = "rule \"r1_0\"\n"
-                + "dialect \"mvel\"\n"
-                + "when\n"
-                + "$p : Person()\n"
-                + "then\n"
-                + "$p.setField1(\"foo\");\n"
-                + "$p.setField2(\"bar\");\n"
-                + "end";
+        String expected = "rule \"r1_0\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "$p : Person()\n" +
+                "then\n" +
+                "$p.setField1(\"foo\");\n" +
+                "$p.setField2(\"bar\");\n" +
+                "end";
 
         m.addRow( new String[]{ "foo", "bar" } );
 
@@ -3180,12 +3234,12 @@ public class RuleTemplateModelDRLPersistenceTest {
 
         m.addRhsItem( asf );
 
-        String expected = "rule \"r1_0\"\n"
-                + "dialect \"mvel\"\n"
-                + "when\n"
-                + "$p : Person()\n"
-                + "then\n"
-                + "end";
+        String expected = "rule \"r1_0\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "$p : Person()\n" +
+                "then\n" +
+                "end";
 
         m.addRow( new String[]{ null, null } );
 
@@ -3216,13 +3270,13 @@ public class RuleTemplateModelDRLPersistenceTest {
 
         m.addRhsItem( asf );
 
-        String expected = "rule \"r1_0\"\n"
-                + "dialect \"mvel\"\n"
-                + "when\n"
-                + "$p : Person()\n"
-                + "then\n"
-                + "$p.setField1(\"foo\");\n"
-                + "end";
+        String expected = "rule \"r1_0\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "$p : Person()\n" +
+                "then\n" +
+                "$p.setField1(\"foo\");\n" +
+                "end";
 
         m.addRow( new String[]{ "foo", null } );
 
@@ -3253,13 +3307,13 @@ public class RuleTemplateModelDRLPersistenceTest {
 
         m.addRhsItem( asf );
 
-        String expected = "rule \"r1_0\"\n"
-                + "dialect \"mvel\"\n"
-                + "when\n"
-                + "$p : Person()\n"
-                + "then\n"
-                + "$p.setField2(\"bar\");\n"
-                + "end";
+        String expected = "rule \"r1_0\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "$p : Person()\n" +
+                "then\n" +
+                "$p.setField2(\"bar\");\n" +
+                "end";
 
         m.addRow( new String[]{ null, "bar" } );
 
@@ -3299,18 +3353,872 @@ public class RuleTemplateModelDRLPersistenceTest {
         asf.addFieldValue( afv0 );
         m.addRhsItem( asf );
 
-        String expected = "rule \"Empty FreeFormLine_0\"\n"
-                + "dialect \"mvel\"\n"
-                + "when\n"
-                + "$p : Person( field1 == \"foo\" )\n"
-                + "then\n"
-                + "$p.setField1(\"bar\");\n"
-                + "end";
+        String expected = "rule \"Empty FreeFormLine_0\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "$p : Person( field1 == \"foo\" )\n" +
+                "then\n" +
+                "$p.setField1(\"bar\");\n" +
+                "end";
 
         m.addRow( new String[]{ "foo", "bar" } );
 
         checkMarshall( expected,
                        m );
+    }
+
+    @Test
+    public void testActionModifyTwoFieldsFirstTemplateSecondTemplate1() {
+        TemplateModel m = new TemplateModel();
+        m.name = "r1";
+
+        FactPattern fp = new FactPattern( "Person" );
+        fp.setBoundName( "$p" );
+        m.addLhsItem( fp );
+
+        ActionUpdateField auf1 = new ActionUpdateField( "$p" );
+        ActionFieldValue afv0 = new ActionFieldValue();
+        afv0.setNature( FieldNatureType.TYPE_TEMPLATE );
+        afv0.setField( "field1" );
+        afv0.setValue( "$f1" );
+        auf1.addFieldValue( afv0 );
+        ActionFieldValue afv1 = new ActionFieldValue();
+        afv1.setNature( FieldNatureType.TYPE_TEMPLATE );
+        afv1.setField( "field2" );
+        afv1.setValue( "$f2" );
+        auf1.addFieldValue( afv1 );
+
+        m.addRhsItem( auf1 );
+
+        String expected = "rule \"r1_0\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "  $p : Person()\n" +
+                "then\n" +
+                "  modify( $p ) {\n" +
+                "    setField1(\"foo\"),\n" +
+                "    setField2(\"bar\")\n" +
+                "  }\n" +
+                "end";
+
+        m.addRow( new String[]{ "foo", "bar" } );
+
+        checkMarshall( expected,
+                       m );
+    }
+
+    @Test
+    public void testActionModifyTwoFieldsFirstTemplateSecondTemplate2() {
+        TemplateModel m = new TemplateModel();
+        m.name = "r1";
+
+        FactPattern fp = new FactPattern( "Person" );
+        fp.setBoundName( "$p" );
+        m.addLhsItem( fp );
+
+        ActionUpdateField auf1 = new ActionUpdateField( "$p" );
+        ActionFieldValue afv0 = new ActionFieldValue();
+        afv0.setNature( FieldNatureType.TYPE_TEMPLATE );
+        afv0.setField( "field1" );
+        afv0.setValue( "$f1" );
+        auf1.addFieldValue( afv0 );
+        ActionFieldValue afv1 = new ActionFieldValue();
+        afv1.setNature( FieldNatureType.TYPE_TEMPLATE );
+        afv1.setField( "field2" );
+        afv1.setValue( "$f2" );
+        auf1.addFieldValue( afv1 );
+
+        m.addRhsItem( auf1 );
+
+        String expected = "rule \"r1_0\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "  $p : Person()\n" +
+                "then\n" +
+                "  modify( $p ) {\n" +
+                "    setField1(\"foo\")\n" +
+                "  }\n" +
+                "end";
+
+        m.addRow( new String[]{ "foo", null } );
+
+        checkMarshall( expected,
+                       m );
+    }
+
+    @Test
+    public void testActionModifyTwoFieldsFirstTemplateSecondTemplate3() {
+        TemplateModel m = new TemplateModel();
+        m.name = "r1";
+
+        FactPattern fp = new FactPattern( "Person" );
+        fp.setBoundName( "$p" );
+        m.addLhsItem( fp );
+
+        ActionUpdateField auf1 = new ActionUpdateField( "$p" );
+        ActionFieldValue afv0 = new ActionFieldValue();
+        afv0.setNature( FieldNatureType.TYPE_TEMPLATE );
+        afv0.setField( "field1" );
+        afv0.setValue( "$f1" );
+        auf1.addFieldValue( afv0 );
+        ActionFieldValue afv1 = new ActionFieldValue();
+        afv1.setNature( FieldNatureType.TYPE_TEMPLATE );
+        afv1.setField( "field2" );
+        afv1.setValue( "$f2" );
+        auf1.addFieldValue( afv1 );
+
+        m.addRhsItem( auf1 );
+
+        String expected = "rule \"r1_0\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "  $p : Person()\n" +
+                "then\n" +
+                "  modify( $p ) {\n" +
+                "    setField2(\"bar\")\n" +
+                "  }\n" +
+                "end";
+
+        m.addRow( new String[]{ null, "bar" } );
+
+        checkMarshall( expected,
+                       m );
+    }
+
+    @Test
+    public void testActionModifyTwoFieldsFirstTemplateSecondLiteral1() {
+        TemplateModel m = new TemplateModel();
+        m.name = "r1";
+
+        FactPattern fp = new FactPattern( "Person" );
+        fp.setBoundName( "$p" );
+        m.addLhsItem( fp );
+
+        ActionUpdateField auf1 = new ActionUpdateField( "$p" );
+        ActionFieldValue afv0 = new ActionFieldValue();
+        afv0.setNature( FieldNatureType.TYPE_TEMPLATE );
+        afv0.setField( "field1" );
+        afv0.setValue( "$f1" );
+        auf1.addFieldValue( afv0 );
+        ActionFieldValue afv1 = new ActionFieldValue();
+        afv1.setNature( FieldNatureType.TYPE_LITERAL );
+        afv1.setField( "field2" );
+        afv1.setValue( "bar" );
+        auf1.addFieldValue( afv1 );
+
+        m.addRhsItem( auf1 );
+
+        String expected = "rule \"r1_0\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "  $p : Person()\n" +
+                "then\n" +
+                "  modify( $p ) {\n" +
+                "    setField1(\"foo\"),\n" +
+                "    setField2(\"bar\")\n" +
+                "  }\n" +
+                "end";
+
+        m.addRow( new String[]{ "foo" } );
+
+        checkMarshall( expected,
+                       m );
+    }
+
+    @Test
+    public void testActionModifyTwoFieldsFirstTemplateSecondLiteral2() {
+        TemplateModel m = new TemplateModel();
+        m.name = "r1";
+
+        FactPattern fp = new FactPattern( "Person" );
+        fp.setBoundName( "$p" );
+        m.addLhsItem( fp );
+
+        ActionUpdateField auf1 = new ActionUpdateField( "$p" );
+        ActionFieldValue afv0 = new ActionFieldValue();
+        afv0.setNature( FieldNatureType.TYPE_TEMPLATE );
+        afv0.setField( "field1" );
+        afv0.setValue( "$f1" );
+        auf1.addFieldValue( afv0 );
+        ActionFieldValue afv1 = new ActionFieldValue();
+        afv1.setNature( FieldNatureType.TYPE_LITERAL );
+        afv1.setField( "field2" );
+        afv1.setValue( "bar" );
+        auf1.addFieldValue( afv1 );
+
+        m.addRhsItem( auf1 );
+
+        String expected = "rule \"r1_0\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "  $p : Person()\n" +
+                "then\n" +
+                "  modify( $p ) {\n" +
+                "    setField2(\"bar\")\n" +
+                "  }\n" +
+                "end";
+
+        m.addRow( new String[]{ null } );
+
+        checkMarshall( expected,
+                       m );
+    }
+
+    @Test
+    public void testActionModifyTwoFieldsFirstLiteralSecondTemplate1() {
+        TemplateModel m = new TemplateModel();
+        m.name = "r1";
+
+        FactPattern fp = new FactPattern( "Person" );
+        fp.setBoundName( "$p" );
+        m.addLhsItem( fp );
+
+        ActionUpdateField auf1 = new ActionUpdateField( "$p" );
+        ActionFieldValue afv0 = new ActionFieldValue();
+        afv0.setNature( FieldNatureType.TYPE_LITERAL );
+        afv0.setField( "field1" );
+        afv0.setValue( "foo" );
+        auf1.addFieldValue( afv0 );
+        ActionFieldValue afv1 = new ActionFieldValue();
+        afv1.setNature( FieldNatureType.TYPE_TEMPLATE );
+        afv1.setField( "field2" );
+        afv1.setValue( "$f2" );
+        auf1.addFieldValue( afv1 );
+
+        m.addRhsItem( auf1 );
+
+        String expected = "rule \"r1_0\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "  $p : Person()\n" +
+                "then\n" +
+                "  modify( $p ) {\n" +
+                "    setField1(\"foo\"),\n" +
+                "    setField2(\"bar\")\n" +
+                "  }\n" +
+                "end";
+
+        m.addRow( new String[]{ "bar" } );
+
+        checkMarshall( expected,
+                       m );
+    }
+
+    @Test
+    public void testActionModifyTwoFieldsFirstLiteralSecondTemplate2() {
+        TemplateModel m = new TemplateModel();
+        m.name = "r1";
+
+        FactPattern fp = new FactPattern( "Person" );
+        fp.setBoundName( "$p" );
+        m.addLhsItem( fp );
+
+        ActionUpdateField auf1 = new ActionUpdateField( "$p" );
+        ActionFieldValue afv0 = new ActionFieldValue();
+        afv0.setNature( FieldNatureType.TYPE_LITERAL );
+        afv0.setField( "field1" );
+        afv0.setValue( "foo" );
+        auf1.addFieldValue( afv0 );
+        ActionFieldValue afv1 = new ActionFieldValue();
+        afv1.setNature( FieldNatureType.TYPE_TEMPLATE );
+        afv1.setField( "field2" );
+        afv1.setValue( "$f2" );
+        auf1.addFieldValue( afv1 );
+
+        m.addRhsItem( auf1 );
+
+        String expected = "rule \"r1_0\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "  $p : Person()\n" +
+                "then\n" +
+                "  modify( $p ) {\n" +
+                "    setField1(\"foo\")\n" +
+                "  }\n" +
+                "end";
+
+        m.addRow( new String[]{ null } );
+
+        checkMarshall( expected,
+                       m );
+    }
+
+    @Test
+    public void testUpdateModifyMultipleFieldsWithMultipleSkipped1() {
+        TemplateModel m = new TemplateModel();
+        m.name = "r1";
+
+        FactPattern fp = new FactPattern( "Person" );
+        fp.setBoundName( "$p" );
+        m.addLhsItem( fp );
+
+        ActionUpdateField auf1 = new ActionUpdateField( "$p" );
+        ActionFieldValue afv0 = new ActionFieldValue();
+        afv0.setNature( FieldNatureType.TYPE_TEMPLATE );
+        afv0.setField( "field1" );
+        afv0.setValue( "$f1" );
+        auf1.addFieldValue( afv0 );
+
+        ActionFieldValue afv1 = new ActionFieldValue();
+        afv1.setNature( FieldNatureType.TYPE_TEMPLATE );
+        afv1.setField( "field2" );
+        afv1.setValue( "$f2" );
+        auf1.addFieldValue( afv1 );
+
+        ActionFieldValue afv2 = new ActionFieldValue();
+        afv2.setNature( FieldNatureType.TYPE_TEMPLATE );
+        afv2.setField( "field3" );
+        afv2.setValue( "$f3" );
+        auf1.addFieldValue( afv2 );
+
+        m.addRhsItem( auf1 );
+
+        String expected = "rule \"r1_0\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "  $p : Person()\n" +
+                "then\n" +
+                "  modify( $p ) {\n" +
+                "    setField1(\"v1\"),\n" +
+                "    setField2(\"v2\"),\n" +
+                "    setField3(\"v3\")\n" +
+                "  }\n" +
+                "end";
+
+        m.addRow( new String[]{ "v1", "v2", "v3" } );
+
+        checkMarshall( expected,
+                       m );
+    }
+
+    @Test
+    public void testUpdateModifyMultipleFieldsWithMultipleSkipped2() {
+        TemplateModel m = new TemplateModel();
+        m.name = "r1";
+
+        FactPattern fp = new FactPattern( "Person" );
+        fp.setBoundName( "$p" );
+        m.addLhsItem( fp );
+
+        ActionUpdateField auf1 = new ActionUpdateField( "$p" );
+        ActionFieldValue afv0 = new ActionFieldValue();
+        afv0.setNature( FieldNatureType.TYPE_TEMPLATE );
+        afv0.setField( "field1" );
+        afv0.setValue( "$f1" );
+        auf1.addFieldValue( afv0 );
+
+        ActionFieldValue afv1 = new ActionFieldValue();
+        afv1.setNature( FieldNatureType.TYPE_TEMPLATE );
+        afv1.setField( "field2" );
+        afv1.setValue( "$f2" );
+        auf1.addFieldValue( afv1 );
+
+        ActionFieldValue afv2 = new ActionFieldValue();
+        afv2.setNature( FieldNatureType.TYPE_TEMPLATE );
+        afv2.setField( "field3" );
+        afv2.setValue( "$f3" );
+        auf1.addFieldValue( afv2 );
+
+        m.addRhsItem( auf1 );
+
+        String expected = "rule \"r1_0\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "  $p : Person()\n" +
+                "then\n" +
+                "  modify( $p ) {\n" +
+                "    setField2(\"v2\"),\n" +
+                "    setField3(\"v3\")\n" +
+                "  }\n" +
+                "end";
+
+        m.addRow( new String[]{ null, "v2", "v3" } );
+
+        checkMarshall( expected,
+                       m );
+    }
+
+    @Test
+    public void testUpdateModifyMultipleFieldsWithMultipleSkipped3() {
+        TemplateModel m = new TemplateModel();
+        m.name = "r1";
+
+        FactPattern fp = new FactPattern( "Person" );
+        fp.setBoundName( "$p" );
+        m.addLhsItem( fp );
+
+        ActionUpdateField auf1 = new ActionUpdateField( "$p" );
+        ActionFieldValue afv0 = new ActionFieldValue();
+        afv0.setNature( FieldNatureType.TYPE_TEMPLATE );
+        afv0.setField( "field1" );
+        afv0.setValue( "$f1" );
+        auf1.addFieldValue( afv0 );
+
+        ActionFieldValue afv1 = new ActionFieldValue();
+        afv1.setNature( FieldNatureType.TYPE_TEMPLATE );
+        afv1.setField( "field2" );
+        afv1.setValue( "$f2" );
+        auf1.addFieldValue( afv1 );
+
+        ActionFieldValue afv2 = new ActionFieldValue();
+        afv2.setNature( FieldNatureType.TYPE_TEMPLATE );
+        afv2.setField( "field3" );
+        afv2.setValue( "$f3" );
+        auf1.addFieldValue( afv2 );
+
+        m.addRhsItem( auf1 );
+
+        String expected = "rule \"r1_0\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "  $p : Person()\n" +
+                "then\n" +
+                "  modify( $p ) {\n" +
+                "    setField3(\"v3\")\n" +
+                "  }\n" +
+                "end";
+
+        m.addRow( new String[]{ null, null, "v3" } );
+
+        checkMarshall( expected,
+                       m );
+    }
+
+    @Test
+    public void testUpdateModifyMultipleFieldsWithMultipleSkipped4() {
+        TemplateModel m = new TemplateModel();
+        m.name = "r1";
+
+        FactPattern fp = new FactPattern( "Person" );
+        fp.setBoundName( "$p" );
+        m.addLhsItem( fp );
+
+        ActionUpdateField auf1 = new ActionUpdateField( "$p" );
+        ActionFieldValue afv0 = new ActionFieldValue();
+        afv0.setNature( FieldNatureType.TYPE_TEMPLATE );
+        afv0.setField( "field1" );
+        afv0.setValue( "$f1" );
+        auf1.addFieldValue( afv0 );
+
+        ActionFieldValue afv1 = new ActionFieldValue();
+        afv1.setNature( FieldNatureType.TYPE_TEMPLATE );
+        afv1.setField( "field2" );
+        afv1.setValue( "$f2" );
+        auf1.addFieldValue( afv1 );
+
+        ActionFieldValue afv2 = new ActionFieldValue();
+        afv2.setNature( FieldNatureType.TYPE_TEMPLATE );
+        afv2.setField( "field3" );
+        afv2.setValue( "$f3" );
+        auf1.addFieldValue( afv2 );
+
+        m.addRhsItem( auf1 );
+
+        String expected = "rule \"r1_0\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "  $p : Person()\n" +
+                "then\n" +
+                "  modify( $p ) {\n" +
+                "    setField1(\"v1\"),\n" +
+                "    setField3(\"v3\")\n" +
+                "  }\n" +
+                "end";
+
+        m.addRow( new String[]{ "v1", null, "v3" } );
+
+        checkMarshall( expected,
+                       m );
+    }
+
+    @Test
+    public void testLHSNonEmptyStringValues() {
+
+        FactPattern fp = new FactPattern( "Smurf" );
+        fp.setBoundName( "p1" );
+
+        SingleFieldConstraint sfc1 = new SingleFieldConstraint();
+        sfc1.setOperator( "==" );
+        sfc1.setFactType( "Smurf" );
+        sfc1.setFieldName( "name" );
+        sfc1.setFieldType( DataType.TYPE_STRING );
+        sfc1.setConstraintValueType( SingleFieldConstraint.TYPE_TEMPLATE );
+        sfc1.setValue( "$f1" );
+
+        SingleFieldConstraint sfc2 = new SingleFieldConstraint();
+        sfc2.setOperator( "==" );
+        sfc2.setFactType( "Smurf" );
+        sfc2.setFieldName( "age" );
+        sfc2.setFieldType( DataType.TYPE_NUMERIC_INTEGER );
+        sfc2.setConstraintValueType( SingleFieldConstraint.TYPE_TEMPLATE );
+        sfc2.setValue( "$f2" );
+
+        fp.addConstraint( sfc1 );
+        fp.addConstraint( sfc2 );
+
+        //Test 1
+        TemplateModel m1 = new TemplateModel();
+        m1.addLhsItem( fp );
+        m1.name = "r1";
+
+        m1.addRow( new String[]{ null, null } );
+
+        final String expected1 = "rule \"r1_0\"\n" +
+                "  dialect \"mvel\"\n" +
+                "  when\n" +
+                "  then\n" +
+                "end";
+
+        checkMarshall( expected1,
+                       m1 );
+
+        //Test 2
+        TemplateModel m2 = new TemplateModel();
+        m2.addLhsItem( fp );
+        m2.name = "r2";
+
+        m2.addRow( new String[]{ "   ", "35" } );
+
+        final String expected2 = "rule \"r2_0\"\n" +
+                "  dialect \"mvel\"\n" +
+                "  when\n" +
+                "    p1 : Smurf( age == 35 )\n" +
+                "  then\n" +
+                "end";
+
+        checkMarshall( expected2,
+                       m2 );
+
+        //Test 3
+        TemplateModel m3 = new TemplateModel();
+        m3.addLhsItem( fp );
+        m3.name = "r3";
+
+        m3.addRow( new String[]{ "", null } );
+
+        final String expected3 = "rule \"r3_0\"\n" +
+                "  dialect \"mvel\"\n" +
+                "  when\n" +
+                "  then\n" +
+                "end";
+
+        checkMarshall( expected3,
+                       m3 );
+
+        //Test 4
+        TemplateModel m4 = new TemplateModel();
+        m4.addLhsItem( fp );
+        m4.name = "r4";
+
+        m4.addRow( new String[]{ "", "35" } );
+
+        final String expected4 = "rule \"r4_0\"\n" +
+                "  dialect \"mvel\"\n" +
+                "  when\n" +
+                "    p1 : Smurf( age == 35 )\n" +
+                "  then\n" +
+                "end";
+
+        checkMarshall( expected4,
+                       m4 );
+    }
+
+    @Test
+    public void testLHSDelimitedNonEmptyStringValues() {
+
+        FactPattern fp = new FactPattern( "Smurf" );
+        fp.setBoundName( "p1" );
+
+        SingleFieldConstraint sfc1 = new SingleFieldConstraint();
+        sfc1.setOperator( "==" );
+        sfc1.setFactType( "Smurf" );
+        sfc1.setFieldName( "name" );
+        sfc1.setFieldType( DataType.TYPE_STRING );
+        sfc1.setConstraintValueType( SingleFieldConstraint.TYPE_TEMPLATE );
+        sfc1.setValue( "$f1" );
+
+        SingleFieldConstraint sfc2 = new SingleFieldConstraint();
+        sfc2.setOperator( "==" );
+        sfc2.setFactType( "Smurf" );
+        sfc2.setFieldName( "age" );
+        sfc2.setFieldType( DataType.TYPE_NUMERIC_INTEGER );
+        sfc2.setConstraintValueType( SingleFieldConstraint.TYPE_TEMPLATE );
+        sfc2.setValue( "$f2" );
+
+        fp.addConstraint( sfc1 );
+        fp.addConstraint( sfc2 );
+
+        //Test 1
+        TemplateModel m1 = new TemplateModel();
+        m1.addLhsItem( fp );
+        m1.name = "r1";
+
+        m1.addRow( new String[]{ null, null } );
+
+        final String expected1 = "rule \"r1_0\"\n" +
+                "  dialect \"mvel\"\n" +
+                "  when\n" +
+                "  then\n" +
+                "end";
+
+        checkMarshall( expected1,
+                       m1 );
+
+        //Test 2
+        TemplateModel m2 = new TemplateModel();
+        m2.addLhsItem( fp );
+        m2.name = "r2";
+
+        m2.addRow( new String[]{ "\"   \"", "35" } );
+
+        final String expected2 = "rule \"r2_0\"\n" +
+                "  dialect \"mvel\"\n" +
+                "  when\n" +
+                "    p1 : Smurf( name == \"   \", age == 35 )\n" +
+                "  then\n" +
+                "end";
+
+        checkMarshall( expected2,
+                       m2 );
+
+        //Test 3
+        TemplateModel m3 = new TemplateModel();
+        m3.addLhsItem( fp );
+        m3.name = "r3";
+
+        m3.addRow( new String[]{ "\"\"", null } );
+
+        final String expected3 = "rule \"r3_0\"\n" +
+                "  dialect \"mvel\"\n" +
+                "  when\n" +
+                "    p1 : Smurf( name == \"\" )\n" +
+                "  then\n" +
+                "end";
+
+        checkMarshall( expected3,
+                       m3 );
+
+        //Test 4
+        TemplateModel m4 = new TemplateModel();
+        m4.addLhsItem( fp );
+        m4.name = "r4";
+
+        m4.addRow( new String[]{ "\"\"", "35" } );
+
+        final String expected4 = "rule \"r4_0\"\n" +
+                "  dialect \"mvel\"\n" +
+                "  when\n" +
+                "    p1 : Smurf( name == \"\", age == 35 )\n" +
+                "  then\n" +
+                "end";
+
+        checkMarshall( expected4,
+                       m4 );
+    }
+
+    @Test
+    public void testRHSNonEmptyStringValues() {
+        FactPattern fp = new FactPattern( "Smurf" );
+        fp.setBoundName( "p1" );
+
+        ActionUpdateField auf1 = new ActionUpdateField( "p1" );
+        auf1.addFieldValue( new ActionFieldValue( "name",
+                                                  "$name",
+                                                  DataType.TYPE_STRING ) );
+        auf1.getFieldValues()[ 0 ].setNature( BaseSingleFieldConstraint.TYPE_TEMPLATE );
+
+        ActionUpdateField auf2 = new ActionUpdateField( "p1" );
+        auf2.addFieldValue( new ActionFieldValue( "age",
+                                                  "$age",
+                                                  DataType.TYPE_NUMERIC_INTEGER ) );
+        auf2.getFieldValues()[ 0 ].setNature( BaseSingleFieldConstraint.TYPE_TEMPLATE );
+
+        //Test 1
+        TemplateModel m1 = new TemplateModel();
+        m1.addLhsItem( fp );
+        m1.addRhsItem( auf1 );
+        m1.addRhsItem( auf2 );
+        m1.name = "r1";
+
+        m1.addRow( new String[]{ null, null } );
+
+        final String expected1 = "rule \"r1_0\"\n" +
+                "  dialect \"mvel\"\n" +
+                "  when\n" +
+                "    p1 : Smurf()\n" +
+                "  then\n" +
+                "end";
+
+        checkMarshall( expected1,
+                       m1 );
+
+        //Test 2
+        TemplateModel m2 = new TemplateModel();
+        m2.addLhsItem( fp );
+        m2.addRhsItem( auf1 );
+        m2.addRhsItem( auf2 );
+        m2.name = "r2";
+
+        m2.addRow( new String[]{ "   ", "35" } );
+
+        final String expected2 = "rule \"r2_0\"\n" +
+                "  dialect \"mvel\"\n" +
+                "  when\n" +
+                "    p1 : Smurf()\n" +
+                "  then\n" +
+                "    modify( p1 ) {\n" +
+                "      setAge( 35 )\n" +
+                "    }\n" +
+                "end";
+
+        checkMarshall( expected2,
+                       m2 );
+
+        //Test 3
+        TemplateModel m3 = new TemplateModel();
+        m3.addLhsItem( fp );
+        m3.addRhsItem( auf1 );
+        m3.addRhsItem( auf2 );
+        m3.name = "r3";
+
+        m3.addRow( new String[]{ "", null } );
+
+        final String expected3 = "rule \"r3_0\"\n" +
+                "  dialect \"mvel\"\n" +
+                "  when\n" +
+                "    p1 : Smurf()\n" +
+                "  then\n" +
+                "end";
+
+        checkMarshall( expected3,
+                       m3 );
+
+        //Test 4
+        TemplateModel m4 = new TemplateModel();
+        m4.addLhsItem( fp );
+        m4.addRhsItem( auf1 );
+        m4.addRhsItem( auf2 );
+        m4.name = "r4";
+
+        m4.addRow( new String[]{ "", "35" } );
+
+        final String expected4 = "rule \"r4_0\"\n" +
+                "  dialect \"mvel\"\n" +
+                "  when\n" +
+                "    p1 : Smurf()\n" +
+                "  then\n" +
+                "    modify( p1 ) {\n" +
+                "      setAge( 35 )\n" +
+                "    }\n" +
+                "end";
+
+        checkMarshall( expected4,
+                       m4 );
+    }
+
+    @Test
+    public void testRHSDelimitedNonEmptyStringValues() {
+        FactPattern fp = new FactPattern( "Smurf" );
+        fp.setBoundName( "p1" );
+
+        ActionUpdateField auf1 = new ActionUpdateField( "p1" );
+        auf1.addFieldValue( new ActionFieldValue( "name",
+                                                  "$name",
+                                                  DataType.TYPE_STRING ) );
+        auf1.getFieldValues()[ 0 ].setNature( BaseSingleFieldConstraint.TYPE_TEMPLATE );
+
+        ActionUpdateField auf2 = new ActionUpdateField( "p1" );
+        auf2.addFieldValue( new ActionFieldValue( "age",
+                                                  "$age",
+                                                  DataType.TYPE_NUMERIC_INTEGER ) );
+        auf2.getFieldValues()[ 0 ].setNature( BaseSingleFieldConstraint.TYPE_TEMPLATE );
+
+        //Test 1
+        TemplateModel m1 = new TemplateModel();
+        m1.addLhsItem( fp );
+        m1.addRhsItem( auf1 );
+        m1.addRhsItem( auf2 );
+        m1.name = "r1";
+
+        m1.addRow( new String[]{ null, null } );
+
+        final String expected1 = "rule \"r1_0\"\n" +
+                "  dialect \"mvel\"\n" +
+                "  when\n" +
+                "    p1 : Smurf()\n" +
+                "  then\n" +
+                "end";
+
+        checkMarshall( expected1,
+                       m1 );
+
+        //Test 2
+        TemplateModel m2 = new TemplateModel();
+        m2.addLhsItem( fp );
+        m2.addRhsItem( auf1 );
+        m2.addRhsItem( auf2 );
+        m2.name = "r2";
+
+        m2.addRow( new String[]{ "\"   \"", "35" } );
+
+        final String expected2 = "rule \"r2_0\"\n" +
+                "  dialect \"mvel\"\n" +
+                "  when\n" +
+                "    p1 : Smurf()\n" +
+                "  then\n" +
+                "    modify( p1 ) {\n" +
+                "      setName( \"   \" ),\n" +
+                "      setAge( 35 )\n" +
+                "    }\n" +
+                "end";
+
+        checkMarshall( expected2,
+                       m2 );
+
+        //Test 3
+        TemplateModel m3 = new TemplateModel();
+        m3.addLhsItem( fp );
+        m3.addRhsItem( auf1 );
+        m3.addRhsItem( auf2 );
+        m3.name = "r3";
+
+        m3.addRow( new String[]{ "\"\"", null } );
+
+        final String expected3 = "rule \"r3_0\"\n" +
+                "  dialect \"mvel\"\n" +
+                "  when\n" +
+                "    p1 : Smurf()\n" +
+                "  then\n" +
+                "    modify( p1 ) {\n" +
+                "      setName( \"\" )\n" +
+                "    }\n" +
+                "end";
+
+        checkMarshall( expected3,
+                       m3 );
+
+        //Test 4
+        TemplateModel m4 = new TemplateModel();
+        m4.addLhsItem( fp );
+        m4.addRhsItem( auf1 );
+        m4.addRhsItem( auf2 );
+        m4.name = "r4";
+
+        m4.addRow( new String[]{ "\"\"", "35" } );
+
+        final String expected4 = "rule \"r4_0\"\n" +
+                "  dialect \"mvel\"\n" +
+                "  when\n" +
+                "    p1 : Smurf()\n" +
+                "  then\n" +
+                "    modify( p1 ) {\n" +
+                "      setName( \"\" ),\n" +
+                "      setAge( 35 )\n" +
+                "    }\n" +
+                "end";
+
+        checkMarshall( expected4,
+                       m4 );
     }
 
     private void assertEqualsIgnoreWhitespace( final String expected,

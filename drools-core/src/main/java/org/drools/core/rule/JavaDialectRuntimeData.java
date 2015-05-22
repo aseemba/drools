@@ -16,6 +16,16 @@
 
 package org.drools.core.rule;
 
+import org.drools.core.common.ProjectClassLoader;
+import org.drools.core.definitions.impl.KnowledgePackageImpl;
+import org.drools.core.definitions.rule.impl.RuleImpl;
+import org.drools.core.spi.Constraint;
+import org.drools.core.spi.Wireable;
+import org.drools.core.util.KeyStoreHelper;
+import org.drools.core.util.StringUtils;
+import org.kie.internal.concurrent.ExecutorProviderFactory;
+import org.kie.internal.utils.FastClassLoader;
+
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.Externalizable;
@@ -45,15 +55,6 @@ import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletionService;
 import java.util.concurrent.ConcurrentSkipListSet;
-
-import org.drools.core.RuntimeDroolsException;
-import org.drools.core.common.ProjectClassLoader;
-import org.drools.core.spi.Constraint;
-import org.drools.core.spi.Wireable;
-import org.drools.core.util.KeyStoreHelper;
-import org.drools.core.util.StringUtils;
-import org.kie.internal.concurrent.ExecutorProviderFactory;
-import org.kie.internal.utils.FastClassLoader;
 
 import static org.drools.core.util.ClassUtils.convertClassToResourcePath;
 import static org.drools.core.util.ClassUtils.convertResourceToClassName;
@@ -149,8 +150,8 @@ public class JavaDialectRuntimeData
         try {
             stream.writeObject( helper.signDataWithPrivateKey( buff ) );
         } catch (Exception e) {
-            throw new RuntimeDroolsException( "Error signing object store: " + e.getMessage(),
-                                              e );
+            throw new RuntimeException( "Error signing object store: " + e.getMessage(),
+                                        e );
         }
     }
 
@@ -164,17 +165,16 @@ public class JavaDialectRuntimeData
         KeyStoreHelper helper = new KeyStoreHelper();
         boolean signed = stream.readBoolean();
         if (helper.isSigned() != signed) {
-            throw new RuntimeDroolsException( "This environment is configured to work with " +
-                                              ( helper.isSigned() ? "signed" : "unsigned" ) +
-                                              " serialized objects, but the given object is " +
-                                              ( signed ? "signed" : "unsigned" ) + ". Deserialization aborted." );
+            throw new RuntimeException( "This environment is configured to work with " +
+                                        ( helper.isSigned() ? "signed" : "unsigned" ) +
+                                        " serialized objects, but the given object is " +
+                                        ( signed ? "signed" : "unsigned" ) + ". Deserialization aborted." );
         }
         String pubKeyAlias = null;
         if (signed) {
             pubKeyAlias = (String) stream.readObject();
             if (helper.getPubKeyStore() == null) {
-                throw new RuntimeDroolsException(
-                                                  "The package was serialized with a signature. Please configure a public keystore with the public key to check the signature. Deserialization aborted." );
+                throw new RuntimeException( "The package was serialized with a signature. Please configure a public keystore with the public key to check the signature. Deserialization aborted." );
             }
         }
 
@@ -218,21 +218,20 @@ public class JavaDialectRuntimeData
             if (!helper.checkDataWithPublicKey( pubKeyAlias,
                                                 bytes,
                                                 signature )) {
-                throw new RuntimeDroolsException(
-                                                  "Signature does not match serialized package. This is a security violation. Deserialisation aborted." );
+                throw new RuntimeException( "Signature does not match serialized package. This is a security violation. Deserialisation aborted." );
             }
         } catch (InvalidKeyException e) {
-            throw new RuntimeDroolsException( "Invalid key checking signature: " + e.getMessage(),
-                                              e );
+            throw new RuntimeException( "Invalid key checking signature: " + e.getMessage(),
+                                        e );
         } catch (KeyStoreException e) {
-            throw new RuntimeDroolsException( "Error accessing Key Store: " + e.getMessage(),
-                                              e );
+            throw new RuntimeException( "Error accessing Key Store: " + e.getMessage(),
+                                        e );
         } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeDroolsException( "No algorithm available: " + e.getMessage(),
-                                              e );
+            throw new RuntimeException( "No algorithm available: " + e.getMessage(),
+                                        e );
         } catch (SignatureException e) {
-            throw new RuntimeDroolsException( "Signature Exception: " + e.getMessage(),
-                                              e );
+            throw new RuntimeException( "Signature Exception: " + e.getMessage(),
+                                        e );
         }
     }
 
@@ -260,8 +259,7 @@ public class JavaDialectRuntimeData
                     wireInParallel(wireListSize);
                 }
             } catch (Exception e) {
-                throw new RuntimeDroolsException( "Unable to wire up JavaDialect",
-                                                  e );
+                throw new RuntimeException( "Unable to wire up JavaDialect", e );
             }
         }
 
@@ -386,9 +384,6 @@ public class JavaDialectRuntimeData
         }
         if (bytecode == null && rootClassLoader instanceof ProjectClassLoader) {
             bytecode = ((ProjectClassLoader)rootClassLoader).getBytecode(resourceName);
-            if (bytecode != null) {
-                store.put(resourceName, bytecode);
-            }
         }
         return bytecode;
     }
@@ -401,10 +396,10 @@ public class JavaDialectRuntimeData
         return rootClassLoader;
     }
 
-    public void removeRule( Package pkg,
-                            Rule rule ) {
+    public void removeRule( KnowledgePackageImpl pkg,
+                            RuleImpl rule ) {
 
-        if (!( rule instanceof Query )) {
+        if (!( rule instanceof QueryImpl)) {
             // Query's don't have a consequence, so skip those
             final String consequenceName = rule.getConsequence().getClass().getName();
 
@@ -420,8 +415,7 @@ public class JavaDialectRuntimeData
         }
     }
 
-    public void removeFunction( Package pkg,
-            Function function ) {
+    public void removeFunction( KnowledgePackageImpl pkg, Function function ) {
         remove( pkg.getName() + "." + StringUtils.ucFirst( function.getName() ) );
     }
 
@@ -457,8 +451,7 @@ public class JavaDialectRuntimeData
         return bytes;
     }
 
-    public void write( final String resourceName,
-            final byte[] clazzData ) throws RuntimeDroolsException {
+    public void write( String resourceName, byte[] clazzData ) {
         if (getStore().put( resourceName,
                             clazzData ) != null) {
             this.dirty = true;
@@ -474,7 +467,7 @@ public class JavaDialectRuntimeData
                 this.wireList.add( resourceName );
             } catch (final Exception e) {
                 e.printStackTrace();
-                throw new RuntimeDroolsException( e );
+                throw new RuntimeException( e );
             }
         }
     }
@@ -503,7 +496,7 @@ public class JavaDialectRuntimeData
         }
     }
 
-    public boolean remove( final String resourceName ) throws RuntimeDroolsException {
+    public boolean remove( final String resourceName ) {
         getInvokers().remove( resourceName );
         if (getStore().remove( convertClassToResourcePath( resourceName ) ) != null) {
             this.wireList.remove( resourceName );
@@ -527,9 +520,8 @@ public class JavaDialectRuntimeData
 
     /**
      * This class drops the classLoader and reloads it. During this process  it must re-wire all the invokeables.
-     * @throws RuntimeDroolsException
      */
-    public void reload() throws RuntimeDroolsException {
+    public void reload() {
         // drops the classLoader and adds a new one
         this.classLoader = new PackageClassLoader( this,
                                                    this.rootClassLoader );
@@ -542,13 +534,13 @@ public class JavaDialectRuntimeData
                       entry.getValue() );
             }
         } catch (final ClassNotFoundException e) {
-            throw new RuntimeDroolsException( e );
+            throw new RuntimeException( e );
         } catch (final InstantiationError e) {
-            throw new RuntimeDroolsException( e );
+            throw new RuntimeException( e );
         } catch (final IllegalAccessException e) {
-            throw new RuntimeDroolsException( e );
+            throw new RuntimeException( e );
         } catch (final InstantiationException e) {
-            throw new RuntimeDroolsException( e );
+            throw new RuntimeException( e );
         }
 
         this.dirty = false;

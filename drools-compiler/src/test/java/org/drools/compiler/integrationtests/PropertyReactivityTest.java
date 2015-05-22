@@ -1,19 +1,20 @@
 package org.drools.compiler.integrationtests;
 
+import org.drools.compiler.Address;
 import org.drools.compiler.CommonTestMethodBase;
+import org.drools.compiler.Person;
 import org.drools.core.factmodel.traits.Traitable;
 import org.drools.core.io.impl.ByteArrayResource;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.kie.api.definition.type.Modifies;
 import org.kie.api.definition.type.PropertyReactive;
 import org.kie.api.io.ResourceType;
+import org.kie.api.runtime.KieSession;
 import org.kie.internal.KnowledgeBase;
-import org.kie.internal.KnowledgeBaseFactory;
 import org.kie.internal.builder.KnowledgeBuilder;
 import org.kie.internal.builder.KnowledgeBuilderFactory;
-import org.kie.internal.io.ResourceFactory;
 import org.kie.internal.runtime.StatefulKnowledgeSession;
+import org.kie.internal.utils.KieHelper;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -22,7 +23,7 @@ import java.util.List;
 
 public class PropertyReactivityTest extends CommonTestMethodBase {
 
-    @Test
+    @Test(timeout=10000)
     public void testComposedConstraint() {
         String str =
                 "package org.drools.test;\n" +
@@ -44,7 +45,7 @@ public class PropertyReactivityTest extends CommonTestMethodBase {
         assertEquals(1, k2.getD());
     }
 
-    @Test
+    @Test(timeout=10000)
     public void testScrambleProperties() {
         // DROOLS-91
         String str =
@@ -200,7 +201,7 @@ public class PropertyReactivityTest extends CommonTestMethodBase {
     }
 
 
-    @Test
+    @Test(timeout=10000)
     public void testScrambleWithInterfaces() {
     /*
      *       K1 a b c d e f    1000
@@ -289,7 +290,7 @@ public class PropertyReactivityTest extends CommonTestMethodBase {
         assertEquals( 5, list.size() );
     }
 
-    @Test
+    @Test(timeout=10000)
     public void testScrambleWithInterfacesAndObject() {
         // DROOLS-91
         String str =
@@ -339,7 +340,7 @@ public class PropertyReactivityTest extends CommonTestMethodBase {
         assertEquals( "Klass2", list.get(1) );
     }
 
-    @Test
+    @Test(timeout=10000)
     public void testWithDeclaredTypeAndTraitInDifferentPackages() {
         // DROOLS-91
         String str1 =
@@ -410,7 +411,7 @@ public class PropertyReactivityTest extends CommonTestMethodBase {
         }
     }
 
-    @Test
+    @Test(timeout=10000)
     public void testWithBeanAndTraitInDifferentPackages() {
         // DROOLS-91
         String str1 =
@@ -443,7 +444,7 @@ public class PropertyReactivityTest extends CommonTestMethodBase {
         ksession.fireAllRules();
     }
 
-    @Test
+    @Test(timeout=10000)
     public void testRepeatedPatternWithPR() {
         // JBRULES-3705
         String str1 =
@@ -497,7 +498,7 @@ public class PropertyReactivityTest extends CommonTestMethodBase {
         assertTrue(list.contains(new BigDecimal(5)));
     }
 
-    @Test
+    @Test(timeout=10000)
     public void testPRWithCollections() {
         // DROOLS-135
         String str1 = "package org.test;\n" +
@@ -591,7 +592,7 @@ public class PropertyReactivityTest extends CommonTestMethodBase {
 
     }
 
-    @Test
+    @Test(timeout=10000)
     public void testPRWithPositionalUnification() {
         // DROOLS-247
         String str1 =
@@ -675,7 +676,7 @@ public class PropertyReactivityTest extends CommonTestMethodBase {
      * are no way that rule 'Find Heisenberg' gets activated because a modification
      * or a Klass3 object.
      */
-    @Test
+    @Test(timeout=10000)
     public void testPRConstraintOnAttributesWithoutSetter(){
         String str =
                 "package org.drools.test;\n" +
@@ -726,7 +727,7 @@ public class PropertyReactivityTest extends CommonTestMethodBase {
      * in the rule involving fullName to be aware of modifications in the name
      * and/or lastName of a Klass3 object.
      */
-    @Test
+    @Test(timeout=10000)
     public void testPRConstraintOnAttributesWithoutSetterUsingWatches(){
         String str =
                 "package org.drools.test;\n" +
@@ -775,7 +776,7 @@ public class PropertyReactivityTest extends CommonTestMethodBase {
      * getFullName doesn't have a setter but Klass4 states that setName()
      * and setLastName() both @Modifies fullName.
      */
-    @Test
+    @Test(timeout=10000)
     public void testPRConstraintOnAttributesWithoutSetterUsingModifies(){
         String str =
                 "package org.drools.test;\n" +
@@ -826,7 +827,7 @@ public class PropertyReactivityTest extends CommonTestMethodBase {
      * are no way that rule 'Get Person name' gets activated because a modification
      * or a Klass3 object.
      */
-    @Test
+    @Test(timeout=10000)
     public void testPRBindingOnAttributesWithoutSetter(){
         String str =
                 "package org.drools.test;\n" +
@@ -876,7 +877,7 @@ public class PropertyReactivityTest extends CommonTestMethodBase {
      * annotation in 'Get Person name' rule. After the name of Kalss3 instance is
      * modified, rule 'Get Person name' must be re-activated.
      */
-    @Test
+    @Test(timeout=10000)
     public void testPRBindingOnAttributesWithoutSetterUsingWatches(){
         String str =
                 "package org.drools.test;\n" +
@@ -926,7 +927,7 @@ public class PropertyReactivityTest extends CommonTestMethodBase {
      * in Klass4's setName() and setLastName(). After the name of Kalss4
      * instance is modified, rule 'Get Person name' must be re-activated.
      */
-    @Test
+    @Test(timeout=10000)
     public void testPRBindingOnAttributesWithoutSetterUsingModifies(){
         String str =
                 "package org.drools.test;\n" +
@@ -970,7 +971,7 @@ public class PropertyReactivityTest extends CommonTestMethodBase {
     }
 
 
-    @Test
+    @Test(timeout=10000)
     public void testPRBindingOnNonexistingAttributes(){
         String str =
                 "package org.drools.test;\n" +
@@ -995,7 +996,7 @@ public class PropertyReactivityTest extends CommonTestMethodBase {
         assertTrue( knowledgeBuilder.hasErrors() );
     }
 
-    @Test
+    @Test(timeout=10000)
     public void testPRBindingOnNonexistingWatchedAttribute(){
         String str =
                 "package org.drools.test;\n" +
@@ -1019,7 +1020,7 @@ public class PropertyReactivityTest extends CommonTestMethodBase {
         assertTrue( knowledgeBuilder.hasErrors() );
     }
 
-    @Test
+    @Test(timeout=10000)
     public void testModifyAfterInsertWithPropertyReactive() {
         String rule1 =
                 "\n" +
@@ -1051,17 +1052,10 @@ public class PropertyReactivityTest extends CommonTestMethodBase {
                 "  list.add( 3 );\n" +
                 "end";
 
-        KnowledgeBuilder kbuilder = KnowledgeBuilderFactory.newKnowledgeBuilder();
-        kbuilder.add( ResourceFactory.newByteArrayResource(rule1.getBytes()), ResourceType.DRL );
+        KieHelper helper = new KieHelper();
+        helper.addContent(rule1, ResourceType.DRL);
+        KieSession ksession = helper.build().newKieSession();
 
-        if ( kbuilder.hasErrors() ) {
-            fail( kbuilder.getErrors().toString() );
-        }
-
-        KnowledgeBase kbase = KnowledgeBaseFactory.newKnowledgeBase();
-        kbase.addKnowledgePackages( kbuilder.getKnowledgePackages() );
-
-        StatefulKnowledgeSession ksession = kbase.newStatefulKnowledgeSession();
         List list = new ArrayList();
         ksession.setGlobal("list", list);
 
@@ -1161,5 +1155,182 @@ public class PropertyReactivityTest extends CommonTestMethodBase {
         public String getFullName(){
             return this.name + " "+ this.lastName;
         }
+    }
+
+    @Test(timeout=10000)
+    public void testIndexedNotWatchedProperty() {
+        // DROOLS-569
+        String rule1 =
+                "package com.sample;\n" +
+                "import " + MyClass.class.getCanonicalName() + ";\n" +
+                "global java.util.List list;\n" +
+                "rule R1 when\n" +
+                "    $s : String()\n" +
+                "    $m : MyClass( data != null, value == $s ) @watch( !* )\n" +
+                "then \n" +
+                "    list.add($s);\n" +
+                "    modify( $m ) { setValue(\"2\") };\n" +
+                "end\n" +
+                "\n" +
+                "rule R2 when\n" +
+                "    $i : Integer()\n" +
+                "    $m : MyClass( value == $i.toString(), data == \"x\" ) @watch( !value )\n" +
+                "then \n" +
+                "    modify( $m ) { setValue(\"3\"), setData(\"y\") };\n" +
+                "end";
+
+        KieHelper helper = new KieHelper();
+        helper.addContent(rule1, ResourceType.DRL);
+        KieSession ksession = helper.build().newKieSession();
+
+        List<String> list = new ArrayList<String>();
+        ksession.setGlobal("list", list);
+
+        MyClass myClass = new MyClass();
+        myClass.setValue("1");
+        myClass.setData("x");
+        ksession.insert(myClass);
+        ksession.insert("1");
+        ksession.insert(2);
+        ksession.fireAllRules();
+
+        assertEquals(1, list.size());
+        assertEquals("1", list.get(0));
+        list.clear();
+
+        ksession.insert("3");
+        ksession.fireAllRules();
+
+        assertEquals(1, list.size());
+        assertEquals("3", list.get(0));
+    }
+
+    @Test
+    public void testModifyWithGetter() {
+        String rule1 =
+                "package foo.bar\n" +
+                "import " + Person.class.getName() + "\n" +
+                "declare Person @propertyReactive end\n" +
+                "rule x\n" +
+                "    when\n" +
+                "       $p : Person( address != null ) @watch(!address) \n" +
+                "    then\n" +
+                "       modify($p){getAddress().setStreet(\"foo\");}\n" +
+                "end";
+
+        KieHelper helper = new KieHelper();
+        helper.addContent(rule1, ResourceType.DRL);
+        KieSession ksession = helper.build().newKieSession();
+
+        Person p = new Person();
+        p.setAddress(new Address());
+        ksession.insert(p);
+
+        int fired = ksession.fireAllRules(10);
+
+        assertEquals(1, fired);
+        assertEquals("foo", p.getAddress().getStreet());
+    }
+
+    @Test(timeout = 10000L)
+    public void testMoreThan64Fields() {
+        StringBuilder fields = new StringBuilder();
+        for (int i = 10; i < 100; i++) {
+            fields.append("  a").append(i).append(" : int\n");
+        }
+        String str =
+                "package org.drools.test\n" +
+                "global java.util.List list;\n" +
+                "declare BigType @propertyReactive\n" +
+                fields +
+                "end\n" +
+                "rule Init when\n" +
+                "then\n" +
+                "  insert( new BigType() );" +
+                "end\n" +
+                "rule R when\n" +
+                "  $b : BigType( a11 == 0, a98 == 0 )" +
+                "then\n" +
+                "  modify($b) { setA12(1), setA99(1) };\n" +
+                "  list.add(1);\n" +
+                "end\n";
+
+        KieSession ksession = new KieHelper().addContent(str, ResourceType.DRL)
+                                             .build()
+                                             .newKieSession();
+
+        List<Integer> list = new ArrayList<Integer>();
+        ksession.setGlobal("list", list);
+
+        ksession.fireAllRules();
+        assertEquals(1, list.size());
+    }
+
+    @Test(timeout = 10000L)
+    public void testMoreThan64FieldsMultipleFirings() {
+        StringBuilder fields = new StringBuilder();
+        for (int i = 10; i < 100; i++) {
+            fields.append("  a").append(i).append(" : int\n");
+        }
+        String str =
+                "package org.drools.test\n" +
+                "global java.util.List list;\n" +
+                "declare BigType @propertyReactive\n" +
+                fields +
+                "end\n" +
+                "rule Init when\n" +
+                "then\n" +
+                "  insert( new BigType() );" +
+                "end\n" +
+                "rule R when\n" +
+                "  $b : BigType( a11 == 0, a12 < 10, a98 == 0 )" +
+                "then\n" +
+                "  modify($b) { setA12($b.getA12()+1), setA99(1) };\n" +
+                "  list.add(1);\n" +
+                "end\n";
+
+        KieSession ksession = new KieHelper().addContent(str, ResourceType.DRL)
+                                             .build()
+                                             .newKieSession();
+
+        List<Integer> list = new ArrayList<Integer>();
+        ksession.setGlobal("list", list);
+
+        ksession.fireAllRules();
+        assertEquals(10, list.size());
+    }
+
+    @Test(timeout = 10000L)
+    public void testMoreThan64FieldsWithWatch() {
+        StringBuilder fields = new StringBuilder();
+        for (int i = 10; i < 100; i++) {
+            fields.append("  a").append(i).append(" : int\n");
+        }
+        String str =
+                "package org.drools.test\n" +
+                "global java.util.List list;\n" +
+                "declare BigType @propertyReactive\n" +
+                fields +
+                "end\n" +
+                "rule Init when\n" +
+                "then\n" +
+                "  insert( new BigType() );" +
+                "end\n" +
+                "rule R when\n" +
+                "  $b : BigType( a11 == 0, a99 < 10 ) @watch(!a99)" +
+                "then\n" +
+                "  modify($b) { setA12(1), setA99(1) };\n" +
+                "  list.add(1);\n" +
+                "end\n";
+
+        KieSession ksession = new KieHelper().addContent(str, ResourceType.DRL)
+                                             .build()
+                                             .newKieSession();
+
+        List<Integer> list = new ArrayList<Integer>();
+        ksession.setGlobal("list", list);
+
+        ksession.fireAllRules();
+        assertEquals(1, list.size());
     }
 }

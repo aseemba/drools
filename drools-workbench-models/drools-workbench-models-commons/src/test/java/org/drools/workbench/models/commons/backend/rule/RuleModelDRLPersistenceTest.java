@@ -18,14 +18,10 @@ package org.drools.workbench.models.commons.backend.rule;
 
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 import org.drools.workbench.models.datamodel.imports.Import;
 import org.drools.workbench.models.datamodel.oracle.DataType;
-import org.drools.workbench.models.datamodel.oracle.FieldAccessorsAndMutators;
-import org.drools.workbench.models.datamodel.oracle.ModelField;
 import org.drools.workbench.models.datamodel.oracle.PackageDataModelOracle;
 import org.drools.workbench.models.datamodel.rule.ActionCallMethod;
 import org.drools.workbench.models.datamodel.rule.ActionExecuteWorkItem;
@@ -47,6 +43,7 @@ import org.drools.workbench.models.datamodel.rule.DSLSentence;
 import org.drools.workbench.models.datamodel.rule.DSLVariableValue;
 import org.drools.workbench.models.datamodel.rule.ExpressionField;
 import org.drools.workbench.models.datamodel.rule.ExpressionFormLine;
+import org.drools.workbench.models.datamodel.rule.ExpressionMethod;
 import org.drools.workbench.models.datamodel.rule.ExpressionText;
 import org.drools.workbench.models.datamodel.rule.ExpressionUnboundFact;
 import org.drools.workbench.models.datamodel.rule.ExpressionVariable;
@@ -76,48 +73,38 @@ import static org.mockito.Mockito.*;
 
 public class RuleModelDRLPersistenceTest {
 
-    private PackageDataModelOracle dmo;
-    private Map<String, ModelField[]> packageModelFields = new HashMap<String, ModelField[]>();
-
     private RuleModelPersistence ruleModelPersistence;
 
     @Before
     public void setUp() throws Exception {
         ruleModelPersistence = RuleModelDRLPersistenceImpl.getInstance();
-        dmo = mock( PackageDataModelOracle.class );
-        when( dmo.getProjectModelFields() ).thenReturn( packageModelFields );
     }
 
     @Test
     public void testGenerateEmptyDRL() {
         String expected = "rule \"null\"\n\tdialect \"mvel\"\n\twhen\n\tthen\nend\n";
 
-        checkMarshallUnmarshall( expected, new RuleModel() );
+        checkMarshalling( expected,
+                          new RuleModel() );
     }
 
-    private void checkMarshallUnmarshall( String expected,
-                                          RuleModel m ) {
-        checkMarshallUnmarshall( expected,
-                                 m,
-                                 mock( PackageDataModelOracle.class ) );
-    }
-
-    private void checkMarshallUnmarshall( String expected,
-                                          RuleModel m,
-                                          PackageDataModelOracle dmo ) {
+    private void checkMarshalling( String expected,
+                                   RuleModel m ) {
         String drl = ruleModelPersistence.marshal( m );
         assertNotNull( drl );
         if ( expected != null ) {
-            assertEqualsIgnoreWhitespace( expected, drl );
+            assertEqualsIgnoreWhitespace( expected,
+                                          drl );
         }
+    }
 
-        RuleModel unmarshalledModel = ruleModelPersistence.unmarshalUsingDSL( drl,
-                                                                              Collections.EMPTY_LIST,
-                                                                              dmo );
+    private void checkMarshallingUsingDsl( String expected,
+                                           RuleModel m ) {
+        String drl = ruleModelPersistence.marshal( m );
+        assertNotNull( drl );
         if ( expected != null ) {
-            assertEqualsIgnoreWhitespace( expected, ruleModelPersistence.marshal( unmarshalledModel ) );
-        } else {
-            assertEquals( drl, ruleModelPersistence.marshal( unmarshalledModel ) );
+            assertEqualsIgnoreWhitespace( expected,
+                                          drl );
         }
     }
 
@@ -155,7 +142,8 @@ public class RuleModelDRLPersistenceTest {
         m.addRhsItem( new ActionInsertFact( "Report" ) );
         m.name = "my rule";
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -172,7 +160,8 @@ public class RuleModelDRLPersistenceTest {
 
         m.name = "my rule";
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -242,7 +231,8 @@ public class RuleModelDRLPersistenceTest {
         m.addRhsItem( new ActionInsertFact( "Report" ) );
         m.name = "my rule";
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -265,7 +255,8 @@ public class RuleModelDRLPersistenceTest {
         m.addRhsItem( new ActionInsertFact( "Report" ) );
         m.name = "my rule";
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -277,7 +268,8 @@ public class RuleModelDRLPersistenceTest {
 
         m.name = "my rule";
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -289,8 +281,9 @@ public class RuleModelDRLPersistenceTest {
                 "  when\n" +
                 "    m:Message()\n" +
                 "  then\n" +
-                "    m.setText( \"Hello \" + \"world\" );\n" +
-                "    update(m);\n" +
+                "    modify( m ) {\n" +
+                "      setText( \"Hello \" + \"world\" )\n" +
+                "    }\n" +
                 "end\n";
         final RuleModel m = new RuleModel();
 
@@ -311,7 +304,8 @@ public class RuleModelDRLPersistenceTest {
 
         m.name = "my rule";
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -323,36 +317,6 @@ public class RuleModelDRLPersistenceTest {
                 "    Customer( contact != null , contact.tel1 > 15 )\n" +
                 "  then\n" +
                 "end\n";
-
-        PackageDataModelOracle dmo = mock( PackageDataModelOracle.class );
-        when(
-                dmo.getProjectModelFields()
-            ).thenReturn(
-                new HashMap<String, ModelField[]>() {{
-                    put( "Customer",
-                         new ModelField[]{
-                                 new ModelField(
-                                         "contact",
-                                         "Contact",
-                                         ModelField.FIELD_CLASS_TYPE.TYPE_DECLARATION_CLASS,
-                                         ModelField.FIELD_ORIGIN.DECLARED,
-                                         FieldAccessorsAndMutators.BOTH,
-                                         "Contact"
-                                 )
-                         } );
-                    put( "Contact",
-                         new ModelField[]{
-                                 new ModelField(
-                                         "tel1",
-                                         "Integer",
-                                         ModelField.FIELD_CLASS_TYPE.TYPE_DECLARATION_CLASS,
-                                         ModelField.FIELD_ORIGIN.DECLARED,
-                                         FieldAccessorsAndMutators.BOTH,
-                                         "Integer"
-                                 )
-                         } );
-                }}
-                        );
 
         final RuleModel m = new RuleModel();
 
@@ -374,7 +338,8 @@ public class RuleModelDRLPersistenceTest {
 
         m.name = "my rule";
 
-        checkMarshallUnmarshall( expected, m, dmo );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -407,7 +372,8 @@ public class RuleModelDRLPersistenceTest {
         actionCallMethod.setVariable( "keke" );
         m.rhs = new IAction[]{ actionCallMethod };
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -430,7 +396,8 @@ public class RuleModelDRLPersistenceTest {
         m.addRhsItem( new ActionInsertFact( "Report" ) );
         m.name = "my rule";
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -458,7 +425,8 @@ public class RuleModelDRLPersistenceTest {
         m.addRhsItem( new ActionInsertFact( "Report" ) );
         m.name = "my rule";
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -481,7 +449,8 @@ public class RuleModelDRLPersistenceTest {
         m.addRhsItem( new ActionInsertFact( "Report" ) );
         m.name = "my rule";
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -504,7 +473,8 @@ public class RuleModelDRLPersistenceTest {
         m.addRhsItem( new ActionInsertFact( "Report" ) );
         m.name = "my rule";
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -527,51 +497,73 @@ public class RuleModelDRLPersistenceTest {
         m.addRhsItem( new ActionInsertFact( "Report" ) );
         m.name = "my rule";
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
     public void testMoreComplexRendering() {
         final RuleModel m = getComplexModel( false );
-        String expected = "rule \"Complex Rule\"\n" + "\tno-loop true\n"
-                + "\tsalience -10\n" + "\tagenda-group \"aGroup\"\n"
-                + "\tdialect \"mvel\"\n" + "\twhen\n"
-                + "\t\tp1 : Person( f1 : age < 42 )\n"
-                + "\t\tnot (Cancel( )) \n" + "\tthen\n"
-                + "\t\tp1.setStatus( \"rejected\" );\n"
-                + "\t\tupdate( p1 );\n" + "\t\tretract( p1 );\n"
-                + "end\n";
+        String expected = "rule \"Complex Rule\"\n" +
+                "no-loop true\n" +
+                "salience -10\n" +
+                "agenda-group \"aGroup\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "  p1 : Person( f1 : age < 42 )\n" +
+                "  not (Cancel( )) \n" +
+                "then\n" +
+                "  modify( p1 ) {\n" +
+                "    setStatus( \"rejected\" ),\n" +
+                "    setName( \"Fred\" )\n" +
+                "  }\n" +
+                "  retract( p1 );\n" +
+                "end\n";
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
     public void testMoreComplexRenderingWithDsl() {
         final RuleModel m = getComplexModel( true );
-        String expected = "rule \"Complex Rule\"\n" + "\tno-loop true\n"
-                + "\tsalience -10\n" + "\tagenda-group \"aGroup\"\n"
-                + "\tdialect \"mvel\"\n" + "\twhen\n"
-                + "\t\t>p1 : Person( f1 : age < 42 )\n"
-                + "\t\t>not (Cancel( )) \n" + "\tthen\n"
-                + "\t\t>p1.setStatus( \"rejected\" );\n"
-                + "\t\t>update( p1 );\n" + "\t\t>retract( p1 );\n"
-                + "\t\tSend an email to administrator\n" + "end\n";
+        String expected = "rule \"Complex Rule\"\n" +
+                "no-loop true\n" +
+                "salience -10\n" +
+                "agenda-group \"aGroup\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "  >p1 : Person( f1 : age < 42 )\n" +
+                "  >not (Cancel( )) \n" +
+                "then\n" +
+                "  >modify( p1 ) {\n" +
+                "    >setStatus( \"rejected\" ),\n" +
+                "    >setName( \"Fred\" )\n" +
+                "  >}\n" +
+                "  >retract( p1 );\n" +
+                "Send an email to administrator\n" +
+                "end\n";
 
-        checkMarshallUnmarshall( expected,
-                                 m );
+        checkMarshallingUsingDsl( expected,
+                                  m );
 
         String drl = ruleModelPersistence.marshal( m );
-        assertEqualsIgnoreWhitespace( expected, drl );
+        assertEqualsIgnoreWhitespace( expected,
+                                      drl );
 
         String dslFile = "[then]Send an email to {administrator}=sendMailTo({administrator});";
 
-        RuleModel unmarshalledModel = ruleModelPersistence.unmarshalUsingDSL( drl, null, dmo, dslFile );
+        RuleModel unmarshalledModel = ruleModelPersistence.unmarshalUsingDSL( drl,
+                                                                              null,
+                                                                              mock( PackageDataModelOracle.class ),
+                                                                              dslFile );
 
         IAction[] actions = unmarshalledModel.rhs;
         DSLSentence dslSentence = (DSLSentence) actions[ actions.length - 1 ];
         assertEquals( "Send an email to {administrator}", dslSentence.getDefinition() );
 
-        assertEqualsIgnoreWhitespace( expected, ruleModelPersistence.marshal( unmarshalledModel ) );
+        checkMarshallingUsingDsl( expected,
+                                  unmarshalledModel );
     }
 
     @Test
@@ -755,12 +747,15 @@ public class RuleModelDRLPersistenceTest {
         comp.addFactPattern( new FactPattern( "Cancel" ) );
         m.addLhsItem( comp );
 
-        final ActionUpdateField set = new ActionUpdateField();
-        set.setVariable( "p1" );
-        set.addFieldValue( new ActionFieldValue( "status",
-                                                 "rejected",
-                                                 DataType.TYPE_STRING ) );
-        m.addRhsItem( set );
+        final ActionUpdateField upd1 = new ActionUpdateField();
+        upd1.setVariable( "p1" );
+        upd1.addFieldValue( new ActionFieldValue( "status",
+                                                  "rejected",
+                                                  DataType.TYPE_STRING ) );
+        upd1.addFieldValue( new ActionFieldValue( "name",
+                                                  "Fred",
+                                                  DataType.TYPE_STRING ) );
+        m.addRhsItem( upd1 );
 
         final ActionRetractFact ret = new ActionRetractFact( "p1" );
         m.addRhsItem( ret );
@@ -782,7 +777,8 @@ public class RuleModelDRLPersistenceTest {
         // System.out.println(s);
         assertTrue( s.contains( "Person( f1 : age)" ) );
 
-        checkMarshallUnmarshall( s, m );
+        checkMarshalling( s,
+                          m );
     }
 
     @Test
@@ -799,7 +795,8 @@ public class RuleModelDRLPersistenceTest {
 
         String s = RuleModelDRLPersistenceImpl.getInstance().marshal( m );
         assertTrue( s.indexOf( "Person( age == null )" ) != -1 );
-        checkMarshallUnmarshall( s, m );
+        checkMarshalling( s,
+                          m );
     }
 
     @Test
@@ -816,7 +813,8 @@ public class RuleModelDRLPersistenceTest {
 
         String s = RuleModelDRLPersistenceImpl.getInstance().marshal( m );
         assertTrue( s.indexOf( "Person( age != null )" ) != -1 );
-        checkMarshallUnmarshall( s, m );
+        checkMarshalling( s,
+                          m );
     }
 
     private RuleModel getModelWithNoConstraints() {
@@ -863,7 +861,8 @@ public class RuleModelDRLPersistenceTest {
         String result = RuleModelDRLPersistenceImpl.getInstance().marshal( m );
         assertTrue( result.indexOf( "( Person( age == 42 ) or Person( age == 43 ) )" ) > 0 );
 
-        checkMarshallUnmarshall( result, m );
+        checkMarshalling( result,
+                          m );
     }
 
     @Test
@@ -871,7 +870,8 @@ public class RuleModelDRLPersistenceTest {
         RuleModel m = getCompositeFOL( CompositeFactPattern.COMPOSITE_TYPE_EXISTS );
         String result = RuleModelDRLPersistenceImpl.getInstance().marshal( m );
         assertTrue( result.indexOf( "exists (Person( age == 42 ) and Person( age == 43 ))" ) > 0 );
-        checkMarshallUnmarshall( result, m );
+        checkMarshalling( result,
+                          m );
     }
 
     @Test
@@ -879,7 +879,8 @@ public class RuleModelDRLPersistenceTest {
         RuleModel m = getCompositeFOL( CompositeFactPattern.COMPOSITE_TYPE_NOT );
         String result = RuleModelDRLPersistenceImpl.getInstance().marshal( m );
         assertTrue( result.indexOf( "not (Person( age == 42 ) and Person( age == 43 ))" ) > 0 );
-        checkMarshallUnmarshall( result, m );
+        checkMarshalling( result,
+                          m );
     }
 
     @Test
@@ -901,7 +902,8 @@ public class RuleModelDRLPersistenceTest {
         System.out.println( result );
 
         assertTrue( result.indexOf( "exists (Person( age == 42 )) " ) > 0 );
-        checkMarshallUnmarshall( result, m );
+        checkMarshalling( result,
+                          m );
     }
 
     private RuleModel getCompositeFOL( String type ) {
@@ -1013,7 +1015,8 @@ public class RuleModelDRLPersistenceTest {
         assertEqualsIgnoreWhitespace( expected,
                                       actual );
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -1032,7 +1035,7 @@ public class RuleModelDRLPersistenceTest {
 
         String expected = "rule \"boo\" \tdialect \"mvel\"\n when Person() then end";
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected, m );
 
         SingleFieldConstraint con = (SingleFieldConstraint) p.getConstraintList().getConstraint( 0 );
         con.setFieldBinding( "q" );
@@ -1040,7 +1043,8 @@ public class RuleModelDRLPersistenceTest {
         // now it should appear, as we are binding a var to it
         expected = "rule \"boo\" dialect \"mvel\" when Person(q : field1) then end";
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -1072,7 +1076,8 @@ public class RuleModelDRLPersistenceTest {
                 + "     Person(field1 == \"goo\", field2 == variableHere)"
                 + " then " + "end";
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -1096,7 +1101,8 @@ public class RuleModelDRLPersistenceTest {
                 + "     Person( field1 == \"goo\" )"
                 + " then " + "end";
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -1107,7 +1113,7 @@ public class RuleModelDRLPersistenceTest {
 
         FactPattern p = new FactPattern( "Person" );
         SingleFieldConstraintEBLeftSide con = new SingleFieldConstraintEBLeftSide();
-        con.getExpressionLeftSide().appendPart( new ExpressionUnboundFact( p ) );
+        con.getExpressionLeftSide().appendPart( new ExpressionUnboundFact( p.getFactType() ) );
         con.getExpressionLeftSide().appendPart( new ExpressionField( "field1",
                                                                      "java.lang.String",
                                                                      DataType.TYPE_STRING ) );
@@ -1125,7 +1131,8 @@ public class RuleModelDRLPersistenceTest {
                 + "     Person( field1 == \"Cheddar\" )"
                 + " then " + "end";
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -1136,7 +1143,7 @@ public class RuleModelDRLPersistenceTest {
 
         FactPattern p = new FactPattern( "Person" );
         SingleFieldConstraintEBLeftSide con = new SingleFieldConstraintEBLeftSide();
-        con.getExpressionLeftSide().appendPart( new ExpressionUnboundFact( p ) );
+        con.getExpressionLeftSide().appendPart( new ExpressionUnboundFact( p.getFactType() ) );
         con.getExpressionLeftSide().appendPart( new ExpressionField( "field1",
                                                                      "CHEESE",
                                                                      DataType.TYPE_COMPARABLE ) );
@@ -1152,7 +1159,8 @@ public class RuleModelDRLPersistenceTest {
                 + "     Person( field1 == CHEESE.Cheddar )"
                 + " then " + "end";
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -1162,7 +1170,7 @@ public class RuleModelDRLPersistenceTest {
         m.name = "test expressionsNumber";
         FactPattern p = new FactPattern( "Person" );
         SingleFieldConstraintEBLeftSide con = new SingleFieldConstraintEBLeftSide();
-        con.getExpressionLeftSide().appendPart( new ExpressionUnboundFact( p ) );
+        con.getExpressionLeftSide().appendPart( new ExpressionUnboundFact( p.getFactType() ) );
         con.getExpressionLeftSide().appendPart( new ExpressionField( "field1",
                                                                      "java.lang.Integer",
                                                                      DataType.TYPE_NUMERIC_INTEGER ) );
@@ -1178,7 +1186,8 @@ public class RuleModelDRLPersistenceTest {
                 + "     Person( field1 == 55 )"
                 + " then " + "end";
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -1188,7 +1197,7 @@ public class RuleModelDRLPersistenceTest {
         m.name = "test expressionsDate";
         FactPattern p = new FactPattern( "Person" );
         SingleFieldConstraintEBLeftSide con = new SingleFieldConstraintEBLeftSide();
-        con.getExpressionLeftSide().appendPart( new ExpressionUnboundFact( p ) );
+        con.getExpressionLeftSide().appendPart( new ExpressionUnboundFact( p.getFactType() ) );
         con.getExpressionLeftSide().appendPart( new ExpressionField( "field1",
                                                                      "java.util.Date",
                                                                      DataType.TYPE_DATE ) );
@@ -1204,7 +1213,8 @@ public class RuleModelDRLPersistenceTest {
                 + "     Person( field1 == \"27-Jun-2011\" )"
                 + " then " + "end";
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -1214,7 +1224,7 @@ public class RuleModelDRLPersistenceTest {
         m.name = "test expressionsBoolean";
         FactPattern p = new FactPattern( "Person" );
         SingleFieldConstraintEBLeftSide con = new SingleFieldConstraintEBLeftSide();
-        con.getExpressionLeftSide().appendPart( new ExpressionUnboundFact( p ) );
+        con.getExpressionLeftSide().appendPart( new ExpressionUnboundFact( p.getFactType() ) );
         con.getExpressionLeftSide().appendPart( new ExpressionField( "field1",
                                                                      "java.lang.Boolean",
                                                                      DataType.TYPE_BOOLEAN ) );
@@ -1230,7 +1240,8 @@ public class RuleModelDRLPersistenceTest {
                 + "     Person( field1 == true )"
                 + " then " + "end";
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -1240,7 +1251,7 @@ public class RuleModelDRLPersistenceTest {
         m.name = "test expressionsNestedString";
         FactPattern p = new FactPattern( "Person" );
         SingleFieldConstraintEBLeftSide con = new SingleFieldConstraintEBLeftSide();
-        con.getExpressionLeftSide().appendPart( new ExpressionUnboundFact( p ) );
+        con.getExpressionLeftSide().appendPart( new ExpressionUnboundFact( p.getFactType() ) );
         con.getExpressionLeftSide().appendPart( new ExpressionField( "favouriteCheese",
                                                                      "Cheese",
                                                                      DataType.TYPE_OBJECT ) );
@@ -1259,35 +1270,8 @@ public class RuleModelDRLPersistenceTest {
                 + "     Person( favouriteCheese.name == \"Cheedar\" )"
                 + " then " + "end";
 
-        PackageDataModelOracle dmo = mock( PackageDataModelOracle.class );
-        when(
-                dmo.getProjectModelFields()
-            ).thenReturn(
-                new HashMap<String, ModelField[]>() {{
-                    put( "Person", new ModelField[]{
-                            new ModelField(
-                                    "favouriteCheese",
-                                    "Cheese",
-                                    ModelField.FIELD_CLASS_TYPE.TYPE_DECLARATION_CLASS,
-                                    ModelField.FIELD_ORIGIN.DECLARED,
-                                    FieldAccessorsAndMutators.BOTH,
-                                    "Cheese"
-                            )
-                    } );
-                    put( "Cheese", new ModelField[]{
-                            new ModelField(
-                                    "name",
-                                    "String",
-                                    ModelField.FIELD_CLASS_TYPE.TYPE_DECLARATION_CLASS,
-                                    ModelField.FIELD_ORIGIN.DECLARED,
-                                    FieldAccessorsAndMutators.BOTH,
-                                    "String"
-                            )
-                    } );
-                }}
-                        );
-
-        checkMarshallUnmarshall( expected, m, dmo );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -1297,7 +1281,7 @@ public class RuleModelDRLPersistenceTest {
         m.name = "test expressionsNestedNumber";
         FactPattern p = new FactPattern( "Person" );
         SingleFieldConstraintEBLeftSide con = new SingleFieldConstraintEBLeftSide();
-        con.getExpressionLeftSide().appendPart( new ExpressionUnboundFact( p ) );
+        con.getExpressionLeftSide().appendPart( new ExpressionUnboundFact( p.getFactType() ) );
         con.getExpressionLeftSide().appendPart( new ExpressionField( "favouriteCheese",
                                                                      "Cheese",
                                                                      DataType.TYPE_OBJECT ) );
@@ -1316,35 +1300,8 @@ public class RuleModelDRLPersistenceTest {
                 + "     Person( favouriteCheese.age == 55 )"
                 + " then " + "end";
 
-        PackageDataModelOracle dmo = mock( PackageDataModelOracle.class );
-        when(
-                dmo.getProjectModelFields()
-            ).thenReturn(
-                new HashMap<String, ModelField[]>() {{
-                    put( "Person", new ModelField[]{
-                            new ModelField(
-                                    "favouriteCheese",
-                                    "Cheese",
-                                    ModelField.FIELD_CLASS_TYPE.TYPE_DECLARATION_CLASS,
-                                    ModelField.FIELD_ORIGIN.DECLARED,
-                                    FieldAccessorsAndMutators.BOTH,
-                                    "Cheese"
-                            )
-                    } );
-                    put( "Cheese", new ModelField[]{
-                            new ModelField(
-                                    "age",
-                                    "Integer",
-                                    ModelField.FIELD_CLASS_TYPE.TYPE_DECLARATION_CLASS,
-                                    ModelField.FIELD_ORIGIN.DECLARED,
-                                    FieldAccessorsAndMutators.BOTH,
-                                    "Integer"
-                            )
-                    } );
-                }}
-                        );
-
-        checkMarshallUnmarshall( expected, m, dmo );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -1354,7 +1311,7 @@ public class RuleModelDRLPersistenceTest {
         m.name = "test expressionsNestedDate";
         FactPattern p = new FactPattern( "Person" );
         SingleFieldConstraintEBLeftSide con = new SingleFieldConstraintEBLeftSide();
-        con.getExpressionLeftSide().appendPart( new ExpressionUnboundFact( p ) );
+        con.getExpressionLeftSide().appendPart( new ExpressionUnboundFact( p.getFactType() ) );
         con.getExpressionLeftSide().appendPart( new ExpressionField( "favouriteCheese",
                                                                      "Cheese",
                                                                      DataType.TYPE_OBJECT ) );
@@ -1373,35 +1330,8 @@ public class RuleModelDRLPersistenceTest {
                 + "     Person( favouriteCheese.dateBrought == \"27-Jun-2011\" )"
                 + " then " + "end";
 
-        PackageDataModelOracle dmo = mock( PackageDataModelOracle.class );
-        when(
-                dmo.getProjectModelFields()
-            ).thenReturn(
-                new HashMap<String, ModelField[]>() {{
-                    put( "Person", new ModelField[]{
-                            new ModelField(
-                                    "favouriteCheese",
-                                    "Cheese",
-                                    ModelField.FIELD_CLASS_TYPE.TYPE_DECLARATION_CLASS,
-                                    ModelField.FIELD_ORIGIN.DECLARED,
-                                    FieldAccessorsAndMutators.BOTH,
-                                    "Cheese"
-                            )
-                    } );
-                    put( "Cheese", new ModelField[]{
-                            new ModelField(
-                                    "dateBrought",
-                                    "Date",
-                                    ModelField.FIELD_CLASS_TYPE.TYPE_DECLARATION_CLASS,
-                                    ModelField.FIELD_ORIGIN.DECLARED,
-                                    FieldAccessorsAndMutators.BOTH,
-                                    "Date"
-                            )
-                    } );
-                }}
-                        );
-
-        checkMarshallUnmarshall( expected, m, dmo );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -1411,7 +1341,7 @@ public class RuleModelDRLPersistenceTest {
         m.name = "test expressionsNestedJavaEnum";
         FactPattern p = new FactPattern( "Person" );
         SingleFieldConstraintEBLeftSide con = new SingleFieldConstraintEBLeftSide();
-        con.getExpressionLeftSide().appendPart( new ExpressionUnboundFact( p ) );
+        con.getExpressionLeftSide().appendPart( new ExpressionUnboundFact( p.getFactType() ) );
         con.getExpressionLeftSide().appendPart( new ExpressionField( "favouriteCheese",
                                                                      "Cheese",
                                                                      DataType.TYPE_OBJECT ) );
@@ -1430,35 +1360,8 @@ public class RuleModelDRLPersistenceTest {
                 + "     Person( favouriteCheese.genericName == CHEESE.Cheddar )"
                 + " then " + "end";
 
-        PackageDataModelOracle dmo = mock( PackageDataModelOracle.class );
-        when(
-                dmo.getProjectModelFields()
-            ).thenReturn(
-                new HashMap<String, ModelField[]>() {{
-                    put( "Person", new ModelField[]{
-                            new ModelField(
-                                    "favouriteCheese",
-                                    "Cheese",
-                                    ModelField.FIELD_CLASS_TYPE.TYPE_DECLARATION_CLASS,
-                                    ModelField.FIELD_ORIGIN.DECLARED,
-                                    FieldAccessorsAndMutators.BOTH,
-                                    "Cheese"
-                            )
-                    } );
-                    put( "Cheese", new ModelField[]{
-                            new ModelField(
-                                    "genericName",
-                                    "Type",
-                                    ModelField.FIELD_CLASS_TYPE.TYPE_DECLARATION_CLASS,
-                                    ModelField.FIELD_ORIGIN.DECLARED,
-                                    FieldAccessorsAndMutators.BOTH,
-                                    "Type"
-                            )
-                    } );
-                }}
-                        );
-
-        checkMarshallUnmarshall( expected, m, dmo );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -1468,7 +1371,7 @@ public class RuleModelDRLPersistenceTest {
         m.name = "test expressionsNestedBoolean";
         FactPattern p = new FactPattern( "Person" );
         SingleFieldConstraintEBLeftSide con = new SingleFieldConstraintEBLeftSide();
-        con.getExpressionLeftSide().appendPart( new ExpressionUnboundFact( p ) );
+        con.getExpressionLeftSide().appendPart( new ExpressionUnboundFact( p.getFactType() ) );
         con.getExpressionLeftSide().appendPart( new ExpressionField( "favouriteCheese",
                                                                      "Cheese",
                                                                      DataType.TYPE_OBJECT ) );
@@ -1487,35 +1390,8 @@ public class RuleModelDRLPersistenceTest {
                 + "     Person( favouriteCheese.smelly == true )"
                 + " then " + "end";
 
-        PackageDataModelOracle dmo = mock( PackageDataModelOracle.class );
-        when(
-                dmo.getProjectModelFields()
-            ).thenReturn(
-                new HashMap<String, ModelField[]>() {{
-                    put( "Person", new ModelField[]{
-                            new ModelField(
-                                    "favouriteCheese",
-                                    "Cheese",
-                                    ModelField.FIELD_CLASS_TYPE.TYPE_DECLARATION_CLASS,
-                                    ModelField.FIELD_ORIGIN.DECLARED,
-                                    FieldAccessorsAndMutators.BOTH,
-                                    "Cheese"
-                            )
-                    } );
-                    put( "Cheese", new ModelField[]{
-                            new ModelField(
-                                    "smelly",
-                                    "Boolean",
-                                    ModelField.FIELD_CLASS_TYPE.TYPE_DECLARATION_CLASS,
-                                    ModelField.FIELD_ORIGIN.DECLARED,
-                                    FieldAccessorsAndMutators.BOTH,
-                                    "Boolean"
-                            )
-                    } );
-                }}
-                        );
-
-        checkMarshallUnmarshall( expected, m, dmo );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -1547,7 +1423,8 @@ public class RuleModelDRLPersistenceTest {
                 + "     Person(field1 == 44, field2 == variableHere)"
                 + " then " + "end";
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -1585,7 +1462,8 @@ public class RuleModelDRLPersistenceTest {
                 + "insert( fact0 ); \n"
                 + "end";
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -1614,8 +1492,6 @@ public class RuleModelDRLPersistenceTest {
                                                 DataType.TYPE_NUMERIC_BIGINTEGER ) );
         m.addRhsItem( ai );
 
-        String result = RuleModelDRLPersistenceImpl.getInstance().marshal( m );
-
         String expected = "rule \"test literal biginteger\" \n"
                 + "\tdialect \"mvel\"\n when \n"
                 + "     Person(field1 == 44I ) \n"
@@ -1625,7 +1501,8 @@ public class RuleModelDRLPersistenceTest {
                 + "insert( fact0 ); \n"
                 + "end";
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -1663,7 +1540,8 @@ public class RuleModelDRLPersistenceTest {
                 + "insert( fact0 ); \n"
                 + "end";
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -1701,7 +1579,8 @@ public class RuleModelDRLPersistenceTest {
                 + "insert( fact0 ); \n"
                 + "end";
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -1733,7 +1612,8 @@ public class RuleModelDRLPersistenceTest {
                 + "     Person(field1 == true, field2 == variableHere)"
                 + " then " + "end";
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -1765,7 +1645,8 @@ public class RuleModelDRLPersistenceTest {
                 + "     Person(field1 == \"31-Jan-2010\", field2 == variableHere)"
                 + " then " + "end";
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -1796,7 +1677,8 @@ public class RuleModelDRLPersistenceTest {
                 + "     Person(field1 == \"bananna\", field2 == variableHere)"
                 + " then " + "end";
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -1823,7 +1705,8 @@ public class RuleModelDRLPersistenceTest {
                 + " then \n"
                 + "end";
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -1850,7 +1733,8 @@ public class RuleModelDRLPersistenceTest {
                 + " then \n"
                 + "end";
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -1877,7 +1761,8 @@ public class RuleModelDRLPersistenceTest {
                 + " then \n"
                 + "end";
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -1904,7 +1789,8 @@ public class RuleModelDRLPersistenceTest {
                 + " then \n"
                 + "end";
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -1941,7 +1827,8 @@ public class RuleModelDRLPersistenceTest {
             assertTrue( result.indexOf( "java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat(\"dd-MMM-yyyy\");" ) != -1 );
             assertTrue( result.indexOf( "fact0.setDob( sdf.parse(\"31-Jan-2000\"" ) != -1 );
 
-            checkMarshallUnmarshall( null, m );
+            checkMarshalling( null,
+                              m );
         } finally {
             if ( oldValue == null ) {
                 System.clearProperty( "drools.dateformat" );
@@ -1985,10 +1872,11 @@ public class RuleModelDRLPersistenceTest {
             String result = RuleModelDRLPersistenceImpl.getInstance().marshal( m );
 
             assertTrue( result.indexOf( "java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat(\"dd-MMM-yyyy\");" ) != -1 );
-            assertTrue( result.indexOf( "$p.setDob( sdf.parse(\"31-Jan-2000\"" ) != -1 );
-            assertTrue( result.indexOf( "update( $p );" ) != -1 );
+            assertTrue( result.indexOf( "setDob( sdf.parse(\"31-Jan-2000\"" ) != -1 );
+            assertTrue( result.indexOf( "modify( $p ) {" ) != -1 );
 
-            checkMarshallUnmarshall( null, m );
+            checkMarshalling( null,
+                              m );
         } finally {
             if ( oldValue == null ) {
                 System.clearProperty( "drools.dateformat" );
@@ -2036,7 +1924,8 @@ public class RuleModelDRLPersistenceTest {
             assertTrue( result.indexOf( "$p.setDob( sdf.parse(\"31-Jan-2000\"" ) != -1 );
             assertTrue( result.indexOf( "update( $p );" ) == -1 );
 
-            checkMarshallUnmarshall( null, m );
+            checkMarshalling( null,
+                              m );
         } finally {
             if ( oldValue == null ) {
                 System.clearProperty( "drools.dateformat" );
@@ -2104,7 +1993,8 @@ public class RuleModelDRLPersistenceTest {
 
         assertTrue( result.indexOf( "wim.internalExecuteWorkItem( wiWorkItem );" ) != -1 );
 
-        checkMarshallUnmarshall( null, m );
+        checkMarshalling( null,
+                          m );
     }
 
     @Test
@@ -2168,7 +2058,8 @@ public class RuleModelDRLPersistenceTest {
 
         assertTrue( result.indexOf( "wim.internalExecuteWorkItem( wiWorkItem );" ) != -1 );
 
-        checkMarshallUnmarshall( null, m );
+        checkMarshalling( null,
+                          m );
     }
 
     @Test
@@ -2277,7 +2168,8 @@ public class RuleModelDRLPersistenceTest {
 
         assertTrue( result.indexOf( "wim.internalExecuteWorkItem( wiWorkItem );" ) != -1 );
 
-        checkMarshallUnmarshall( null, m );
+        checkMarshalling( null,
+                          m );
     }
 
     @Test
@@ -2391,7 +2283,8 @@ public class RuleModelDRLPersistenceTest {
 
         assertTrue( result.indexOf( "wim.internalExecuteWorkItem( wiWorkItem );" ) != -1 );
 
-        checkMarshallUnmarshall( null, m );
+        checkMarshalling( null,
+                          m );
     }
 
     @Test
@@ -2456,7 +2349,8 @@ public class RuleModelDRLPersistenceTest {
 
         assertTrue( result.indexOf( "wim.internalExecuteWorkItem( wiWorkItem );" ) != -1 );
 
-        checkMarshallUnmarshall( null, m );
+        checkMarshalling( null,
+                          m );
     }
 
     @Test
@@ -2534,7 +2428,8 @@ public class RuleModelDRLPersistenceTest {
 
         assertTrue( result.indexOf( "wim.internalExecuteWorkItem( wiWorkItem );" ) != -1 );
 
-        checkMarshallUnmarshall( null, m );
+        checkMarshalling( null,
+                          m );
     }
 
     @Test
@@ -2609,7 +2504,8 @@ public class RuleModelDRLPersistenceTest {
         assertTrue( result.indexOf( "$r.setResultsStringResult( (java.lang.String) wiWorkItem.getResult( \"StringResult\" ) );" ) != -1 );
         assertTrue( result.indexOf( "insert( $r );" ) != -1 );
 
-        checkMarshallUnmarshall( null, m );
+        checkMarshalling( null,
+                          m );
     }
 
     @Test
@@ -2638,35 +2534,8 @@ public class RuleModelDRLPersistenceTest {
                 + "     Person(field1.field2 == variableHere)" + " then "
                 + "end";
 
-        PackageDataModelOracle dmo = mock( PackageDataModelOracle.class );
-        when(
-                dmo.getProjectModelFields()
-            ).thenReturn(
-                new HashMap<String, ModelField[]>() {{
-                    put( "Person", new ModelField[]{
-                            new ModelField(
-                                    "field1",
-                                    "Field1",
-                                    ModelField.FIELD_CLASS_TYPE.TYPE_DECLARATION_CLASS,
-                                    ModelField.FIELD_ORIGIN.DECLARED,
-                                    FieldAccessorsAndMutators.BOTH,
-                                    "Field1"
-                            )
-                    } );
-                    put( "Field1", new ModelField[]{
-                            new ModelField(
-                                    "field2",
-                                    "Field2",
-                                    ModelField.FIELD_CLASS_TYPE.TYPE_DECLARATION_CLASS,
-                                    ModelField.FIELD_ORIGIN.DECLARED,
-                                    FieldAccessorsAndMutators.BOTH,
-                                    "Field2"
-                            )
-                    } );
-                }}
-                        );
-
-        checkMarshallUnmarshall( expected, m, dmo );
+        checkMarshalling( expected,
+                          m );
     }
 
     private void assertEqualsIgnoreWhitespace( final String expected,
@@ -2676,7 +2545,8 @@ public class RuleModelDRLPersistenceTest {
         final String cleanActual = actual.replaceAll( "\\s+",
                                                       "" );
 
-        assertEquals( cleanExpected, cleanActual );
+        assertEquals( cleanExpected,
+                      cleanActual );
     }
 
     @Test
@@ -2698,7 +2568,8 @@ public class RuleModelDRLPersistenceTest {
         String expected = "rule \"yeah\" " + "\tdialect \"mvel\"\n when "
                 + "Goober( goo == ( someFunc(x) ) )" + " then " + "end";
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -2718,7 +2589,8 @@ public class RuleModelDRLPersistenceTest {
         String expected = "rule \"yeah\" " + "\tdialect \"mvel\"\n when "
                 + "Goober( eval( field soundslike \"poo\" ) )" + " then " + "end";
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -2751,7 +2623,8 @@ public class RuleModelDRLPersistenceTest {
                 + "\tdialect \"mvel\"\n when "
                 + "Person( field1 == goo  || == \"blah\" )" + " then " + "end";
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -2809,7 +2682,6 @@ public class RuleModelDRLPersistenceTest {
         s = RuleModelDRLPersistenceImpl.getInstance().marshal( m );
         assertFalse( s.indexOf( "mvel" ) > -1 );
         assertTrue( s.indexOf( "goober" ) > -1 );
-
     }
 
     @Test
@@ -2829,7 +2701,8 @@ public class RuleModelDRLPersistenceTest {
         assertTrue( s.indexOf( "auto-focus true" ) > -1 );
         assertTrue( s.indexOf( "duration 42" ) > -1 );
 
-        checkMarshallUnmarshall( s, m );
+        checkMarshalling( s,
+                          m );
     }
 
     @Test
@@ -2849,7 +2722,8 @@ public class RuleModelDRLPersistenceTest {
         m.addRhsItem( add );
         m.name = "my rule";
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -2902,43 +2776,8 @@ public class RuleModelDRLPersistenceTest {
                 + "insert( new Whee() );\n"
                 + "end";
 
-        PackageDataModelOracle dmo = mock( PackageDataModelOracle.class );
-        when(
-                dmo.getProjectModelFields()
-            ).thenReturn(
-                new HashMap<String, ModelField[]>() {{
-                    put( "Goober", new ModelField[]{
-                            new ModelField(
-                                    "gooField",
-                                    "Goo",
-                                    ModelField.FIELD_CLASS_TYPE.TYPE_DECLARATION_CLASS,
-                                    ModelField.FIELD_ORIGIN.DECLARED,
-                                    FieldAccessorsAndMutators.BOTH,
-                                    "Goo"
-                            ),
-                            new ModelField(
-                                    "fooField",
-                                    "Foo",
-                                    ModelField.FIELD_CLASS_TYPE.TYPE_DECLARATION_CLASS,
-                                    ModelField.FIELD_ORIGIN.DECLARED,
-                                    FieldAccessorsAndMutators.BOTH,
-                                    "Foo"
-                            )
-                    } );
-                    put( "Foo", new ModelField[]{
-                            new ModelField(
-                                    "barField",
-                                    "Bar",
-                                    ModelField.FIELD_CLASS_TYPE.TYPE_DECLARATION_CLASS,
-                                    ModelField.FIELD_ORIGIN.DECLARED,
-                                    FieldAccessorsAndMutators.BOTH,
-                                    "Bar"
-                            )
-                    } );
-                }}
-                        );
-
-        checkMarshallUnmarshall( expected, m, dmo );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -2991,7 +2830,6 @@ public class RuleModelDRLPersistenceTest {
         ActionInsertFact ass = new ActionInsertFact( "Whee" );
         m.addRhsItem( ass );
 
-        String actual = RuleModelDRLPersistenceImpl.getInstance().marshal( m );
         String expected = "rule \"or composite complex\""
                 + "dialect \"mvel\"\n"
                 + "when\n"
@@ -3000,51 +2838,8 @@ public class RuleModelDRLPersistenceTest {
                 + "insert( new Whee() );\n"
                 + "end";
 
-        PackageDataModelOracle dmo = mock( PackageDataModelOracle.class );
-        when(
-                dmo.getProjectModelFields()
-            ).thenReturn(
-                new HashMap<String, ModelField[]>() {{
-                    put( "Goober", new ModelField[]{
-                            new ModelField(
-                                    "gooField",
-                                    "Goo",
-                                    ModelField.FIELD_CLASS_TYPE.TYPE_DECLARATION_CLASS,
-                                    ModelField.FIELD_ORIGIN.DECLARED,
-                                    FieldAccessorsAndMutators.BOTH,
-                                    "Goo"
-                            ),
-                            new ModelField(
-                                    "fooField",
-                                    "Foo",
-                                    ModelField.FIELD_CLASS_TYPE.TYPE_DECLARATION_CLASS,
-                                    ModelField.FIELD_ORIGIN.DECLARED,
-                                    FieldAccessorsAndMutators.BOTH,
-                                    "Foo"
-                            ),
-                            new ModelField(
-                                    "zooField",
-                                    "Zoo",
-                                    ModelField.FIELD_CLASS_TYPE.TYPE_DECLARATION_CLASS,
-                                    ModelField.FIELD_ORIGIN.DECLARED,
-                                    FieldAccessorsAndMutators.BOTH,
-                                    "Zoo"
-                            )
-                    } );
-                    put( "Foo", new ModelField[]{
-                            new ModelField(
-                                    "barField",
-                                    "Bar",
-                                    ModelField.FIELD_CLASS_TYPE.TYPE_DECLARATION_CLASS,
-                                    ModelField.FIELD_ORIGIN.DECLARED,
-                                    FieldAccessorsAndMutators.BOTH,
-                                    "Bar"
-                            )
-                    } );
-                }}
-                        );
-
-        checkMarshallUnmarshall( expected, m, dmo );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -3088,7 +2883,6 @@ public class RuleModelDRLPersistenceTest {
         ActionInsertFact ass = new ActionInsertFact( "Whee" );
         m.addRhsItem( ass );
 
-        String actual = RuleModelDRLPersistenceImpl.getInstance().marshal( m );
         String expected = "rule \"and composite\""
                 + "dialect \"mvel\"\n"
                 + "when\n"
@@ -3097,43 +2891,8 @@ public class RuleModelDRLPersistenceTest {
                 + "insert( new Whee() );\n"
                 + "end";
 
-        PackageDataModelOracle dmo = mock( PackageDataModelOracle.class );
-        when(
-                dmo.getProjectModelFields()
-            ).thenReturn(
-                new HashMap<String, ModelField[]>() {{
-                    put( "Goober", new ModelField[]{
-                            new ModelField(
-                                    "gooField",
-                                    "Goo",
-                                    ModelField.FIELD_CLASS_TYPE.TYPE_DECLARATION_CLASS,
-                                    ModelField.FIELD_ORIGIN.DECLARED,
-                                    FieldAccessorsAndMutators.BOTH,
-                                    "Goo"
-                            ),
-                            new ModelField(
-                                    "fooField",
-                                    "Foo",
-                                    ModelField.FIELD_CLASS_TYPE.TYPE_DECLARATION_CLASS,
-                                    ModelField.FIELD_ORIGIN.DECLARED,
-                                    FieldAccessorsAndMutators.BOTH,
-                                    "Foo"
-                            )
-                    } );
-                    put( "Foo", new ModelField[]{
-                            new ModelField(
-                                    "barField",
-                                    "Bar",
-                                    ModelField.FIELD_CLASS_TYPE.TYPE_DECLARATION_CLASS,
-                                    ModelField.FIELD_ORIGIN.DECLARED,
-                                    FieldAccessorsAndMutators.BOTH,
-                                    "Bar"
-                            )
-                    } );
-                }}
-                        );
-
-        checkMarshallUnmarshall( expected, m, dmo );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -3195,51 +2954,8 @@ public class RuleModelDRLPersistenceTest {
                 + "insert( new Whee() );\n"
                 + "end";
 
-        PackageDataModelOracle dmo = mock( PackageDataModelOracle.class );
-        when(
-                dmo.getProjectModelFields()
-            ).thenReturn(
-                new HashMap<String, ModelField[]>() {{
-                    put( "Goober", new ModelField[]{
-                            new ModelField(
-                                    "gooField",
-                                    "Goo",
-                                    ModelField.FIELD_CLASS_TYPE.TYPE_DECLARATION_CLASS,
-                                    ModelField.FIELD_ORIGIN.DECLARED,
-                                    FieldAccessorsAndMutators.BOTH,
-                                    "Goo"
-                            ),
-                            new ModelField(
-                                    "fooField",
-                                    "Foo",
-                                    ModelField.FIELD_CLASS_TYPE.TYPE_DECLARATION_CLASS,
-                                    ModelField.FIELD_ORIGIN.DECLARED,
-                                    FieldAccessorsAndMutators.BOTH,
-                                    "Foo"
-                            ),
-                            new ModelField(
-                                    "zooField",
-                                    "Zoo",
-                                    ModelField.FIELD_CLASS_TYPE.TYPE_DECLARATION_CLASS,
-                                    ModelField.FIELD_ORIGIN.DECLARED,
-                                    FieldAccessorsAndMutators.BOTH,
-                                    "Zoo"
-                            )
-                    } );
-                    put( "Foo", new ModelField[]{
-                            new ModelField(
-                                    "barField",
-                                    "Bar",
-                                    ModelField.FIELD_CLASS_TYPE.TYPE_DECLARATION_CLASS,
-                                    ModelField.FIELD_ORIGIN.DECLARED,
-                                    FieldAccessorsAndMutators.BOTH,
-                                    "Bar"
-                            )
-                    } );
-                }}
-                        );
-
-        checkMarshallUnmarshall( expected, m, dmo );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -3286,7 +3002,8 @@ public class RuleModelDRLPersistenceTest {
             assertTrue( result.indexOf( "java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat(\"dd-MMM-yyyy\");" ) != -1 );
             assertTrue( result.indexOf( "$p.method( \"String\", true, sdf.parse(\"31-Jan-2012\"), 100, 100B );" ) != -1 );
 
-            checkMarshallUnmarshall( null, m );
+            checkMarshalling( null,
+                              m );
 
         } finally {
             if ( oldValue == null ) {
@@ -3343,7 +3060,8 @@ public class RuleModelDRLPersistenceTest {
             assertTrue( result.indexOf( "java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat(\"dd-MMM-yyyy\");" ) != -1 );
             assertTrue( result.indexOf( "$p.method( \"String\", true, sdf.parse(\"31-Jan-2012\"), 100, new java.math.BigDecimal(\"100\") );" ) != -1 );
 
-            checkMarshallUnmarshall( null, m );
+            checkMarshalling( null,
+                              m );
 
         } finally {
             if ( oldValue == null ) {
@@ -3387,8 +3105,8 @@ public class RuleModelDRLPersistenceTest {
                 + "then\n"
                 + "end";
 
-        checkMarshallUnmarshall( expected,
-                                 m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -3420,8 +3138,8 @@ public class RuleModelDRLPersistenceTest {
                 + "then\n"
                 + "end";
 
-        checkMarshallUnmarshall( expected,
-                                 m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -3441,7 +3159,8 @@ public class RuleModelDRLPersistenceTest {
 
         final FactPattern fp2 = new FactPattern( "Person" );
         final FromCompositeFactPattern ffp1 = new FromCompositeFactPattern();
-        ffp1.setExpression( new ExpressionFormLine( new ExpressionVariable( fp1 ) ) );
+        ffp1.setExpression( new ExpressionFormLine( new ExpressionVariable( fp1.getBoundName(),
+                                                                            fp1.getFactType() ) ) );
         ffp1.setFactPattern( fp2 );
         cp.addFactPattern( ffp1 );
         m.addLhsItem( cp );
@@ -3485,7 +3204,7 @@ public class RuleModelDRLPersistenceTest {
     @Test
     public void testActionSetFieldValue() {
         final String drl = "rule \"r0\"\n" +
-                "dialect \"mvel\"" +
+                "dialect \"mvel\"\n" +
                 "when\n" +
                 "$a : Applicant( )\n" +
                 "then\n" +
@@ -3530,7 +3249,7 @@ public class RuleModelDRLPersistenceTest {
     @Test
     public void testActionCallMethod() {
         final String drl = "rule \"r0\"\n" +
-                "dialect \"mvel\"" +
+                "dialect \"mvel\"\n" +
                 "when\n" +
                 "$a : Applicant( )\n" +
                 "then\n" +
@@ -3577,7 +3296,7 @@ public class RuleModelDRLPersistenceTest {
         String global = "global java.util.ArrayList list";
         String drl =
                 "rule \"r0\"\n" +
-                        "dialect \"mvel\"" +
+                        "dialect \"mvel\"\n" +
                         "when\n" +
                         "$a : Applicant( )\n" +
                         "then\n" +
@@ -3586,7 +3305,7 @@ public class RuleModelDRLPersistenceTest {
 
         final RuleModel m = RuleModelDRLPersistenceImpl.getInstance().unmarshal( drl,
                                                                                  Arrays.asList( global ),
-                                                                                 dmo );
+                                                                                 mock( PackageDataModelOracle.class ) );
 
         assertNotNull( m );
         assertEqualsIgnoreWhitespace( drl, RuleModelDRLPersistenceImpl.getInstance().marshal( m ) );
@@ -3680,40 +3399,21 @@ public class RuleModelDRLPersistenceTest {
         assertEquals( 1,
                       m.lhs.length );
 
-        assertTrue( m.lhs[ 0 ] instanceof FactPattern );
-        final FactPattern fp1 = (FactPattern) m.lhs[ 0 ];
-        assertEquals( "$a",
-                      fp1.getBoundName() );
-        assertEquals( "Applicant",
-                      fp1.getFactType() );
+        assertTrue( m.lhs[ 0 ] instanceof FreeFormLine );
+        final FreeFormLine ffl1 = (FreeFormLine) m.lhs[ 0 ];
+        assertEquals( "$a : Applicant( )",
+                      ffl1.getText() );
 
         //RHS
-        assertEquals( 2,
+        assertEquals( 1,
                       m.rhs.length );
 
         assertTrue( m.rhs[ 0 ] instanceof FreeFormLine );
-        final FreeFormLine ffl = (FreeFormLine) m.rhs[ 0 ];
-        assertEquals( "Here's something typed by the user as free-format DRL",
-                      ffl.getText() );
-
-        assertTrue( m.rhs[ 1 ] instanceof ActionSetField );
-        final ActionSetField a1 = (ActionSetField) m.rhs[ 1 ];
-        assertEquals( "$a",
-                      a1.getVariable() );
-        assertEquals( 2,
-                      a1.getFieldValues().length );
-
-        final ActionFieldValue fv1a1 = a1.getFieldValues()[ 0 ];
-        assertEquals( "name",
-                      fv1a1.getField() );
-        assertEquals( "Michael",
-                      fv1a1.getValue() );
-
-        final ActionFieldValue fv1a2 = a1.getFieldValues()[ 1 ];
-        assertEquals( "age",
-                      fv1a2.getField() );
-        assertEquals( "40",
-                      fv1a2.getValue() );
+        final FreeFormLine ffl2 = (FreeFormLine) m.rhs[ 0 ];
+        assertEquals( "$a.setName( \"Michael\" );\n" +
+                              "Here's something typed by the user as free-format DRL\n" +
+                              "$a.setAge( 40 );",
+                      ffl2.getText() );
     }
 
     @Test
@@ -3992,8 +3692,8 @@ public class RuleModelDRLPersistenceTest {
         con.setConstraintValueType( BaseSingleFieldConstraint.TYPE_LITERAL );
         pat.addConstraint( con );
 
-        checkMarshallUnmarshall( expected,
-                                 m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -4020,8 +3720,8 @@ public class RuleModelDRLPersistenceTest {
         con.setConstraintValueType( BaseSingleFieldConstraint.TYPE_LITERAL );
         pat.addConstraint( con );
 
-        checkMarshallUnmarshall( expected,
-                                 m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -4048,8 +3748,8 @@ public class RuleModelDRLPersistenceTest {
         con.setConstraintValueType( BaseSingleFieldConstraint.TYPE_LITERAL );
         pat.addConstraint( con );
 
-        checkMarshallUnmarshall( expected,
-                                 m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -4076,14 +3776,16 @@ public class RuleModelDRLPersistenceTest {
         con.setConstraintValueType( BaseSingleFieldConstraint.TYPE_LITERAL );
         pat.addConstraint( con );
 
-        checkMarshallUnmarshall( expected,
-                                 m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
     public void testRHSFactBindingZeroBound() {
 
         RuleModel m = new RuleModel();
+        m.addAttribute( new RuleAttribute( "dialect",
+                                           "mvel" ) );
         m.name = "test";
 
         ActionInsertFact ai0 = new ActionInsertFact( "Person" );
@@ -4097,8 +3799,6 @@ public class RuleModelDRLPersistenceTest {
         m.addRhsItem( ai0 );
         m.addRhsItem( ai1 );
 
-        String result = RuleModelDRLPersistenceImpl.getInstance().marshal( m );
-
         String expected = "rule \"test\" \n"
                 + "dialect \"mvel\"\n"
                 + "when"
@@ -4111,7 +3811,8 @@ public class RuleModelDRLPersistenceTest {
                 + "insert( fact1 ); \n"
                 + "end";
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -4146,7 +3847,8 @@ public class RuleModelDRLPersistenceTest {
                 + "insert( fact1 ); \n"
                 + "end";
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -4181,7 +3883,8 @@ public class RuleModelDRLPersistenceTest {
                 + "insert( fact0 ); \n"
                 + "end";
 
-        checkMarshallUnmarshall( expected, m );
+        checkMarshalling( expected,
+                          m );
     }
 
     @Test
@@ -4238,8 +3941,229 @@ public class RuleModelDRLPersistenceTest {
                 + "insert( fact0 );\n"
                 + "end";
 
-        checkMarshallUnmarshall( expected,
-                                 m );
+        checkMarshalling( expected,
+                          m );
+    }
+
+    @Test
+    public void testLHSFormula() {
+        //https://bugzilla.redhat.com/show_bug.cgi?id=1087690
+        RuleModel m = new RuleModel();
+        m.name = "test";
+
+        FactPattern p = new FactPattern( "Number" );
+        m.addLhsItem( p );
+
+        SingleFieldConstraint con1 = new SingleFieldConstraint();
+        con1.setValue( "true" );
+        con1.setConstraintValueType( SingleFieldConstraint.TYPE_PREDICATE );
+        p.addConstraint( con1 );
+
+        SingleFieldConstraintEBLeftSide con2 = new SingleFieldConstraintEBLeftSide();
+        con2.getExpressionLeftSide().appendPart( new ExpressionUnboundFact( p.getFactType() ) );
+        con2.getExpressionLeftSide().appendPart( new ExpressionMethod( "intValue",
+                                                                       "int",
+                                                                       DataType.TYPE_NUMERIC_INTEGER ) );
+        con2.setConstraintValueType( BaseSingleFieldConstraint.TYPE_LITERAL );
+        con2.setOperator( "==" );
+        con2.setValue( "0" );
+        p.addConstraint( con2 );
+
+        String expected = "rule \"test\"\n"
+                + "dialect \"mvel\"\n"
+                + "when\n"
+                + "Number( eval( true ), intValue() == 0 )\n"
+                + "then\n"
+                + "end";
+
+        checkMarshalling( expected,
+                          m );
+    }
+
+    @Test
+    public void testLHSReturnType() {
+        //https://bugzilla.redhat.com/show_bug.cgi?id=1087690
+        RuleModel m = new RuleModel();
+        m.name = "test";
+
+        FactPattern p = new FactPattern( "Number" );
+        m.addLhsItem( p );
+
+        SingleFieldConstraint con1 = new SingleFieldConstraint();
+        con1.setFieldType( DataType.TYPE_NUMERIC_INTEGER );
+        con1.setFieldName( "this" );
+        con1.setOperator( "!= null" );
+        con1.setConstraintValueType( SingleFieldConstraint.TYPE_LITERAL );
+        p.addConstraint( con1 );
+
+        SingleFieldConstraintEBLeftSide con2 = new SingleFieldConstraintEBLeftSide();
+        con2.getExpressionLeftSide().appendPart( new ExpressionUnboundFact( p.getFactType() ) );
+        con2.getExpressionLeftSide().appendPart( new ExpressionMethod( "intValue",
+                                                                       "int",
+                                                                       DataType.TYPE_NUMERIC_INTEGER ) );
+        con2.setConstraintValueType( BaseSingleFieldConstraint.TYPE_LITERAL );
+        con2.setOperator( "==" );
+        con2.setValue( "0" );
+        p.addConstraint( con2 );
+
+        String expected = "rule \"test\"\n"
+                + "dialect \"mvel\"\n"
+                + "when\n"
+                + "Number( this != null, intValue() == 0 )\n"
+                + "then\n"
+                + "end";
+
+        checkMarshalling( expected,
+                          m );
+    }
+
+    @Test
+    public void testRHSChangeMultipleFieldsModifyBoth() {
+        String expected = "" +
+                "rule \"my rule\" \n" +
+                "  dialect \"mvel\"\n" +
+                "  when\n" +
+                "    $p : Person()\n" +
+                "  then\n" +
+                "    modify( $p ) {\n" +
+                "      setName( \"Fred\" ),\n" +
+                "      setAge( 55 )\n" +
+                "    }\n" +
+                "end\n";
+        final RuleModel m = new RuleModel();
+
+        FactPattern factPattern = new FactPattern();
+        factPattern.setFactType( "Person" );
+        factPattern.setBoundName( "$p" );
+        m.lhs = new IPattern[]{ factPattern };
+
+        ActionUpdateField auf = new ActionUpdateField();
+        auf.setVariable( "$p" );
+        ActionFieldValue afv1 = new ActionFieldValue();
+        afv1.setField( "name" );
+        afv1.setType( DataType.TYPE_STRING );
+        afv1.setNature( FieldNatureType.TYPE_LITERAL );
+        afv1.setValue( "Fred" );
+        ActionFieldValue afv2 = new ActionFieldValue();
+        afv2.setField( "age" );
+        afv2.setType( DataType.TYPE_NUMERIC_INTEGER );
+        afv2.setNature( FieldNatureType.TYPE_LITERAL );
+        afv2.setValue( "55" );
+
+        auf.setFieldValues( new ActionFieldValue[]{ afv1, afv2 } );
+        m.rhs = new IAction[]{ auf };
+
+        m.name = "my rule";
+
+        checkMarshalling( expected,
+                          m );
+    }
+
+    @Test
+    public void testRHSChangeMultipleFieldsModifyOneUpdateOther() {
+        String expected = "" +
+                "rule \"my rule\" \n" +
+                "  dialect \"mvel\"\n" +
+                "  when\n" +
+                "    $p : Person()\n" +
+                "  then\n" +
+                "    modify( $p ) {\n" +
+                "      setName( \"Fred\" )\n" +
+                "    }\n" +
+                "  $p.setAge( 55 );\n" +
+                "end\n";
+        final RuleModel m = new RuleModel();
+
+        FactPattern factPattern = new FactPattern();
+        factPattern.setFactType( "Person" );
+        factPattern.setBoundName( "$p" );
+        m.lhs = new IPattern[]{ factPattern };
+
+        ActionUpdateField auf = new ActionUpdateField();
+        auf.setVariable( "$p" );
+        ActionFieldValue afv1 = new ActionFieldValue();
+        afv1.setField( "name" );
+        afv1.setType( DataType.TYPE_STRING );
+        afv1.setNature( FieldNatureType.TYPE_LITERAL );
+        afv1.setValue( "Fred" );
+
+        auf.setFieldValues( new ActionFieldValue[]{ afv1 } );
+
+        ActionSetField asf = new ActionSetField();
+        asf.setVariable( "$p" );
+        ActionFieldValue afv2 = new ActionFieldValue();
+        afv2.setField( "age" );
+        afv2.setType( DataType.TYPE_NUMERIC_INTEGER );
+        afv2.setNature( FieldNatureType.TYPE_LITERAL );
+        afv2.setValue( "55" );
+
+        asf.setFieldValues( new ActionFieldValue[]{ afv2 } );
+
+        m.rhs = new IAction[]{ auf, asf };
+
+        m.name = "my rule";
+
+        checkMarshalling( expected,
+                          m );
+    }
+
+    @Test
+    public void testRHSChangeMultipleFieldsBlockModify() {
+        String expected = "" +
+                "rule \"my rule\" \n" +
+                "  dialect \"mvel\"\n" +
+                "  when\n" +
+                "    $p : Person()\n" +
+                "  then\n" +
+                "    modify( $p ) {\n" +
+                "      setName( \"Fred\" ),\n" +
+                "      setAge( 55 )\n" +
+                "    }\n" +
+                "    $p.setGender( \"X\" );" +
+                "end\n";
+        final RuleModel m = new RuleModel();
+
+        FactPattern factPattern = new FactPattern();
+        factPattern.setFactType( "Person" );
+        factPattern.setBoundName( "$p" );
+        m.lhs = new IPattern[]{ factPattern };
+
+        ActionUpdateField auf1 = new ActionUpdateField();
+        auf1.setVariable( "$p" );
+        ActionFieldValue afv1 = new ActionFieldValue();
+        afv1.setField( "name" );
+        afv1.setType( DataType.TYPE_STRING );
+        afv1.setNature( FieldNatureType.TYPE_LITERAL );
+        afv1.setValue( "Fred" );
+
+        auf1.setFieldValues( new ActionFieldValue[]{ afv1 } );
+
+        ActionSetField asf = new ActionSetField();
+        asf.setVariable( "$p" );
+        ActionFieldValue afv2 = new ActionFieldValue();
+        afv2.setField( "gender" );
+        afv2.setType( DataType.TYPE_STRING );
+        afv2.setNature( FieldNatureType.TYPE_LITERAL );
+        afv2.setValue( "X" );
+
+        asf.setFieldValues( new ActionFieldValue[]{ afv2 } );
+
+        ActionUpdateField auf2 = new ActionUpdateField();
+        auf2.setVariable( "$p" );
+        ActionFieldValue afv3 = new ActionFieldValue();
+        afv3.setField( "age" );
+        afv3.setType( DataType.TYPE_NUMERIC_INTEGER );
+        afv3.setNature( FieldNatureType.TYPE_LITERAL );
+        afv3.setValue( "55" );
+
+        auf2.setFieldValues( new ActionFieldValue[]{ afv3 } );
+
+        m.rhs = new IAction[]{ auf1, asf, auf2 };
+
+        m.name = "my rule";
+
+        checkMarshalling( expected,
+                          m );
     }
 
 }

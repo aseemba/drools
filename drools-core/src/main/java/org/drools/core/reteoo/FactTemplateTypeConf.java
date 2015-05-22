@@ -16,20 +16,17 @@
 
 package org.drools.core.reteoo;
 
+import org.drools.core.facttemplates.FactTemplate;
+import org.drools.core.facttemplates.FactTemplateObjectType;
+import org.drools.core.impl.InternalKnowledgeBase;
+import org.drools.core.rule.EntryPointId;
+import org.drools.core.rule.TypeDeclaration;
+import org.drools.core.spi.ObjectType;
+
 import java.io.Externalizable;
 import java.io.IOException;
 import java.io.ObjectInput;
 import java.io.ObjectOutput;
-
-import org.drools.core.RuntimeDroolsException;
-import org.drools.core.common.InternalRuleBase;
-import org.drools.core.facttemplates.FactTemplate;
-import org.drools.core.facttemplates.FactTemplateObjectType;
-import org.drools.core.reteoo.builder.BuildContext;
-import org.drools.core.reteoo.builder.PatternBuilder;
-import org.drools.core.rule.EntryPointId;
-import org.drools.core.rule.TypeDeclaration;
-import org.drools.core.spi.ObjectType;
 
 public class FactTemplateTypeConf
     implements
@@ -38,6 +35,9 @@ public class FactTemplateTypeConf
 
     private static final long serialVersionUID = 510l;
 
+    private transient InternalKnowledgeBase kBase;
+
+    private ObjectType        objectType;
     private FactTemplate      factTemplate;
     private ObjectTypeNode    concreteObjectTypeNode;
     private ObjectTypeNode[]  cache;
@@ -52,43 +52,36 @@ public class FactTemplateTypeConf
 
     public FactTemplateTypeConf(final EntryPointId entryPoint,
                                 final FactTemplate factTemplate,
-                                final InternalRuleBase ruleBase) {
+                                final InternalKnowledgeBase kBase) {
+        this.kBase = kBase;
         this.factTemplate = factTemplate;
         this.entryPoint = entryPoint;
-        ObjectType objectType = new FactTemplateObjectType( factTemplate );
-        this.concreteObjectTypeNode = (ObjectTypeNode) ruleBase.getRete().getObjectTypeNodes( entryPoint ).get( objectType );
-        if ( this.concreteObjectTypeNode == null ) {
-            BuildContext context = new BuildContext( ruleBase,
-                                                     ((ReteooRuleBase) ruleBase.getRete().getRuleBase()).getReteooBuilder().getIdGenerator() );
-            if ( context.getRuleBase().getConfiguration().isSequential() ) {
-                // We are in sequential mode, so no nodes should have memory
-                context.setTupleMemoryEnabled( false );
-                context.setObjectTypeNodeMemoryEnabled( false );
-            } else {
-                context.setTupleMemoryEnabled( true );
-                context.setObjectTypeNodeMemoryEnabled( true );
-            }
-            // there must exist an ObjectTypeNode for this concrete class
-            this.concreteObjectTypeNode = PatternBuilder.attachObjectTypeNode( context,
-                                                                               objectType );
-        }
+        this.objectType = new FactTemplateObjectType( factTemplate );
+        this.concreteObjectTypeNode = (ObjectTypeNode) kBase.getRete().getObjectTypeNodes( entryPoint ).get( objectType );
         this.cache = new ObjectTypeNode[]{this.concreteObjectTypeNode};
     }
 
     public void readExternal(ObjectInput in) throws IOException,
                                             ClassNotFoundException {
+        kBase = (InternalKnowledgeBase) in.readObject();
         factTemplate = (FactTemplate) in.readObject();
         concreteObjectTypeNode = (ObjectTypeNode) in.readObject();
         cache = (ObjectTypeNode[]) in.readObject();
+        objectType = (ObjectType) in.readObject();
     }
 
     public void writeExternal(ObjectOutput out) throws IOException {
+        out.writeObject( kBase );
         out.writeObject( factTemplate );
         out.writeObject( concreteObjectTypeNode );
         out.writeObject( cache );
+        out.writeObject( objectType );
     }
 
     public ObjectTypeNode getConcreteObjectTypeNode() {
+        if (concreteObjectTypeNode == null) {
+            concreteObjectTypeNode = kBase.getRete().getObjectTypeNodes( entryPoint ).get( objectType );
+        }
         return this.concreteObjectTypeNode;
     }
 
@@ -97,14 +90,6 @@ public class FactTemplateTypeConf
             this.cache = new ObjectTypeNode[]{this.concreteObjectTypeNode};
         }
         return this.cache;
-    }
-
-    public Object getShadow(Object fact) throws RuntimeDroolsException {
-        return null;
-    }
-
-    public boolean isShadowEnabled() {
-        return false;
     }
 
     public boolean isAssignableFrom(Object object) {

@@ -16,28 +16,27 @@
 
 package org.drools.core.reteoo;
 
-import java.io.IOException;
-import java.io.ObjectInput;
-import java.io.ObjectOutput;
-
-import org.drools.core.common.InternalKnowledgeRuntime;
-import org.drools.core.common.TupleStartEqualsConstraint;
-import org.drools.core.common.TupleStartEqualsConstraint.TupleStartEqualsConstraintContextEntry;
-import org.drools.core.common.WorkingMemoryAction;
-import org.drools.core.impl.StatefulKnowledgeSessionImpl;
-import org.drools.core.marshalling.impl.MarshallerReaderContext;
-import org.drools.core.marshalling.impl.MarshallerWriteContext;
-import org.drools.core.marshalling.impl.ProtobufMessages.ActionQueue.Action;
-import org.drools.core.reteoo.AccumulateNode.AccumulateMemory;
 import org.drools.core.common.InternalFactHandle;
 import org.drools.core.common.InternalWorkingMemory;
 import org.drools.core.common.LeftTupleIterator;
 import org.drools.core.common.PropagationContextFactory;
+import org.drools.core.common.TupleStartEqualsConstraint;
+import org.drools.core.common.TupleStartEqualsConstraint.TupleStartEqualsConstraintContextEntry;
 import org.drools.core.common.UpdateContext;
+import org.drools.core.common.WorkingMemoryAction;
+import org.drools.core.marshalling.impl.MarshallerReaderContext;
+import org.drools.core.marshalling.impl.MarshallerWriteContext;
+import org.drools.core.marshalling.impl.ProtobufMessages.ActionQueue.Action;
+import org.drools.core.phreak.PropagationEntry;
+import org.drools.core.reteoo.AccumulateNode.AccumulateMemory;
 import org.drools.core.reteoo.builder.BuildContext;
 import org.drools.core.spi.PropagationContext;
 import org.drools.core.util.FastIterator;
 import org.drools.core.util.Iterator;
+
+import java.io.IOException;
+import java.io.ObjectInput;
+import java.io.ObjectOutput;
 
 
 public class QueryRiaFixerNode extends LeftTupleSource
@@ -67,9 +66,7 @@ public class QueryRiaFixerNode extends LeftTupleSource
     public QueryRiaFixerNode(final int id,
                              final LeftTupleSource tupleSource,
                              final BuildContext context) {
-        super( id,
-               context.getPartitionId(),
-               context.getRuleBase().getConfiguration().isMultithreadEvaluation() );
+        super(id, context);
         setLeftTupleSource(tupleSource);
         this.tupleMemoryEnabled = context.isTupleMemoryEnabled();
     }
@@ -106,7 +103,7 @@ public class QueryRiaFixerNode extends LeftTupleSource
 
     public void attach( BuildContext context ) {
         this.leftInput.addTupleSink( this, context );
-        if (context == null || context.getRuleBase().getConfiguration().isPhreakEnabled() ) {
+        if (context == null || context.getKnowledgeBase().getConfiguration().isPhreakEnabled() ) {
             return;
         }
 
@@ -300,8 +297,8 @@ public class QueryRiaFixerNode extends LeftTupleSource
     }
 
     public static class QueryRiaFixerNodeFixer
-            implements
-            WorkingMemoryAction {
+            extends PropagationEntry.AbstractPropagationEntry
+            implements WorkingMemoryAction {
         private PropagationContext context;
 
         private LeftTuple leftTuple;
@@ -323,10 +320,6 @@ public class QueryRiaFixerNode extends LeftTupleSource
         }
 
         public QueryRiaFixerNodeFixer(MarshallerReaderContext context) throws IOException {
-            throw new UnsupportedOperationException("Should not be present in network on serialisation");
-        }
-
-        public void write(MarshallerWriteContext context) throws IOException {
             throw new UnsupportedOperationException("Should not be present in network on serialisation");
         }
 
@@ -383,19 +376,8 @@ public class QueryRiaFixerNode extends LeftTupleSource
             }
         }
 
-        public void execute(InternalKnowledgeRuntime kruntime) {
-            execute(((StatefulKnowledgeSessionImpl) kruntime).getInternalWorkingMemory());
-        }
-
         public String toString() {
             return "[QueryRiaFixerNodeFixer leftTuple=" + leftTuple + ",\n        retract=" + retract + "]\n";
-        }
-
-        public void writeExternal(ObjectOutput out) throws IOException {
-        }
-
-        public void readExternal(ObjectInput in) throws IOException,
-                ClassNotFoundException {
         }
     }
 }

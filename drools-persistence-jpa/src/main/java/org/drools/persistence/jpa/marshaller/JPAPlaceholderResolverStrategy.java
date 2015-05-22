@@ -28,17 +28,26 @@ import java.lang.reflect.Method;
 import javax.persistence.EntityManager;
 import javax.persistence.EntityManagerFactory;
 import javax.persistence.Id;
+import javax.persistence.Persistence;
 
 import org.drools.core.common.DroolsObjectInputStream;
+import org.drools.persistence.TransactionAware;
+import org.drools.persistence.TransactionManager;
 import org.kie.api.marshalling.ObjectMarshallingStrategy;
 import org.kie.api.runtime.Environment;
 import org.kie.api.runtime.EnvironmentName;
+import org.kie.internal.runtime.Cacheable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class JPAPlaceholderResolverStrategy implements ObjectMarshallingStrategy {
+public class JPAPlaceholderResolverStrategy implements ObjectMarshallingStrategy, TransactionAware, Cacheable {
     private static Logger log = LoggerFactory.getLogger(JPAPlaceholderResolverStrategy.class);
     private EntityManagerFactory emf;
+    private ClassLoader classLoader;
+
+    private boolean closeEmf = false;
+
+    private static final ThreadLocal<EntityManager> persister = new ThreadLocal<EntityManager>();
     
     public JPAPlaceholderResolverStrategy(Environment env) {
         this.emf = (EntityManagerFactory) env.get(EnvironmentName.ENTITY_MANAGER_FACTORY);
@@ -47,6 +56,22 @@ public class JPAPlaceholderResolverStrategy implements ObjectMarshallingStrategy
     public JPAPlaceholderResolverStrategy(EntityManagerFactory emf) {
         this.emf = emf;
     }
+
+    public JPAPlaceholderResolverStrategy(String persistenceUnit, ClassLoader cl) {
+        ClassLoader tccl = Thread.currentThread().getContextClassLoader();
+
+        try {
+            // override tccl so persistence unit can be found from within given class loader - e.g. kjar
+            Thread.currentThread().setContextClassLoader(cl);
+
+            this.emf = Persistence.createEntityManagerFactory(persistenceUnit);
+            this.closeEmf = true;
+
+        } finally {
+            Thread.currentThread().setContextClassLoader(tccl);
+        }
+        this.classLoader = cl;
+    }
     
     public boolean accept(Object object) {
         return isEntity(object);
@@ -54,13 +79,17 @@ public class JPAPlaceholderResolverStrategy implements ObjectMarshallingStrategy
 
     public void write(ObjectOutputStream os, Object object) throws IOException {
         Object id = getClassIdValue(object);
-        EntityManager em = emf.createEntityManager();
+        EntityManager em = getEntityManager();
         if (id == null) {
             em.persist(object);
             id = getClassIdValue(object);
         } else {
             em.merge(object);
         }
+        // since this is invoked by marshaller it's safe to call flush
+        // and it's important to be flushed so subsequent unmarshall operations
+        // will get update content especially when merged
+        em.flush();
         os.writeUTF(object.getClass().getCanonicalName());
         os.writeObject(id);
     }
@@ -69,7 +98,7 @@ public class JPAPlaceholderResolverStrategy implements ObjectMarshallingStrategy
         String canonicalName = is.readUTF();
         Object id = is.readObject();
 
-        EntityManager em = emf.createEntityManager();
+        EntityManager em = getEntityManager();
         return em.find(Class.forName(canonicalName), id);
     }
 
@@ -77,13 +106,18 @@ public class JPAPlaceholderResolverStrategy implements ObjectMarshallingStrategy
                           ObjectOutputStream os, 
                           Object object) throws IOException {
         Object id = getClassIdValue(object);
-        EntityManager em = emf.createEntityManager();
+        EntityManager em = getEntityManager();
         if (id == null) {
             em.persist(object);
             id = getClassIdValue(object);
         } else {
             em.merge(object);
         }
+        // since this is invoked by marshaller it's safe to call flush
+        // and it's important to be flushed so subsequent unmarshall operations
+        // will get update content especially when merged
+        em.flush();
+
         ByteArrayOutputStream buff = new ByteArrayOutputStream();
         ObjectOutputStream oos = new ObjectOutputStream( buff );
         oos.writeUTF(object.getClass().getCanonicalName());
@@ -97,12 +131,17 @@ public class JPAPlaceholderResolverStrategy implements ObjectMarshallingStrategy
                             byte[] object,
                             ClassLoader classloader) throws IOException,
                                                     ClassNotFoundException {
-        DroolsObjectInputStream is = new DroolsObjectInputStream( new ByteArrayInputStream( object ), classloader );
+        ClassLoader clToUse = classloader;
+        if (this.classLoader != null) {
+            clToUse = this.classLoader;
+        }
+
+        DroolsObjectInputStream is = new DroolsObjectInputStream( new ByteArrayInputStream( object ), clToUse );
         String canonicalName = is.readUTF();
         Object id = is.readObject();
 
-        EntityManager em = emf.createEntityManager();
-        return em.find(Class.forName(canonicalName), id);
+        EntityManager em = getEntityManager();
+        return em.find(Class.forName(canonicalName, true, (clToUse==null?this.getClass().getClassLoader():clToUse)), id);
     }
     
     public Context createContext() {
@@ -182,4 +221,36 @@ public class JPAPlaceholderResolverStrategy implements ObjectMarshallingStrategy
         return false;
     }
 
+    @Override
+    public void onStart(TransactionManager txm) {
+        if (persister.get() == null) {
+            EntityManager em = emf.createEntityManager();
+            persister.set(em);
+        }
+    }
+
+    @Override
+    public void onEnd(TransactionManager txm) {
+        EntityManager em = persister.get();
+        if (em != null) {
+            em.close();
+            persister.set(null);
+        }
+    }
+
+    protected EntityManager getEntityManager() {
+        EntityManager em = persister.get();
+        if (em != null) {
+            return em;
+        }
+        return emf.createEntityManager();
+    }
+
+    @Override
+    public void close() {
+        if (closeEmf && this.emf != null) {
+            this.emf.close();
+            this.emf = null;
+        }
+    }
 }

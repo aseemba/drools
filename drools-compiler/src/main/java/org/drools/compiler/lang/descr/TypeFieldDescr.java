@@ -31,6 +31,7 @@ public class TypeFieldDescr extends AnnotatedBaseDescr
     private String                       initExpr;
     private PatternDescr                 pattern;
     private boolean                      inherited;
+    private boolean                      recursive;
 
     public TypeFieldDescr() {
         this( null );
@@ -54,6 +55,8 @@ public class TypeFieldDescr extends AnnotatedBaseDescr
         fieldName = (String) in.readObject();
         initExpr = (String) in.readObject();
         pattern = (PatternDescr) in.readObject();
+        inherited = in.readBoolean();
+        recursive = in.readBoolean();
     }
     
     @Override
@@ -63,6 +66,8 @@ public class TypeFieldDescr extends AnnotatedBaseDescr
         out.writeObject( fieldName );
         out.writeObject( initExpr );
         out.writeObject( pattern );
+        out.writeBoolean( inherited );
+        out.writeBoolean( recursive );
     }
 
     /**
@@ -132,4 +137,23 @@ public class TypeFieldDescr extends AnnotatedBaseDescr
         this.inherited = inherited;
     }
 
+    public TypeFieldDescr cloneAsInherited() {
+        TypeFieldDescr clone = new TypeFieldDescr( fieldName, pattern );
+        clone.index = this.index;
+        clone.initExpr = this.initExpr;
+        clone.inherited = true;
+        clone.recursive = this.recursive;
+        for ( AnnotationDescr ad : this.getAnnotations() ) {
+            clone.addAnnotation( ad );
+        }
+        return clone;
+    }
+
+    public boolean isRecursive() {
+        return recursive;
+    }
+
+    public void setRecursive( boolean recursive ) {
+        this.recursive = recursive;
+    }
 }

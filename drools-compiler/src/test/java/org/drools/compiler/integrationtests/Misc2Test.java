@@ -16,40 +16,52 @@
 
 package org.drools.compiler.integrationtests;
 
-import org.junit.Assert;
 import org.drools.compiler.Address;
 import org.drools.compiler.Cheese;
 import org.drools.compiler.CommonTestMethodBase;
 import org.drools.compiler.Message;
 import org.drools.compiler.Person;
+import org.drools.compiler.builder.impl.KnowledgeBuilderConfigurationImpl;
+import org.drools.compiler.builder.impl.KnowledgeBuilderImpl;
 import org.drools.compiler.compiler.DrlParser;
 import org.drools.compiler.compiler.DroolsParserException;
 import org.drools.compiler.lang.descr.PackageDescr;
 import org.drools.compiler.lang.descr.PatternDescr;
 import org.drools.compiler.lang.descr.RuleDescr;
+import org.drools.compiler.rule.builder.dialect.mvel.MVELDialectConfiguration;
 import org.drools.core.ClassObjectFilter;
 import org.drools.core.RuleBaseConfiguration;
+import org.drools.core.WorkingMemory;
 import org.drools.core.common.DefaultFactHandle;
-import org.drools.core.common.InternalRuleBase;
+import org.drools.core.common.InternalAgenda;
+import org.drools.core.common.InternalFactHandle;
 import org.drools.core.common.InternalWorkingMemory;
 import org.drools.core.common.LeftTupleSets;
 import org.drools.core.common.RightTupleSets;
 import org.drools.core.conflict.SalienceConflictResolver;
-import org.drools.core.impl.StatefulKnowledgeSessionImpl;
+import org.drools.core.definitions.impl.KnowledgePackageImpl;
+import org.drools.core.definitions.rule.impl.RuleImpl;
+import org.drools.core.facttemplates.FactTemplate;
+import org.drools.core.facttemplates.FactTemplateImpl;
+import org.drools.core.facttemplates.FieldTemplate;
+import org.drools.core.facttemplates.FieldTemplateImpl;
+import org.drools.core.impl.KnowledgeBaseImpl;
 import org.drools.core.io.impl.ByteArrayResource;
 import org.drools.core.reteoo.AlphaNode;
 import org.drools.core.reteoo.BetaMemory;
 import org.drools.core.reteoo.JoinNode;
 import org.drools.core.reteoo.LeftInputAdapterNode;
-import org.drools.core.reteoo.Rete;
-import org.drools.core.util.FileManager;
-import org.drools.core.impl.KnowledgeBaseImpl;
 import org.drools.core.reteoo.LeftTuple;
 import org.drools.core.reteoo.ObjectTypeNode;
-import org.drools.core.runtime.rule.impl.AgendaImpl;
+import org.drools.core.reteoo.Rete;
+import org.drools.core.spi.KnowledgeHelper;
+import org.drools.core.spi.Salience;
+import org.drools.core.util.FileManager;
+import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
 import org.kie.api.KieBase;
+import org.kie.api.KieBaseConfiguration;
 import org.kie.api.KieServices;
 import org.kie.api.builder.KieBuilder;
 import org.kie.api.builder.KieFileSystem;
@@ -58,17 +70,26 @@ import org.kie.api.builder.ReleaseId;
 import org.kie.api.builder.Results;
 import org.kie.api.conf.DeclarativeAgendaOption;
 import org.kie.api.conf.EventProcessingOption;
+import org.kie.api.definition.rule.Rule;
 import org.kie.api.definition.type.FactType;
+import org.kie.api.definition.type.Modifies;
 import org.kie.api.definition.type.Position;
+import org.kie.api.definition.type.PropertyReactive;
+import org.kie.api.event.kiebase.DefaultKieBaseEventListener;
+import org.kie.api.event.kiebase.KieBaseEventListener;
 import org.kie.api.event.rule.AfterMatchFiredEvent;
+import org.kie.api.event.rule.AgendaEventListener;
 import org.kie.api.event.rule.DebugAgendaEventListener;
 import org.kie.api.event.rule.DefaultAgendaEventListener;
 import org.kie.api.event.rule.MatchCancelledEvent;
 import org.kie.api.event.rule.MatchCreatedEvent;
+import org.kie.api.io.ResourceType;
+import org.kie.api.marshalling.Marshaller;
 import org.kie.api.runtime.KieContainer;
 import org.kie.api.runtime.KieSession;
-import org.kie.api.KieBaseConfiguration;
 import org.kie.api.runtime.StatelessKieSession;
+import org.kie.api.runtime.rule.Agenda;
+import org.kie.api.runtime.rule.FactHandle;
 import org.kie.internal.KnowledgeBase;
 import org.kie.internal.KnowledgeBaseFactory;
 import org.kie.internal.builder.KnowledgeBuilder;
@@ -80,17 +101,10 @@ import org.kie.internal.builder.ResultSeverity;
 import org.kie.internal.builder.conf.LanguageLevelOption;
 import org.kie.internal.builder.conf.RuleEngineOption;
 import org.kie.internal.definition.KnowledgePackage;
-import org.kie.api.definition.type.Modifies;
-import org.kie.api.definition.type.PropertyReactive;
-import org.kie.api.event.kiebase.DefaultKieBaseEventListener;
-import org.kie.api.event.kiebase.KieBaseEventListener;
-import org.kie.api.event.rule.AgendaEventListener;
 import org.kie.internal.io.ResourceFactory;
 import org.kie.internal.marshalling.MarshallerFactory;
 import org.kie.internal.runtime.StatefulKnowledgeSession;
-import org.kie.api.io.ResourceType;
-import org.kie.api.marshalling.Marshaller;
-import org.kie.api.runtime.rule.FactHandle;
+import org.kie.internal.utils.KieHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -102,7 +116,10 @@ import java.io.FileOutputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
+import java.io.StringReader;
 import java.math.BigDecimal;
+import java.net.URL;
+import java.net.URLClassLoader;
 import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -115,7 +132,6 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static java.util.Arrays.asList;
-import static org.junit.Assert.assertEquals;
 
 /**
  * Run all the tests with the ReteOO engine implementation
@@ -162,7 +178,7 @@ public class Misc2Test extends CommonTestMethodBase {
         Address address = new Address();
 
         address.setSuburb("xyz");
-        org.kie.api.runtime.rule.FactHandle addressHandle = ksession.insert(address);
+        FactHandle addressHandle = ksession.insert(address);
 
         int rulesFired = ksession.fireAllRules();
 
@@ -383,9 +399,9 @@ public class Misc2Test extends CommonTestMethodBase {
         KieBaseEventListener listener = new DefaultKieBaseEventListener();
         kbase.addEventListener(listener);
         kbase.addEventListener(listener);
-        assertEquals(1, ((KnowledgeBaseImpl) kbase).getRuleBase().getRuleBaseEventListeners().size());
+        assertEquals(1, ((KnowledgeBaseImpl) kbase).getKieBaseEventListeners().size());
         kbase.removeEventListener(listener);
-        assertEquals(0, ((KnowledgeBaseImpl) kbase).getRuleBase().getRuleBaseEventListeners().size());
+        assertEquals(0, ((KnowledgeBaseImpl) kbase).getKieBaseEventListeners().size());
     }
 
     @Test
@@ -445,7 +461,7 @@ public class Misc2Test extends CommonTestMethodBase {
         ksession.addEventListener(agendaEventListener);
 
         FactHandle fact1 = ksession.insert(new Person("Mario", 38));
-        ((AgendaImpl)ksession.getAgenda()).activateRuleFlowGroup("test");
+        ((InternalAgenda)ksession.getAgenda()).activateRuleFlowGroup("test");
         ksession.fireAllRules();
         assertEquals(1, res.size());
         res.clear();
@@ -454,7 +470,7 @@ public class Misc2Test extends CommonTestMethodBase {
 
         FactHandle fact2 = ksession.insert(new Person("Mario", 48));
         try {
-            ((AgendaImpl)ksession.getAgenda()).activateRuleFlowGroup("test");
+            ((InternalAgenda)ksession.getAgenda()).activateRuleFlowGroup("test");
             ksession.fireAllRules();
             fail("should throw an Exception");
         } catch (Exception e) { }
@@ -464,7 +480,7 @@ public class Misc2Test extends CommonTestMethodBase {
 
         // try to reuse the ksession after the Exception
         FactHandle fact3 = ksession.insert(new Person("Mario", 38));
-        ((AgendaImpl)ksession.getAgenda()).activateRuleFlowGroup("test");
+        ((InternalAgenda)ksession.getAgenda()).activateRuleFlowGroup("test");
         ksession.fireAllRules();
         assertEquals(1, res.size());
         ksession.delete(fact3);
@@ -1268,6 +1284,50 @@ public class Misc2Test extends CommonTestMethodBase {
         }
 
         public int compareTo(IntegerWraper o) {
+            return getInt() - o.getInt();
+        }
+
+        public int getInt() {
+            return i;
+        }
+    }
+
+    @Test
+    public void testJitComparable2() {
+        // DROOLS-469
+        String str =
+                "import " + Misc2Test.IntegerWrapperImpl2.class.getCanonicalName() + "\n" +
+                "\n" +
+                "rule \"minCost\"\n" +
+                "when\n" +
+                "    $a : IntegerWrapperImpl2()\n" +
+                "    IntegerWrapperImpl2( this < $a )\n" +
+                "then\n" +
+                "end";
+
+        KnowledgeBase kbase = loadKnowledgeBaseFromString(str);
+        StatefulKnowledgeSession ksession = kbase.newStatefulKnowledgeSession();
+        ksession.insert(new IntegerWrapperImpl2(2));
+        ksession.insert(new IntegerWrapperImpl2(3));
+
+        assertEquals(1, ksession.fireAllRules());
+    }
+
+    interface IntegerWraper2 extends Comparable<IntegerWraper2> {
+        int getInt();
+    }
+
+    public static abstract class AbstractIntegerWrapper2 implements IntegerWraper2 { }
+
+    public static class IntegerWrapperImpl2 extends AbstractIntegerWrapper2 {
+
+        private final int i;
+
+        public IntegerWrapperImpl2(int i) {
+            this.i = i;
+        }
+
+        public int compareTo(IntegerWraper2 o) {
             return getInt() - o.getInt();
         }
 
@@ -3102,7 +3162,8 @@ public class Misc2Test extends CommonTestMethodBase {
     public void testReportErrorOnWrongDateEffective() {
         // BZ-1013545
         String drl =
-                 "rule X date-effective \"9-Luglio-1974\" when\n" +
+                // ensure no Locale can parse the Date
+                 "rule X date-effective \"9-asbrdfh-1974\" when\n" +
                  "    $s : String() " +
                  "then\n" +
                  "end\n";
@@ -3711,7 +3772,7 @@ public class Misc2Test extends CommonTestMethodBase {
                      "import org.drools.compiler.Person; \n" +
                      "" +
                      "rule \"Rule1\" \n" +
-                     "@Eager(true) \n" +
+                     "@Propagation(EAGER) \n" +
                      "salience 1 \n" +
                      "lock-on-active true\n" +
                      "when\n" +
@@ -3722,7 +3783,7 @@ public class Misc2Test extends CommonTestMethodBase {
                      "end;\n" +
                      "\n" +
                      "rule \"Rule2\"\n" +
-                     "@Eager(true) \n" +
+                     "@Propagation(EAGER) \n" +
                      "lock-on-active true\n" +
                      "when\n" +
                      "  $p: Person() \n" +
@@ -4229,7 +4290,7 @@ public class Misc2Test extends CommonTestMethodBase {
         assertEquals( "Three", m2.getMessage3() );
     }
 
-    @Test
+    @Test(timeout=10000)
     public void testWumpus1() {
         String drl = "import org.drools.compiler.integrationtests.Misc2Test.Hero;\n" +
                      "import org.drools.compiler.integrationtests.Misc2Test.StepForwardCommand;\n" +
@@ -4267,7 +4328,7 @@ public class Misc2Test extends CommonTestMethodBase {
         assertEquals(2, hero.getPos());
     }
 
-    @Test
+    @Test(timeout=10000)
     public void testWumpus2() {
         String drl = "import org.drools.compiler.integrationtests.Misc2Test.Hero;\n" +
                      "import org.drools.compiler.integrationtests.Misc2Test.StepForwardCommand;\n" +
@@ -4306,7 +4367,7 @@ public class Misc2Test extends CommonTestMethodBase {
         assertEquals(2, hero.getPos());
     }
 
-    @Test
+    @Test(timeout=10000)
     public void testWumpus3() {
         String drl = "import org.drools.compiler.integrationtests.Misc2Test.Hero;\n" +
                      "import org.drools.compiler.integrationtests.Misc2Test.StepForwardCommand;\n" +
@@ -4362,7 +4423,7 @@ public class Misc2Test extends CommonTestMethodBase {
         assertEquals(1, hero.getPos());
     }
 
-    @Test
+    @Test(timeout=10000)
     public void testWumpus4() {
         String drl = "import org.drools.compiler.integrationtests.Misc2Test.Hero;\n" +
                      "import org.drools.compiler.integrationtests.Misc2Test.StepForwardCommand;\n" +
@@ -5050,7 +5111,7 @@ public class Misc2Test extends CommonTestMethodBase {
             ksession.fireAllRules();
         }
 
-        Rete rete = ((InternalRuleBase)((KnowledgeBaseImpl)kbase).ruleBase).getRete();
+        Rete rete = ((KnowledgeBaseImpl)kbase).getRete();
         JoinNode joinNode = null;
         for (ObjectTypeNode otn : rete.getObjectTypeNodes()) {
             if ( String.class == otn.getObjectType().getValueType().getClassType() ) {
@@ -5060,7 +5121,7 @@ public class Misc2Test extends CommonTestMethodBase {
         }
 
         assertNotNull(joinNode);
-        InternalWorkingMemory wm = ((StatefulKnowledgeSessionImpl)ksession).session;
+        InternalWorkingMemory wm = (InternalWorkingMemory)ksession;
         BetaMemory memory = (BetaMemory)wm.getNodeMemory(joinNode);
         RightTupleSets stagedRightTuples = memory.getStagedRightTuples();
         assertEquals(0, stagedRightTuples.deleteSize());
@@ -5199,7 +5260,7 @@ public class Misc2Test extends CommonTestMethodBase {
             ksession.fireAllRules();
         }
 
-        Rete rete = ((InternalRuleBase)((KnowledgeBaseImpl)kbase).ruleBase).getRete();
+        Rete rete = ((KnowledgeBaseImpl)kbase).getRete();
         LeftInputAdapterNode liaNode = null;
         for (ObjectTypeNode otn : rete.getObjectTypeNodes()) {
             if ( String.class == otn.getObjectType().getValueType().getClassType() ) {
@@ -5210,7 +5271,7 @@ public class Misc2Test extends CommonTestMethodBase {
         }
 
         assertNotNull(liaNode);
-        InternalWorkingMemory wm = ((StatefulKnowledgeSessionImpl)ksession).session;
+        InternalWorkingMemory wm = (InternalWorkingMemory)ksession;
         LeftInputAdapterNode.LiaNodeMemory memory = (LeftInputAdapterNode.LiaNodeMemory) wm.getNodeMemory( liaNode );
         LeftTupleSets stagedLeftTuples = memory.getSegmentMemory().getStagedLeftTuples();
         assertEquals(0, stagedLeftTuples.deleteSize());
@@ -5626,5 +5687,1597 @@ public class Misc2Test extends CommonTestMethodBase {
         public void setDescription(final String desc) {
             this.description = desc;
         }
+    }
+
+    @Test
+    public void testEvalInSubnetwork() {
+        // DROOLS-460
+        String str = "global java.util.List list;\n" +
+                     "\n" +
+                     "declare StatusEvent\n" +
+                     "@role(event)\n" +
+                     "timestamp : int\n" +
+                     "end\n" +
+                     "\n" +
+                     "rule R when\n" +
+                     "$i : Integer()\n" +
+                     "eval(true)\n" +
+                     "exists(\n" +
+                     "Integer(intValue > $i.intValue)\n" +
+                     "and eval(true)\n" +
+                     ")\n" +
+                     "then\n" +
+                     "list.add($i.intValue());\n" +
+                     "end";
+
+        KieServices ks = KieServices.Factory.get();
+        KieFileSystem kfs = ks.newKieFileSystem().write( "src/main/resources/r1.drl", str );
+        ks.newKieBuilder( kfs ).buildAll();
+        KieSession ksession = ks.newKieContainer(ks.getRepository().getDefaultReleaseId()).newKieSession();
+
+        List<Integer> list = new ArrayList<Integer>();
+        ksession.setGlobal("list", list);
+
+        ksession.insert(0);
+        ksession.fireAllRules();
+        ksession.insert(1);
+        ksession.fireAllRules();
+
+        assertEquals(1, list.size());
+        assertEquals(0, (int)list.get(0));
+    }
+
+    @Test
+    public void testRedeclaringRuleAttribute() {
+        // BZ-1092084
+        String str = "rule R salience 10 salience 100 when then end\n";
+
+        assertDrlHasCompilationError(str, 1);
+    }
+
+    @Test
+    public void testMultilineStatement() {
+        // BZ-1092502
+        String str = "rule \"test\"\n" +
+                     "dialect \"mvel\"\n" +
+                     "when\n" +
+                     "then\n" +
+                     "System  \n" +
+                     "  .out  \n" +
+                     "  .println(\"hello\");\n" +
+                     "end\n";
+
+        KieServices ks = KieServices.Factory.get();
+        KieFileSystem kfs = ks.newKieFileSystem().write( "src/main/resources/r1.drl", str );
+        Results results = ks.newKieBuilder( kfs ).buildAll().getResults();
+        assertEquals(0, results.getMessages().size());
+    }
+
+    @Test
+    public void testExtendsWithStrictModeOff() {
+        // DROOLS-475
+        String str =
+                "import java.util.HashMap;\n" +
+                "dialect \"mvel\"\n" +
+                "declare HashMap end\n" +
+                "\n" +
+                "declare Test extends HashMap end\n" +
+                "\n" +
+                "rule \"Insert\" salience 0\n" +
+                "when\n" +
+                "then\n" +
+                "Test t = new Test();\n" +
+                "t.Price = 10;\n" +
+                "t.put(\"A\", \"a\");\n" +
+                "t.OtherPrices = new HashMap();\n" +
+                "t.OtherPrices.OldPrice = 8;\n" +
+                "System.out.println(\"Inserting t=\"+t);\n" +
+                "insert(t);\n" +
+                "end\n" +
+                "\n" +
+                "rule \"Test HashMap\" salience -1\n" +
+                "when\n" +
+                "t: HashMap( Price < 11 )\n" +
+                "then\n" +
+                "t.Price = 11;\n" +
+                "System.out.println(\"In Test HashMap\");\n" +
+                "end\n" +
+                "\n" +
+                "rule \"Test Inherited\" salience -1\n" +
+                "when\n" +
+                "t: Test( Price < 100 )\n" +
+                "then\n" +
+                "t.Price = 12;\n" +
+                "System.out.println(\"In Test Inherited!\");\n" +
+                "end\n" +
+                "\n" +
+                "rule \"Print Result\" salience -5\n" +
+                "when\n" +
+                "t: Test()\n" +
+                "then\n" +
+                "System.out.println(\"Finally Price is =\"+t.Price);\n" +
+                "//This as well doesn't print content as per toString() of HashMap is there a way to do that?\n" +
+                "System.out.println(\"Finally t=\"+t);\n" +
+                "end\n";
+
+        KnowledgeBuilderConfigurationImpl pkgBuilderCfg = new KnowledgeBuilderConfigurationImpl();
+        MVELDialectConfiguration mvelConf = (MVELDialectConfiguration) pkgBuilderCfg.getDialectConfiguration( "mvel" );
+        mvelConf.setStrict( false );
+
+        KnowledgeBuilder kbuilder = KnowledgeBuilderFactory.newKnowledgeBuilder(pkgBuilderCfg);
+        kbuilder.add( ResourceFactory.newByteArrayResource( str.getBytes() ), ResourceType.DRL );
+        assertFalse( kbuilder.hasErrors() );
+    }
+
+    @Test
+    public void testCompilationFailureWithDuplicatedAnnotation() {
+        // BZ-1099896
+        String str = "declare EventA\n" +
+                     " @role(fact)\n" +
+                     " @role(event)\n" +
+                     "end\n";
+
+        assertDrlHasCompilationError(str, 1);
+    }
+
+    @Test
+    public void testCrossNoLoopWithNodeSharing() throws Exception {
+        // DROOLS-501 Propgation context is not set correctly when nodes are shared
+        // This test was looping in 6.1.0-Beta4
+        String drl = "package org.drools.compiler.loop " +
+
+                     "rule 'Rule 1' " +
+                     "  agenda-group 'Start' " +
+                     "  no-loop " +
+                     "  when " +
+                     "      $thing1 : String() " +
+                     "      $thing2 : Integer() " +
+                     "  then\n" +
+                     "      System.out.println( 'At 1' ); " +
+                     "      update( $thing2 ); " +
+                     "end " +
+
+                     "rule 'Rule 2' " +
+                     "  agenda-group 'End' " +
+                     "  no-loop " +
+                     "  when " +
+                     "      $thing1 : String() " +
+                     "      $thing2 : Integer() " +
+                     "  then " +
+                     "      System.out.println( 'At 2' ); " +
+                     "      update( $thing2 ); " +
+                     "end";
+
+        KieHelper helper = new KieHelper();
+        helper.addContent( drl, ResourceType.DRL );
+        KieSession session = helper.build().newKieSession();
+
+        session.insert( "hello" );
+        session.insert( new Integer( 42 ) );
+
+        // set the agenda groups in reverse order so that stack is preserved
+        session.getAgenda().getAgendaGroup( "End" ).setFocus();
+        session.getAgenda().getAgendaGroup( "Start" ).setFocus();
+
+        int x = session.fireAllRules( 10 );
+        assertEquals( 2, x );
+        session.dispose();
+    }
+
+    @Test
+    public void testNotNodesUnlinking() throws Exception {
+        // BZ-1101471
+        String drl = "import " + Trailer.class.getCanonicalName() + ";" +
+                     "global java.util.List trailerList;" +
+                     "rule R1\n" +
+                     "agenda-group 'Start'\n" +
+                     "    when\n" +
+                     "$trailer : Trailer(status == Trailer.TypeStatus.WAITING);\n" +
+                     "not Trailer(status == Trailer.TypeStatus.LOADING); \n" +
+                     "not Trailer(status == Trailer.TypeStatus.SHIPPING);\n" +
+                     "    then\n" +
+                     "        System.out.println( \"[rfgroup1] find waiting trailer : \" + $trailer);\n" +
+                     "        $trailer.setStatus(Trailer.TypeStatus.LOADING); \n" +
+                     "        update($trailer);\n" +
+                     "end\n" +
+                     "\n" +
+                     "rule R2\n" +
+                     "agenda-group 'Start'\n" +
+                     "    when\n" +
+                     "$trailer : Trailer(status == Trailer.TypeStatus.LOADING);\n" +
+                     "    then\n" +
+                     "        System.out.println( \"[rfgroup1] ship : \" + $trailer);\n" +
+                     "        $trailer.setStatus(Trailer.TypeStatus.SHIPPING);\n" +
+                     "        update($trailer);\n" +
+                     "end\n" +
+                     "\n" +
+                     "rule R3\n" +
+                     "agenda-group 'Start'\n" +
+                     "    when\n" +
+                     "$trailer : Trailer(status == Trailer.TypeStatus.SHIPPING);\n" +
+                     "    then\n" +
+                     "        System.out.println( \"[rfgroup1] shipping done : \" + $trailer);\n" +
+                     "        trailerList.add($trailer);\n" +
+                     "        retract($trailer);\n" +
+                     "end\n" +
+                     "\n" +
+                     "rule R4\n" +
+                     "no-loop\n" +
+                     "agenda-group 'End'\n" +
+                     "    when\n" +
+                     "    then\n" +
+                     "        System.out.println( \"[rfgroup2] insert new trailers\");\n" +
+                     "        insert(new Trailer(Trailer.TypeStatus.WAITING));\n" +
+                     "end";
+
+        KieHelper helper = new KieHelper();
+        helper.addContent( drl, ResourceType.DRL );
+        KieSession ksession = helper.build().newKieSession();
+
+        ArrayList<Trailer> trailerList = new ArrayList<Trailer>();
+        ksession.setGlobal("trailerList", trailerList);
+
+        Trailer trailer1 = new Trailer(Trailer.TypeStatus.WAITING);
+
+        ksession.insert(trailer1);
+
+        // set the agenda groups in reverse order so that stack is preserved
+        ksession.getAgenda().getAgendaGroup( "Start" ).setFocus();
+        ksession.getAgenda().getAgendaGroup( "End" ).setFocus();
+        ksession.getAgenda().getAgendaGroup( "Start" ).setFocus();
+
+        ksession.fireAllRules();
+
+        assertEquals(2, trailerList.size());
+    }
+
+
+    public static class Trailer {
+        public enum TypeStatus { WAITING, LOADING, SHIPPING }
+
+        private TypeStatus status;
+
+        public Trailer(TypeStatus status) {
+            this.status = status;
+        }
+
+        public TypeStatus getStatus() {
+            return status;
+        }
+
+        public void setStatus(TypeStatus status) {
+            this.status = status;
+        }
+    }
+
+    public static class Host { }
+
+    @Test
+    public void testJITIncompatibleTypes() throws Exception {
+        // BZ-1101295
+        String drl =
+                "import " + Host.class.getCanonicalName() + ";\n" +
+                "rule R when\n" +
+                "    $s: String()" +
+                "    Host($s == this)\n" +
+                "then\n" +
+                "end";
+
+        KieHelper helper = new KieHelper();
+        helper.addContent( drl, ResourceType.DRL );
+        KieSession ksession = helper.build().newKieSession();
+
+        ksession.insert(new Host());
+        ksession.insert("host");
+        ksession.fireAllRules();
+    }
+
+    public static class TypeA {
+        private int id = 1;
+        public int getId() { return id; }
+    }
+
+    public static class TypeB {
+        private int parentId = 1;
+        private int id = 2;
+        public int getParentId() { return parentId; }
+        public int getId() { return id; }
+    }
+
+    public static class TypeC {
+        private int parentId = 2;
+        public int getParentId() { return parentId; }
+        public int getValue() { return 1; }
+    }
+
+    public static class TypeD {
+        private int parentId = 2;
+        private int value;
+        public int getParentId() { return parentId; }
+        public int getValue() { return value; }
+        public void setValue(int value) { this.value = value; }
+    }
+
+    @Test
+    public void testAccumulateWithNodeSharing() throws Exception {
+        // DROOLS-487
+        String drl =
+                "import " + TypeA.class.getCanonicalName() + ";\n" +
+                "import " + TypeB.class.getCanonicalName() + ";\n" +
+                "import " + TypeC.class.getCanonicalName() + ";\n" +
+                "import " + TypeD.class.getCanonicalName() + ";\n" +
+                "rule R1 when\n" +
+                "    $a : TypeA()\n" +
+                "    $b : TypeB( parentId == $a.id )\n" +
+                "    $d : TypeD( parentId == $b.id, value == 1 )\n" +
+                "then\n" +
+                "end\n" +
+                "\n" +
+                "rule R2 no-loop when\n" +
+                "    $a : TypeA()\n" +
+                "    $b : TypeB( parentId == $a.id )\n" +
+                "then\n" +
+                "    update($b);" +
+                "end\n" +
+                "\n" +
+                "rule R3 when\n" +
+                "    $a : TypeA()\n" +
+                "    $b : TypeB( parentId == $a.id )\n" +
+                "    $d : TypeD( parentId == $b.id )\n" +
+                "    $result : Number() from accumulate(\n" +
+                "        $b_acc : TypeB()\n" +
+                "        and\n" +
+                "        $c : TypeC( parentId == $b_acc.id, $value : value );\n" +
+                "        sum($value)\n" +
+                "    )\n" +
+                "then\n" +
+                "    $d.setValue($result.intValue());\n" +
+                "end";
+
+        KieHelper helper = new KieHelper();
+        helper.addContent( drl, ResourceType.DRL );
+        KieSession ksession = helper.build().newKieSession();
+
+        ksession.insert(new TypeA());
+        ksession.insert(new TypeB());
+        ksession.insert(new TypeC());
+        TypeD d = new TypeD();
+        ksession.insert(d);
+        ksession.fireAllRules();
+        assertEquals(1, d.getValue());
+    }
+
+    public static class Reading {
+        private final String type;
+        private final int value;
+
+        public Reading(String type, int value) {
+            this.type = type;
+            this.value = value;
+        }
+
+        public String getType() {
+            return type;
+        }
+
+        public int getValue() {
+            return value;
+        }
+    }
+
+    public static class Alarm {
+        private String type;
+        private String level;
+
+        public String getLevel() {
+            return level;
+        }
+
+        public void setLevel(String level) {
+            this.level = level;
+        }
+
+        public String getType() {
+            return type;
+        }
+
+        public void setType(String type) {
+            this.type = type;
+        }
+    }
+
+    @Test
+    public void testDeletedEvalLeftTuple() throws Exception {
+        // BZ-1106300
+        String drl =
+                "import " + Reading.class.getCanonicalName() + ";\n" +
+                "import " + Alarm.class.getCanonicalName() + ";\n" +
+                "rule Normal when\n" +
+                "    Number( intValue <= 5) from accumulate( reading : Reading(), average( reading.getValue() ) )\n" +
+                "    alarm : Alarm ()\n" +
+                "then\n" +
+                "    System.out.println(kcontext.getRule().getName());" +
+                "    delete( alarm );\n" +
+                "end\n" +
+                "    \n" +
+                "rule Abnormal when\n" +
+                "    Number( intValue > 5, intValue <= 10 ) from accumulate( reading : Reading(), average( reading.getValue() ) )\n" +
+                "    not Alarm ()\n" +
+                "then\n" +
+                "    System.out.println(kcontext.getRule().getName());" +
+                "    Alarm alarm = new Alarm();\n" +
+                "    alarm.setType(\"t1\");\n" +
+                "    alarm.setLevel( \"ABNORMAL\" );\n" +
+                "    insert(alarm);\n" +
+                "end\n" +
+                "\n" +
+                "rule Severe when\n" +
+                "    Number( intValue > 10) from accumulate( reading : Reading(), average( reading.getValue() ) )\n" +
+                "    not Alarm ()\n" +
+                "then\n" +
+                "    System.out.println(kcontext.getRule().getName());" +
+                "    Alarm alarm = new Alarm();\n" +
+                "    alarm.setType(\"t1\");\n" +
+                "    alarm.setLevel( \"SEVERE\" );\n" +
+                "    insert(alarm);\n" +
+                "end\n" +
+                "\n" +
+                "rule AbnormalToSevere when\n" +
+                "    Number( intValue > 10) from accumulate( reading : Reading(), average( reading.getValue() ) )\n" +
+                "    alarm : Alarm (level == \"ABNORMAL\")\n" +
+                "then\n" +
+                "    System.out.println(kcontext.getRule().getName());" +
+                "    alarm.setLevel( \"SEVERE\" );\n" +
+                "    update(alarm);\n" +
+                "end\n" +
+                "\n" +
+                "rule SevereToAbnormal when\n" +
+                "    $type : String()\n" +
+                "    accumulate( reading : Reading( type == $type ), $avg : average( reading.getValue() ) )\n" +
+                "    eval( $avg.intValue() > 5 && $avg.intValue() <= 10 )\n" +
+                "    alarm : Alarm (type == $type, level == \"SEVERE\")\n" +
+                "then\n" +
+                "    System.out.println(kcontext.getRule().getName());" +
+                "    alarm.setLevel( \"ABNORMAL\" );\n" +
+                "    update(alarm);\n" +
+                "end";
+
+        KieHelper helper = new KieHelper();
+        helper.addContent( drl, ResourceType.DRL );
+        KieSession ksession = helper.build().newKieSession();
+
+        ksession.insert("t1");
+
+        ksession.insert(new Reading("t1", 12));
+        ksession.fireAllRules();
+        ksession.insert(new Reading("t1", 0));
+        ksession.fireAllRules();
+        ksession.insert(new Reading("t1", 0));
+        ksession.fireAllRules();
+
+        ksession.insert(new Reading("t1", 16));
+        ksession.fireAllRules();
+        ksession.insert(new Reading("t1", 32));
+        ksession.fireAllRules();
+        ksession.insert(new Reading("t1", -6));
+        ksession.fireAllRules();
+    }
+
+    public static class C1 {
+        private int counter = 0;
+        private final List<C2> c2s = Arrays.asList(new C2(), new C2());
+
+        public List<C2> getC2s() { return c2s; }
+
+        public int getSize() { return getC2s().size(); }
+
+        public int getCounter() { return counter; }
+        public void setCounter(int counter) { this.counter = counter; }
+    }
+
+    public static class C2 {
+        private final List<C3> c3s = Arrays.asList(new C3(1), new C3(2));
+        public List<C3> getC3s() { return c3s; }
+    }
+
+    public static class C3 {
+        public final int value;
+        public C3(int value) { this.value = value; }
+        public int getValue() { return value; }
+    }
+
+    @Test
+    public void testDeleteFromLeftTuple() throws Exception {
+        // DROOLS-518
+        String drl =
+                "import " + C1.class.getCanonicalName() + ";\n" +
+                "import " + C2.class.getCanonicalName() + ";\n" +
+                "import " + C3.class.getCanonicalName() + ";\n" +
+                "rule R when\n" +
+                "    $c1 : C1 ( $c2s : c2s, $c2 : c2s.get(counter), counter < size )\n" +
+                "    C2 ( $c3s : c3s, this == $c2 ) from $c2s\n" +
+                "    accumulate( C3 ( $value : value ) from $c3s;\n" +
+                "                $sum : sum($value)\n" +
+                "              )\n" +
+                "then\n" +
+                "    $c1.setCounter($c1.getCounter() + 1);\n" +
+                "    update( $c1 );\n" +
+                "end";
+
+        KieHelper helper = new KieHelper();
+        helper.addContent( drl, ResourceType.DRL );
+        KieSession ksession = helper.build().newKieSession();
+
+        ksession.insert(new C1());
+        ksession.fireAllRules();
+    }
+
+    public interface I0 {
+        String getValue();
+    }
+
+    public interface I1 extends I0 { }
+
+    public static class X implements I0 {
+        @Override
+        public String getValue() {
+            return "x";
+        }
+    }
+
+    public static class Y extends X implements I1 { }
+
+    public static class Z implements I1 {
+        @Override
+        public String getValue() {
+            return "x";
+        }
+    }
+
+    @Test
+    public void testMethodResolution() throws Exception {
+        // DROOLS-509
+        String drl =
+                "import " + I1.class.getCanonicalName() + ";\n" +
+                "rule R1 when\n" +
+                "    I1 ( value == \"x\" )\n" +
+                "then\n" +
+                "end";
+
+        KieHelper helper = new KieHelper();
+        helper.addContent( drl, ResourceType.DRL );
+        KieSession ksession = helper.build().newKieSession();
+
+        ksession.insert(new Y());
+        ksession.fireAllRules();
+        ksession.insert(new Z());
+        ksession.fireAllRules();
+    }
+
+    @Test
+    public void testCorrectErrorMessageOnDeclaredTypeCompilation() throws Exception {
+        // DROOLS-543
+        String str = "rule R\n" +
+                     "salience 10\n" +
+                     "when\n" +
+                     " String()\n" +
+                     "then\n" +
+                     "System.out.println(\"Hi\");\n" +
+                     "end\n" +
+                     "declare A\n" +
+                     " a : SomeNonexistenClass @key\n" +
+                     " b : int @key\n" +
+                     "end\n" +
+                     "\n" +
+                     "declare C\n" +
+                     " d : int @key\n" +
+                     " e : int[]\n" +
+                     "end\n";
+
+        assertDrlHasCompilationError(str, 1);
+    }
+
+    @Test
+    public void testFieldNameStartingWithUnderscore() throws Exception {
+        // DROOLS-554
+        String str = "import " + Underscore.class.getCanonicalName() + ";\n" +
+                     "rule R when\n" +
+                     "    Underscore( _id == \"test\" )\n" +
+                     "then\n" +
+                     "end\n";
+
+        KieServices ks = KieServices.Factory.get();
+        KieFileSystem kfs = ks.newKieFileSystem().write( "src/main/resources/r1.drl", str );
+        Results results = ks.newKieBuilder( kfs ).buildAll().getResults();
+        assertEquals(0, results.getMessages().size());
+    }
+
+    public static class Underscore {
+        private String _id;
+
+        public String get_id() {
+            return _id;
+        }
+
+        public void set_id(String _id) {
+            this._id = _id;
+        }
+    }
+
+    @Test
+    public void testSharedQueryNode() throws Exception {
+        // DROOLS-561
+        String drl =
+                "query find( Integer $i, String $s )\n" +
+                "    $i := Integer( toString() == $s )\n" +
+                "end\n" +
+                "\n" +
+                "rule R2 salience -1 when\n" +
+                "    $s : String()\n" +
+                "    ?find( i, $s; )\n" +
+                "then\n" +
+                "end\n" +
+                "rule R1 when\n" +
+                "    $s : String()\n" +
+                "    ?find( i, $s; )\n" +
+                "    $i : Integer( this == 1 ) from i\n" +
+                "then\n" +
+                "    delete( $s );\n" +
+                "end\n";
+
+        KieHelper helper = new KieHelper();
+        helper.addContent( drl, ResourceType.DRL );
+        KieSession ksession = helper.build().newKieSession();
+
+        ksession.insert("1");
+        ksession.insert(1);
+        ksession.fireAllRules();
+    }
+
+    @Test
+    public void testLeftTupleGetIndex() throws Exception {
+        // DROOLS-570
+        String drl =
+                "rule R1 when\n" +
+                "    $s : String()\n" +
+                "    (or Long(this == 1) Long(this == 2) )\n" +
+                "then\n" +
+                "end\n" +
+                "rule R2 extends R1 when\n" +
+                "    $n : Number() from accumulate( Integer($value : this); sum($value) )\n" +
+                "then\n" +
+                "    System.out.println($n);\n" +
+                "end\n";
+
+        KieHelper helper = new KieHelper();
+        helper.addContent( drl, ResourceType.DRL );
+        KieSession ksession = helper.build().newKieSession();
+
+        ksession.insert("1");
+        ksession.insert(1L);
+        ksession.insert(1);
+        ksession.fireAllRules();
+    }
+
+    @Test
+    public void testStrOperatorInAccumulate() throws Exception {
+        // DROOLS-574
+        String drl =
+                "declare Message\n" +
+                "    text : String\n" +
+                "end\n" +
+                "\n" +
+                "declare GroupByString\n" +
+                "    groupId : String\n" +
+                "    groups : String[]\n" +
+                "end\n" +
+                "\n" +
+                "global java.util.List list\n" +
+                "\n" +
+                "rule \"init words of my interest\"\n" +
+                "no-loop\n" +
+                "when\n" +
+                "then\n" +
+                "    GroupByString grp = new GroupByString();\n" +
+                "    grp.setGroupId(\"wordGroup\");\n" +
+                "    grp.setGroups(new String[]{\"hi\", \"hello\"});\n" +
+                "    insert(grp);\n" +
+                "    insert(new Message(\"hi all\"));\n" +
+                "    insert(new Message(\"hello world\"));\n" +
+                "    insert(new Message(\"bye\"));\n" +
+                "    insert(new Message(\"hello everybody\"));\n" +
+                "end\n" +
+                "\n" +
+                "rule \"group by word and count if >=2 then \"\n" +
+                "no-loop\n" +
+                "when\n" +
+                "    $group : GroupByString( groupId == \"wordGroup\")\n" +
+                "    $word : String() from $group.groups\n" +
+                "    acc ( $msg : Message( text str[startsWith] $word );\n" +
+                "        $list : collectList( $msg ),\n" +
+                "        $count : count( $msg );\n" +
+                "        $count >= 1\n" +
+                "        )\n" +
+                "then\n" +
+                "    list.add(\"group by \" + $word + \" count is \"+ $count);\n" +
+                "end\n";
+
+        KieHelper helper = new KieHelper();
+        helper.addContent( drl, ResourceType.DRL );
+        KieSession ksession = helper.build().newKieSession();
+
+        List<String> list = new ArrayList<String>();
+        ksession.setGlobal("list", list);
+
+        ksession.fireAllRules();
+
+        assertEquals(2, list.size());
+        assertTrue(list.contains("group by hello count is 2"));
+        assertTrue(list.contains("group by hi count is 1"));
+    }
+
+    @Test @Ignore
+    public void testKeywordAsAttribute() throws Exception {
+        // DROOLS-577
+        String drl =
+                "package foo.bar;\n" +
+                        "declare Fired\n" +
+                        "        rule: String\n" +
+                        "end\n" +
+                        "global java.util.List list\n" +
+                        "rule \"F060\" dialect \"mvel\"\n" +
+                        "when\n" +
+                        "then\n" +
+                        "    Fired f = new Fired();\n" +
+                        "    f.rule = \"F060\";\n" +
+                        "    insert(f);\n" +
+                        "end\n" +
+                        " \n" +
+                        "rule \"F060b\"  //this prints F060b: Fired( rule=F060 )\n" +
+                        "    dialect \"mvel\"\n" +
+                        "when\n" +
+                        "        $rule: Fired()\n" +
+                        "then\n" +
+                        "    list.add( drools.getRule().getName() )\n" +
+                        "end\n" +
+                        " \n" +
+                        "rule \"F060c\"  //doesn't work\n" +
+                        "    dialect \"mvel\"\n" +
+                        "when\n" +
+                        "        $rule: Fired( rule==\"F060c\" )\n" +
+                        "then\n" +
+                        "    list.add( drools.getRule().getName() )\n" +
+                        "end\n" +
+                        " \n" +
+                        "rule \"F060d\"  //this prints F060d: Fired( rule=F060 )\n" +
+                        "    dialect \"mvel\"\n" +
+                        "when\n" +
+                        "        $rule: Fired()\n" +
+                        "        eval( $rule.rule == \"F060\")\n" +
+                        "then\n" +
+                        "    list.add( drools.getRule().getName() )\n" +
+                        "end";
+
+        KieHelper helper = new KieHelper();
+        helper.addContent( drl, ResourceType.DRL );
+        KieSession ksession = helper.build().newKieSession();
+
+        List<String> list = new ArrayList<String>();
+        ksession.setGlobal("list", list);
+
+        ksession.fireAllRules();
+
+        System.out.println(list);
+        assertEquals(3, list.size());
+        assertTrue(list.contains("F060b"));
+        assertTrue(list.contains("F060c"));
+        assertTrue(list.contains("F060d"));
+    }
+
+    @Test
+    public void testRuleExtendsWithNamedConsequence() {
+        // DROOLS-581
+        String drl =
+                "package org.drools.test;\n" +
+                "global java.util.List list;\n" +
+                "rule Base\n" +
+                "when\n" +
+                "  $i : Integer( ) do[x]\n" +
+                "then\n" +
+                "then[x]\n" +
+                "   list.add( $i );\n" +
+                "end\n" +
+                "rule Ext extends Base\n" +
+                "when\n" +
+                "  $d : String()\n" +
+                "then\n" +
+                "   list.add( $d );\n" +
+                "end\n";
+
+        KieHelper helper = new KieHelper();
+        helper.addContent( drl, ResourceType.DRL );
+        KieSession kieSession = helper.build().newKieSession();
+
+        List<Integer> list = new ArrayList<Integer>();
+        kieSession.setGlobal( "list", list );
+
+        kieSession.insert( 10 );
+        kieSession.fireAllRules();
+
+        assertEquals( 2, list.size() );
+        assertEquals( 10, (int) list.get(0) );
+        assertEquals( 10, (int) list.get(1) );
+    }
+
+    @Test
+    public void testRuleExtendsWithOverriddenNamedConsequence() {
+        // DROOLS-581
+        String drl =
+                "package org.drools.test;\n" +
+                "global java.util.List list;\n" +
+                "rule Base\n" +
+                "when\n" +
+                "  $i : Integer( ) do[x]\n" +
+                "then\n" +
+                "then[x] " +
+                "   list.add( $i );\n" +
+                "end\n" +
+                "rule Ext extends Base\n" +
+                "when\n" +
+                "  $d : String()\n" +
+                "then\n" +
+                "   list.add( $d );\n" +
+                "then[x]\n" +
+                "   list.add( \"\" + $i );\n" +
+                "end\n";
+
+        KieHelper helper = new KieHelper();
+        helper.addContent( drl, ResourceType.DRL );
+        KieSession kieSession = helper.build().newKieSession();
+
+        List list = new ArrayList();
+        kieSession.setGlobal( "list", list );
+
+        kieSession.insert( 10 );
+        kieSession.fireAllRules();
+
+        assertEquals( 2, list.size() );
+        assertEquals( 10, list.get(0) );
+        assertEquals( "10", list.get(1) );
+    }
+
+    @Test
+    public void testCustomDynamicSalience() {
+        String drl  = "package org.drools.test; " +
+                      "import " + Person.class.getName() + "; " +
+                      "global java.util.List list; " +
+
+                      "rule A " +
+                      "when " +
+                      "     $person : Person( name == 'a' ) " +
+                      "then" +
+                      "     list.add( $person.getAge() ); " +
+                      "end " +
+
+                      "rule B " +
+                      "when " +
+                      "     $person : Person( name == 'b' ) " +
+                      "then" +
+                      "     list.add( $person.getAge() ); " +
+                      "end " +
+                      "";
+
+        KieHelper helper = new KieHelper();
+        helper.addContent( drl, ResourceType.DRL );
+        KieSession session = helper.build().newKieSession();
+
+        List<Integer> list = new ArrayList<Integer>();
+        session.setGlobal( "list", list );
+
+        for ( Rule r : session.getKieBase().getKiePackage( "org.drools.test" ).getRules() ) {
+            ((RuleImpl) r).setSalience( new Salience() {
+                @Override
+                public int getValue( KnowledgeHelper khelper, Rule rule, WorkingMemory workingMemory ) {
+                    if ( khelper == null ) { return 0; }
+                    InternalFactHandle h = (InternalFactHandle) khelper.getMatch().getFactHandles().get( 0 );
+                    return ((Person) h.getObject()).getAge();
+                }
+
+                @Override
+                public int getValue() { throw new IllegalStateException( "Should not have been called..." ); }
+
+                @Override
+                public boolean isDynamic() { return true; }
+            } );
+        }
+
+        session.insert(new Person( "a", 1 ) );
+        session.insert(new Person( "a", 5 ) );
+        session.insert(new Person( "a", 3 ) );
+        session.insert(new Person( "b", 4 ) );
+        session.insert(new Person( "b", 2 ) );
+        session.insert(new Person( "b", 6 ) );
+
+        session.fireAllRules();
+
+        assertEquals( Arrays.asList( 6, 5, 4, 3, 2, 1 ), list );
+    }
+
+    @Test
+    public void testNotWithSubNetwork() {
+        String drl  =
+                "rule R when\n" +
+                "    $s : String( )\n" +
+                "    not (\n" +
+                "        Long( toString() == $s )\n" +
+                "    and\n" +
+                "        Integer( toString() == $s )\n" +
+                "    )\n" +
+                "then\n" +
+                "    delete( $s );\n" +
+                "end";
+
+        KieHelper helper = new KieHelper();
+        helper.addContent( drl, ResourceType.DRL );
+        KieSession ksession = helper.build().newKieSession();
+
+        ksession.insert("1");
+        FactHandle iFH = ksession.insert(1);
+        FactHandle lFH = ksession.insert(1L);
+        ksession.fireAllRules();
+
+        ksession.delete(iFH);
+        ksession.delete(lFH);
+        ksession.fireAllRules();
+
+        assertEquals( 0, ksession.getFactCount() );
+    }
+
+    @Test
+    public void testGenericsInRHSWithModify() {
+        // DROOLS-493
+        String drl  =
+                "import java.util.Map;\n" +
+                "import java.util.HashMap;\n" +
+                "rule R no-loop when\n" +
+                "    $s : String( )\n" +
+                "then\n" +
+                "    Map<String,String> a = new HashMap<String,String>();\n" +
+                "    modify( $s ) { };" +
+                "end";
+
+        KieHelper helper = new KieHelper();
+        helper.addContent( drl, ResourceType.DRL );
+        KieSession ksession = helper.build().newKieSession();
+
+        ksession.insert("1");
+        ksession.fireAllRules();
+    }
+
+    @Test
+    public void testQueryWithAgendaGroup() {
+        // DROOLS-601
+        String drl =
+                "package org.drools.test; " +
+                "global java.util.List list; " +
+
+                "query foo( Integer $i ) " +
+                "   $i := Integer() " +
+                "end " +
+
+                "rule Detect " +
+                "agenda-group 'one' " +
+                "when " +
+                "   foo( $i ; ) " +
+                "then " +
+                "   list.add( $i ); " +
+                "end " +
+
+                "rule OnceMore " +
+                "agenda-group 'two' " +
+                "no-loop " +
+                "when " +
+                "   $i : Integer() " +
+                "then " +
+                "   update( $i );" +
+                "end " +
+                "";
+
+        KieHelper helper = new KieHelper();
+        helper.addContent( drl, ResourceType.DRL );
+        KieSession kieSession = helper.build().newKieSession();
+
+        List<Integer> list = new ArrayList<Integer>();
+        kieSession.setGlobal( "list", list );
+
+        FactHandle handle = kieSession.insert( 42 );
+
+        Agenda agenda = kieSession.getAgenda();
+        agenda.getAgendaGroup("two").setFocus();
+        agenda.getAgendaGroup("one").setFocus();
+
+        kieSession.fireAllRules();
+        assertEquals( Arrays.asList( 42 ), list );
+
+        kieSession.delete( handle );
+
+        kieSession.insert( 99 );
+
+        agenda.getAgendaGroup("two").setFocus();
+        agenda.getAgendaGroup("one").setFocus();
+
+        kieSession.fireAllRules();
+        assertEquals( Arrays.asList( 42, 99 ), list );
+    }
+
+    @Test
+    public void testQueryUsingQueryWithAgendaGroup() {
+        // DROOLS-601
+        String drl =
+                "package org.drools.test; " +
+                "global java.util.List list; " +
+
+                "query bar( String $s ) " +
+                "   $s := String() " +
+                "end " +
+                "query foo( Integer $i, String $s ) " +
+                "   bar( $s ; ) " +
+                "   $i := Integer( toString() == $s ) " +
+                "end " +
+
+                "rule Detect " +
+                "agenda-group 'one' " +
+                "when " +
+                "   foo( $i, $s ; ) " +
+                "then " +
+                "   list.add( $i ); " +
+                "end " +
+
+                "rule UpdateInt " +
+                "agenda-group 'two' " +
+                "no-loop " +
+                "when " +
+                "   $i : Integer() " +
+                "then " +
+                "   update( $i );" +
+                "end " +
+
+                "rule UpdateString " +
+                "agenda-group 'three' " +
+                "no-loop " +
+                "when " +
+                "   $s : String() " +
+                "then " +
+                "   update( $s );" +
+                "end " +
+                "";
+
+        KieHelper helper = new KieHelper();
+        helper.addContent( drl, ResourceType.DRL );
+        KieSession kieSession = helper.build().newKieSession();
+
+        List<Integer> list = new ArrayList<Integer>();
+        kieSession.setGlobal( "list", list );
+
+        FactHandle iFH = kieSession.insert( 42 );
+        FactHandle sFH = kieSession.insert( "42" );
+
+        Agenda agenda = kieSession.getAgenda();
+        agenda.getAgendaGroup("three").setFocus();
+        agenda.getAgendaGroup("two").setFocus();
+        agenda.getAgendaGroup("one").setFocus();
+
+        kieSession.fireAllRules();
+        assertEquals( Arrays.asList( 42 ), list );
+
+        //kieSession.delete( iFH );
+        kieSession.delete( sFH );
+
+        kieSession.insert( 99 );
+        kieSession.insert( "99" );
+
+        agenda.getAgendaGroup("three").setFocus();
+        agenda.getAgendaGroup("two").setFocus();
+        agenda.getAgendaGroup("one").setFocus();
+
+        kieSession.fireAllRules();
+        assertEquals( Arrays.asList( 42, 99 ), list );
+    }
+
+    @Test
+    public void testFactTemplates() {
+        // DROOLS-600
+        String drl = "package com.testfacttemplate;" +
+                     " rule \"test rule\" " +
+                     " dialect \"mvel\" " +
+                     " when " +
+                     " $test : TestFactTemplate( status == 1 ) " +
+                     " then " +
+                     " System.out.println( \"Hello World\" ); " +
+                     " end ";
+
+        KnowledgePackageImpl kPackage = new KnowledgePackageImpl("com.testfacttemplate");
+        FieldTemplate fieldTemplate = new FieldTemplateImpl("status", 0, Integer.class);
+        FactTemplate factTemplate = new FactTemplateImpl(kPackage, "TestFactTemplate", new FieldTemplate[]{fieldTemplate});
+
+        KnowledgeBuilder kBuilder = new KnowledgeBuilderImpl(kPackage);
+        StringReader rule = new StringReader(drl);
+        try {
+            ((KnowledgeBuilderImpl) kBuilder).addPackageFromDrl(rule);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Test
+    public void testBitwiseOperator() {
+        // DROOLS-585
+        String drl =
+                "global java.util.List list;\n" +
+                "\n" +
+                "rule R when\n" +
+                "    $i : Integer( (intValue() & 5) != 0 )\n" +
+                "then\n" +
+                "    list.add($i);\n" +
+                "end";
+
+        KieHelper helper = new KieHelper();
+        helper.addContent(drl, ResourceType.DRL);
+        KieSession kieSession = helper.build().newKieSession();
+
+        List<Integer> list = new ArrayList<Integer>();
+        kieSession.setGlobal( "list", list );
+
+        kieSession.insert(3);
+        kieSession.insert(2);
+        kieSession.insert(6);
+        kieSession.fireAllRules();
+
+        assertEquals(2, list.size());
+        assertTrue(list.containsAll(asList(3, 6)));
+    }
+
+    @Test
+    public void testNotSubnetwork() {
+        // DROOLS-623
+        String drl =
+                "import " + TypeCC.class.getCanonicalName() + ";\n" +
+                "import " + TypeDD.class.getCanonicalName() + ";\n" +
+                "  \n" +
+                "rule R1 \n" +
+                "when  \n" +
+                "   $dd : TypeDD( value < 1 )\n" +
+                "then  \n" +
+                "	System.out.println(\"Rule R1 Fired\");\n" +
+                "	modify($dd) { setValue(1); }\n" +
+                "end  \n" +
+                "  \n" +
+                "rule R2 when  \n" +
+                "   String( )  \n" +
+                "   $cc : TypeCC( value < 1 )\n" +
+                "   not(  \n" +
+                "	   $cc_not : TypeCC( )  \n" +
+                "	   and  \n" +
+                "	   $dd_not : TypeDD( value==0 )  \n" +
+                "   )  \n" +
+                "then  \n" +
+                "   System.out.println(\"Rule R2 Fired\");\n" +
+                "   modify($cc) { setValue($cc.getValue()+1); }\n" +
+                "end; ";
+
+        KieSession ksession = new KieHelper().addContent(drl, ResourceType.DRL)
+                                             .build()
+                                             .newKieSession();
+        ksession.insert("1");
+        ksession.insert("2");
+
+        TypeCC cc = new TypeCC();
+        ksession.insert(cc);
+        ksession.insert(new TypeDD());
+
+        ksession.fireAllRules();
+
+        System.out.println("Rule R2 is fired count - " +cc.getValue());
+
+        assertEquals("Rule 2 should be fired once as we have firing rule as one of criteria checking rule only fire once",1,cc.getValue());
+    }
+
+    public static class ValueContainer {
+        private int value;
+        public int getValue() { return value; }
+        public void setValue(int value) { this.value = value; }
+    }
+
+    public static class TypeCC extends ValueContainer { }
+    public static class TypeDD extends ValueContainer { }
+
+    @Test
+    public void testClassAccumulator() {
+        // DROOLS-626
+        String drl =
+                "global java.util.List list\n" +
+                "declare InitClass\n" +
+                "  clazz: Class\n" +
+                "end\n" +
+                "\n" +
+                "rule \"init\" when\n" +
+                "then\n" +
+                "  insert( new InitClass( String.class ) );\n" +
+                "  insert( new InitClass( Integer.class ) );\n" +
+                "end\n" +
+                "\n" +
+                "rule \"make init classes\"\n" +
+                "when\n" +
+                "  accumulate( InitClass( $clazz; ), $classes: collectList( $clazz ) )\n" +
+                "then\n" +
+                "  list.addAll($classes);\n" +
+                "end ";
+
+        KieSession ksession = new KieHelper().addContent(drl, ResourceType.DRL)
+                                             .build()
+                                             .newKieSession();
+
+        List<Class> list = new ArrayList<Class>();
+        ksession.setGlobal("list", list);
+
+        ksession.fireAllRules();
+
+        assertEquals(2, list.size());
+        System.out.println(list);
+        assertTrue(list.containsAll(asList(String.class, Integer.class)));
+    }
+
+    @Test
+    public void testSubnetworkAccumulate() {
+        String drl =
+                "import " + StringWrapper.class.getCanonicalName() + ";\n" +
+                "global StringBuilder sb;" +
+                "rule R when\n" +
+                "  $s : String()\n" +
+                "  Number( $i : intValue ) from accumulate ($sw : StringWrapper( $value : value ) " +
+                "                                       and eval( $sw.contains($s) ), " +
+                "                                 sum($value) )\n" +
+                "then\n" +
+                "  sb.append($i);\n" +
+                "end\n";
+
+        KieSession ksession = new KieHelper().addContent(drl, ResourceType.DRL)
+                                             .build()
+                                             .newKieSession();
+
+        StringBuilder sb = new StringBuilder();
+        ksession.setGlobal("sb", sb);
+
+        ksession.insert("test");
+        StringWrapper sw = new StringWrapper();
+        FactHandle swFH = ksession.insert(sw);
+        ksession.fireAllRules();
+
+        sw.setWrapped("test");
+        ksession.update(swFH, sw);
+        ksession.fireAllRules();
+
+        sw.setWrapped(null);
+        ksession.update(swFH, sw);
+        ksession.fireAllRules();
+
+        sw.setWrapped("test");
+        ksession.update(swFH, sw);
+        ksession.fireAllRules();
+
+        sw.setWrapped(null);
+        ksession.update(swFH, sw);
+        ksession.fireAllRules();
+
+        sw.setWrapped("test");
+        ksession.update(swFH, sw);
+        ksession.fireAllRules();
+
+        assertEquals("040404", sb.toString());
+    }
+
+    public static class StringWrapper {
+        private String wrapped;
+
+        public String getWrapped() {
+            return wrapped;
+        }
+
+        public void setWrapped(String wrapped) {
+            this.wrapped = wrapped;
+        }
+
+        public boolean contains(String s) {
+            return wrapped != null && wrapped.equals(s);
+        }
+
+        public int getValue() {
+            return wrapped != null ? wrapped.length() : 0;
+        }
+    }
+
+    @Test
+    public void testImportInner() throws Exception {
+        // DROOLS-677
+        String drl =
+                "package org.drools.test; " +
+                "import " + Misc2Test.class.getName() + "; " +
+
+                "declare Foo " +
+                "   bar : Misc2Test.AA " +
+                "end " +
+                "" ;
+
+        KieHelper helper = new KieHelper();
+        helper.addContent( drl, ResourceType.DRL );
+        assertTrue( helper.verify().getMessages( org.kie.api.builder.Message.Level.ERROR ).isEmpty() );
+    }
+
+    @Test
+    //DROOLS-678
+    public void testAlphaIndexing() throws Exception {
+        String drl =
+                "    package org.drools.test; " +
+
+                "    declare ObjectB " +
+                "       name : String " +
+                "       intValue : Integer " +
+                "    end " +
+
+                "    rule 'insert object' " +
+                "       when " +
+                "       then " +
+                "           insert( new ObjectB( null, 0 ) ); " +
+                "    end " +
+
+                "    rule 'rule 1' " +
+                "       when " +
+                "           ObjectB( intValue == 1 ) " +
+                "       then " +
+                "    end " +
+
+                "    rule 'rule 2' " +
+                "       when " +
+                "           ObjectB( intValue == 2 ) " +
+                "       then " +
+                "    end " +
+
+                "    rule 'rule 3' " +
+                "       when " +
+                "           $b : ObjectB( intValue == null ) " +
+                "       then\n" +
+                "           System.out.println( $b ); " +
+                "    end" +
+                "\n" ;
+
+        KieHelper helper = new KieHelper();
+        helper.addContent( drl, ResourceType.DRL );
+        assertTrue( helper.verify().getMessages( org.kie.api.builder.Message.Level.ERROR ).isEmpty() );
+        KieSession ks = helper.build(  ).newKieSession();
+        assertEquals( 1, ks.fireAllRules() );
+    }
+
+    @Test
+    public void testMvelConstraintErrorMessageOnAlpha() throws Exception {
+        // DROOLS-687
+        String drl =
+                " import org.drools.compiler.Person; " +
+                " import org.drools.compiler.Address; " +
+                " rule 'hello person' " +
+                " when " +
+                " Person( address.street == 'abbey' ) " +
+                " then " +
+                " end " +
+                "\n" ;
+        KieHelper helper = new KieHelper();
+        helper.addContent(drl, ResourceType.DRL);
+        assertTrue(helper.verify().getMessages( org.kie.api.builder.Message.Level.ERROR).isEmpty());
+        KieSession ks = helper.build().newKieSession();
+        Person john = new Person("John"); // address is null
+        try {
+            ks.insert(john);
+            ks.fireAllRules();
+            fail("Should throw an exception");
+        } catch (Exception e) {
+            assertTrue(e.getMessage().contains("hello person"));
+        }
+    }
+
+    @Test
+    public void testMvelConstraintErrorMessageOnBeta() throws Exception {
+        // DROOLS-687
+        String drl =
+                " import org.drools.compiler.Person; " +
+                " import org.drools.compiler.Address; " +
+                " rule 'hello person' " +
+                " when " +
+                " $s : String( ) " +
+                " Person( address.street == $s ) " +
+                " then " +
+                " end " +
+                "\n" ;
+        KieHelper helper = new KieHelper();
+        helper.addContent(drl, ResourceType.DRL);
+        assertTrue(helper.verify().getMessages( org.kie.api.builder.Message.Level.ERROR).isEmpty());
+        KieSession ks = helper.build().newKieSession();
+        Person john = new Person("John"); // address is null
+        try {
+            ks.insert("abbey");
+            ks.insert(john);
+            ks.fireAllRules();
+            fail("Should throw an exception");
+        } catch (Exception e) {
+            assertTrue(e.getMessage().contains("hello person"));
+        }
+    }
+
+    @Test
+    public void testPassiveExists() {
+        // DROOLS-699
+        String drl2 =
+                "import " + List.class.getCanonicalName() + ";\n"
+                + "\n\n"
+                + "rule \"NotExists\"\n"
+                + "when\n"
+                + "$l1: List() \n"
+                + "$l2: List() \n"
+                + "exists( String() from $l1 ) \n"
+                + "not( exists( String() ) )\n"
+                + "then end\n";
+
+        KieSession ksession = new KieHelper().addContent(drl2, ResourceType.DRL)
+                                             .build()
+                                             .newKieSession();
+
+        ksession.insert(asList("Mario", "Mark"));
+        ksession.insert(asList("Julie", "Leiti"));
+
+        assertEquals(4, ksession.fireAllRules());
+    }
+
+    @Test
+    public void testFromAfterOr() {
+        // DROOLS-707
+        String drl2 =
+                "rule \"Disaster Rule\"\n" +
+                "    when\n" +
+                "        eval(true) or ( eval(false) and Integer() )\n" +
+                "        $a : Integer()\n" +
+                "        Integer() from $a\n" +
+                "    then\n" +
+                "end\n";
+
+        KieSession ksession = new KieHelper().addContent(drl2, ResourceType.DRL)
+                                             .build()
+                                             .newKieSession();
+
+        ksession.insert(1);
+        assertEquals(1, ksession.fireAllRules());
+    }
+
+    @Test
+    public void testMalformedAccumulate() {
+        // DROOLS-725
+        String str =
+                "rule R when\n" +
+                "    Number() from accumulate(not Number(),\n" +
+                "        init( double total = 0; ),\n" +
+                "        action( ),\n" +
+                "        reverse( ),\n" +
+                "        result( new Double( total ) )\n" +
+                "    )\n" +
+                "then end\n";
+
+        assertDrlHasCompilationError(str, 1);
+    }
+
+    private void assertDrlHasCompilationError(String str, int errorNr) {
+        KieServices ks = KieServices.Factory.get();
+        KieFileSystem kfs = ks.newKieFileSystem().write( "src/main/resources/r1.drl", str );
+        Results results = ks.newKieBuilder( kfs ).buildAll().getResults();
+        assertEquals(errorNr, results.getMessages().size());
+    }
+
+    @Test
+    public void testDuplicateDeclarationInAccumulate1() {
+        // DROOLS-727
+        String drl1 =
+                "import java.util.*\n" +
+                "rule \"Version 1 - crash\"\n" +
+                " when\n" +
+                " accumulate( Integer($int: intValue), $list: collectSet($int) )\n" +
+                " List() from collect( Integer($list not contains intValue) )\n\n" +
+                " accumulate( Integer($int: intValue), $list: collectSet($int) )\n" +
+                " then\n" +
+                "end\n";
+
+        assertDrlHasCompilationError(drl1, 1);
+    }
+
+    @Test
+    public void testDuplicateDeclarationInAccumulate2() {
+        // DROOLS-727
+        String drl1 =
+                "import java.util.*\n" +
+                "rule \"Version 2 - pass\"\n" +
+                "when\n" +
+                " $list: List() from collect( Integer() )\n\n" +
+                " accumulate( Integer($int: intValue), $list: collectSet($int) )\n" +
+                " List() from collect( Integer($list not contains intValue) )\n" +
+                "then\n" +
+                "end;\n";
+
+        assertDrlHasCompilationError(drl1, 1);
+    }
+
+    @Test
+    public void testCompilationFailureOnNonExistingVariable() {
+        // DROOLS-734
+        String drl1 =
+                "import java.util.*\n" +
+                "rule R\n" +
+                "when\n" +
+                "  String(this after $event)\n" +
+                "then\n" +
+                "end;\n";
+
+        assertDrlHasCompilationError(drl1, 1);
+    }
+
+    @Test
+    public void testJittedConstraintStringAndLong() {
+        // DROOLS-740
+        String drl =
+                " import org.drools.compiler.Person; " +
+                " rule 'hello person' " +
+                " when " +
+                " Person( name == \"Elizabeth\" + new Long(2L) ) " +
+                " then " +
+                " end " +
+                "\n";
+        KieSession ksession = new KieHelper().addContent(drl, ResourceType.DRL)
+                                             .build()
+                                             .newKieSession();
+
+        ksession.insert(new org.drools.compiler.Person("Elizabeth2", 88));
+        assertEquals(1, ksession.fireAllRules());
+    }
+
+    @Test
+    public void testKieBuilderWithClassLoader() {
+        // DROOLS-763
+        String drl =
+                "import com.billasurf.Person\n" +
+                "\n" +
+                "global java.util.List list\n" +
+                "\n" +
+                "rule R1 when\n" +
+                "    $i : Integer()\n" +
+                "then\n" +
+                "    Person p = new Person();\n" +
+                "    p.setAge($i);\n" +
+                "    insert(p);\n" +
+                "end\n" +
+                "\n" +
+                "rule R2 when\n" +
+                "    $p : Person()\n" +
+                "then\n" +
+                "    list.add($p.getAge());\n" +
+                "end\n";
+
+        URLClassLoader urlClassLoader = new URLClassLoader( new URL[]{ this.getClass().getResource("/billasurf.jar") } );
+        KieSession ksession = new KieHelper().setClassLoader(urlClassLoader)
+                                             .addContent(drl, ResourceType.DRL)
+                                             .build()
+                                             .newKieSession();
+
+        List<Integer> list = new ArrayList<Integer>();
+        ksession.setGlobal("list", list);
+
+        ksession.insert(18);
+        ksession.fireAllRules();
+
+        assertEquals(1, list.size());
+        assertEquals(18, (int)list.get(0));
     }
 }

@@ -37,9 +37,10 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
+import org.apache.commons.codec.binary.Base64;
+import org.drools.core.util.IoUtils;
 import org.drools.core.util.StringUtils;
 import org.drools.core.io.internal.InternalResource;
-import org.drools.core.util.codec.Base64;
 import org.kie.api.io.Resource;
 import org.kie.api.io.ResourceType;
 
@@ -58,7 +59,7 @@ public class UrlResource extends BaseResource
 
     private static final int    DEFAULT_BUFFER_SIZE      = 1024 * 4;
 
-    public static File          CACHE_DIR                = getCacheDir();
+    public static final File    CACHE_DIR                = getCacheDir();
 
     private URL                 url;
     private long                lastRead                 = -1;
@@ -66,6 +67,7 @@ public class UrlResource extends BaseResource
     private String              basicAuthentication      = "disabled";
     private String              username                 = "";
     private String              password                 = "";
+    private String              encoding;
 
     private static final String DROOLS_RESOURCE_URLTIMEOUT = "drools.resource.urltimeout";
     private static final int DEFAULT_TIMEOUT = 10000; // 10 seconds
@@ -82,6 +84,11 @@ public class UrlResource extends BaseResource
         setResourceType(ResourceType.determineResourceType(this.url.getPath()));
     }
 
+    public UrlResource(URL url, String encoding) {
+        this(url);
+        this.encoding = encoding;
+    }
+
     public UrlResource(String path) {
         try {
             this.url = getCleanedUrl(new URL(path),
@@ -94,13 +101,26 @@ public class UrlResource extends BaseResource
         }
     }
 
+    public UrlResource(String path, String encoding) {
+        this(path);
+        this.encoding = encoding;
+    }
+
     public void writeExternal(ObjectOutput out) throws IOException {
+        super.writeExternal( out );
         out.writeObject(this.url);
+        out.writeObject(this.encoding);
     }
 
     public void readExternal(ObjectInput in) throws IOException,
             ClassNotFoundException {
+        super.readExternal( in );
         this.url = (URL) in.readObject();
+        this.encoding = (String) in.readObject();
+    }
+
+    public String getEncoding() {
+        return this.encoding;
     }
 
     public String getBasicAuthentication() {
@@ -228,10 +248,10 @@ public class UrlResource extends BaseResource
         if (con instanceof HttpURLConnection) {
             if ("enabled".equalsIgnoreCase(basicAuthentication)) {
                 String userpassword = username + ":" + password;
-                byte[] authEncBytes = Base64.encodeBase64(userpassword.getBytes());
+                byte[] authEncBytes = Base64.encodeBase64( userpassword.getBytes(IoUtils.UTF8_CHARSET) );
 
                 ((HttpURLConnection) con).setRequestProperty("Authorization",
-                        "Basic " + new String(authEncBytes));
+                        "Basic " + new String(authEncBytes, IoUtils.UTF8_CHARSET));
             }
 
         }
@@ -240,7 +260,11 @@ public class UrlResource extends BaseResource
     }
 
     public Reader getReader() throws IOException {
-        return new InputStreamReader(getInputStream());
+        if (this.encoding != null) {
+            return new InputStreamReader( getInputStream(), this.encoding );
+        } else {
+            return new InputStreamReader( getInputStream(), IoUtils.UTF8_CHARSET );
+        }
     }
 
     /**
@@ -291,7 +315,7 @@ public class UrlResource extends BaseResource
                 //OK we will return it from the local cached copy, as remote one isn't available..
                 return getCacheFile().lastModified();
             } else {
-                throw new RuntimeException("Unable to get LastMofified for ClasspathResource",
+                throw new RuntimeException("Unable to get LastModified for ClasspathResource",
                         e);
             }
         }
@@ -309,10 +333,10 @@ public class UrlResource extends BaseResource
                 ((HttpURLConnection) conn).setRequestMethod("HEAD");
                 if ("enabled".equalsIgnoreCase(basicAuthentication)) {
                     String userpassword = username + ":" + password;
-                    byte[] authEncBytes = Base64.encodeBase64(userpassword.getBytes());
+                    byte[] authEncBytes = Base64.encodeBase64( userpassword.getBytes(IoUtils.UTF8_CHARSET) );
 
                     ((HttpURLConnection) conn).setRequestProperty("Authorization",
-                            "Basic " + new String(authEncBytes));
+                            "Basic " + new String(authEncBytes, IoUtils.UTF8_CHARSET));
                 }
             }
             long date = conn.getLastModified();
@@ -386,7 +410,7 @@ public class UrlResource extends BaseResource
     }
 
     public String toString() {
-        return "[UrlResource path='" + this.url.toString() + "']";
+        return "UrlResource[path=" + this.url.toString() + "]";
     }
 
     private static File getCacheDir() {

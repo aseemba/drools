@@ -23,10 +23,8 @@ import org.drools.core.rule.constraint.MvelConstraint;
 import org.drools.core.spi.Constraint;
 import org.drools.core.spi.DataProvider;
 import org.drools.core.spi.DeclarationScopeResolver;
-import org.drools.core.util.ArrayUtils;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -73,11 +71,11 @@ public class LogicTransformer {
                                     method );
     }
 
-    public GroupElement[] transform(final GroupElement cloned) throws InvalidPatternException {
+    public GroupElement[] transform( final GroupElement cloned, Map<String, Class<?>> globals ) throws InvalidPatternException {
         //moved cloned to up
         //final GroupElement cloned = (GroupElement) and.clone();
 
-        processTree( cloned );
+        boolean hasNamedConsequenceAndIsStream = processTree( cloned );
         cloned.pack();
 
         GroupElement[] ands;
@@ -97,11 +95,35 @@ public class LogicTransformer {
 
         for ( int i = 0; i < ands.length; i++ ) {
             // fix the cloned declarations
-            this.fixClonedDeclarations( ands[i] );
+            this.fixClonedDeclarations( ands[i], globals );
             ands[i].setRoot( true );
         }
 
-        return ands;
+        return hasNamedConsequenceAndIsStream ? processNamedConsequences(ands) : ands;
+    }
+
+    private GroupElement[] processNamedConsequences(GroupElement[] ands) {
+        List<GroupElement> result = new ArrayList<GroupElement>();
+
+        for (GroupElement and : ands) {
+            List<RuleConditionElement> children = and.getChildren();
+            for (int i = 0; i < children.size(); i++) {
+                RuleConditionElement child = children.get(i);
+                if (child instanceof NamedConsequence) {
+                    GroupElement clonedAnd = GroupElementFactory.newAndInstance();
+                    for (int j = 0; j < i; j++) {
+                        clonedAnd.getChildren().add(children.get(j).clone());
+                    }
+                    ((NamedConsequence) child).setTerminal(true);
+                    clonedAnd.getChildren().add(child);
+                    children.remove(i--);
+                    result.add(clonedAnd);
+                }
+            }
+            result.add(and);
+        }
+
+        return result.toArray(new GroupElement[result.size()]);
     }
 
     protected GroupElement[] splitOr( final GroupElement cloned ) {
@@ -125,10 +147,11 @@ public class LogicTransformer {
      * specially patterns and corresponding declarations. So now
      * we need to fix any references to cloned declarations.
      * @param and
+     * @param globals
      */
-    protected void fixClonedDeclarations(GroupElement and) {
+    protected void fixClonedDeclarations( GroupElement and, Map<String, Class<?>> globals ) {
         Stack contextStack = new Stack();
-        DeclarationScopeResolver resolver = new DeclarationScopeResolver( Collections.<String, Class<?>>emptyMap(),
+        DeclarationScopeResolver resolver = new DeclarationScopeResolver( globals,
                                                                           contextStack );
 
         contextStack.push( and );
@@ -232,11 +255,11 @@ public class LogicTransformer {
             }
 
             
-            List<Integer> varIndexes = ArrayUtils.asList( qe.getVariableIndexes() );
+            List<Integer> varIndexes = asList( qe.getVariableIndexes() );
             for ( int i = 0; i < qe.getDeclIndexes().length; i++ ) {
                 Declaration declr = (Declaration) qe.getArgTemplate()[qe.getDeclIndexes()[i]];
                 Declaration resolved = resolver.getDeclaration( null,
-                                                                    declr.getIdentifier() );
+                                                                declr.getIdentifier() );
                 if ( resolved != null && resolved != declr && resolved.getPattern() != pattern ) {
                     qe.getArgTemplate()[qe.getDeclIndexes()[i]] = resolved;
                 }
@@ -255,7 +278,7 @@ public class LogicTransformer {
                     varIndexes.add( qe.getDeclIndexes()[i] );
                 }                  
             }
-            qe.setVariableIndexes( ArrayUtils.toIntArray( varIndexes ) );            
+            qe.setVariableIndexes( toIntArray( varIndexes ) );
         }  else if ( element instanceof ConditionalBranch ) {
             processBranch( resolver, (ConditionalBranch) element );
         } else {
@@ -267,6 +290,22 @@ public class LogicTransformer {
             }
             contextStack.pop();
         }
+    }
+
+    private static List<Integer> asList(int[] ints) {
+        List<Integer> list = new ArrayList<Integer>(ints.length);
+        for ( int i : ints ) {
+            list.add( i );
+        }
+        return list;
+    }
+
+    private static int[] toIntArray(List<Integer> list) {
+        int[] ints = new int[list.size()];
+        for ( int i = 0; i < list.size(); i++ ) {
+            ints[i] = list.get( i );
+        }
+        return ints;
     }
 
     private void processEvalCondition(DeclarationScopeResolver resolver, EvalCondition element) {
@@ -289,6 +328,12 @@ public class LogicTransformer {
     }
 
 
+    protected boolean processTree(final GroupElement ce) throws InvalidPatternException {
+        boolean[] hasNamedConsequenceAndIsStream = new boolean[2];
+        processTree(ce, hasNamedConsequenceAndIsStream);
+        return hasNamedConsequenceAndIsStream[0] && hasNamedConsequenceAndIsStream[1];
+    }
+
     /**
      * Traverses a Tree, during the process it transforms Or nodes moving the
      * upwards and it removes duplicate logic statement, this does not include
@@ -299,27 +344,28 @@ public class LogicTransformer {
      * what we are interested in are the children of the current node (called
      * the parent nodes) and the children of those parents (call the child
      * nodes).
-     * 
-     * @param ce
      */
-    protected void processTree(final GroupElement ce) throws InvalidPatternException {
-
+    private void processTree(final GroupElement ce, boolean[] result) throws InvalidPatternException {
         boolean hasChildOr = false;
 
         // first we elimininate any redundancy
         ce.pack();
 
         Object[] children = (Object[]) ce.getChildren().toArray();
-        for (Object aChildren : children) {
-            if (aChildren instanceof GroupElement) {
-                final GroupElement child = (GroupElement) aChildren;
+        for (Object child : children) {
+            if (child instanceof GroupElement) {
+                final GroupElement group = (GroupElement) child;
 
-                processTree(child);
-                if ((child.isOr() || child.isAnd()) && child.getType() == ce.getType()) {
-                    child.pack(ce);
-                } else if (child.isOr()) {
+                processTree(group, result);
+                if ((group.isOr() || group.isAnd()) && group.getType() == ce.getType()) {
+                    group.pack(ce);
+                } else if (group.isOr()) {
                     hasChildOr = true;
                 }
+            } else if (child instanceof NamedConsequence) {
+                result[0] = true;
+            } else if (child instanceof Pattern && ((Pattern) child).getObjectType().isEvent()) {
+                result[1] = true;
             }
         }
 

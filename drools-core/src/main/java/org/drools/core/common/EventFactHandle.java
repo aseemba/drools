@@ -16,7 +16,9 @@
 
 package org.drools.core.common;
 
-import org.drools.core.reteoo.WindowTupleList;
+import org.drools.core.time.JobHandle;
+import org.drools.core.time.TimerService;
+import org.drools.core.util.LinkedList;
 import org.kie.api.runtime.rule.EntryPoint;
 
 public class EventFactHandle extends DefaultFactHandle implements Comparable<EventFactHandle> {
@@ -29,6 +31,8 @@ public class EventFactHandle extends DefaultFactHandle implements Comparable<Eve
     private long              activationsCount;
 
     private EventFactHandle   linkedFactHandle;
+
+    private final transient LinkedList<JobHandle> jobs = new LinkedList<JobHandle>();
 
     // ----------------------------------------------------------------------
     // Constructors
@@ -74,10 +78,6 @@ public class EventFactHandle extends DefaultFactHandle implements Comparable<Eve
         this.duration = duration;
     }
 
-    /**
-     * @see org.drools.core.FactHandle
-     * 1: is used for EventFactHandle
-     */
     public String toExternalForm() {
         return  "5:" + super.getId() + ":" + getIdentityHashCode() + ":" + getObjectHashCode() + ":" + getRecency() + ":" + ( ((super.getEntryPoint() != null) ? super.getEntryPoint().getEntryPointId() : "null" ) + ":" + getObject() );
     }
@@ -161,11 +161,10 @@ public class EventFactHandle extends DefaultFactHandle implements Comparable<Eve
 
     public void increaseActivationsCount() {
         if ( linkedFactHandle != null ) {
-            linkedFactHandle.increaseActivationsCount();;
+            linkedFactHandle.increaseActivationsCount();
         }  else {
             this.activationsCount++;
         }
-
     }
 
     public void decreaseActivationsCount() {
@@ -220,5 +219,33 @@ public class EventFactHandle extends DefaultFactHandle implements Comparable<Eve
 
     public int compareTo(EventFactHandle e) {
         return (getStartTimestamp() < e.getStartTimestamp()) ? -1 : (getStartTimestamp() == e.getStartTimestamp() ? 0 : 1);
+    }
+
+    public void addJob(JobHandle job) {
+        synchronized (jobs) {
+            jobs.add(job);
+        }
+    }
+
+    public void removeJob(JobHandle job) {
+        synchronized (jobs) {
+            // the job could have been already removed if the event has been just retracted
+            // and then the unscheduleAllJobs method has been invoked concurrently
+            if (jobs.contains(job)) {
+                jobs.remove(job);
+            }
+        }
+    }
+
+    public void unscheduleAllJobs(InternalWorkingMemory workingMemory) {
+        if (!jobs.isEmpty()) {
+            synchronized (jobs) {
+                TimerService clock = workingMemory.getTimerService();
+                while ( !jobs.isEmpty() ) {
+                    JobHandle job = jobs.removeFirst();
+                    clock.removeJob(job);
+                }
+            }
+        }
     }
 }

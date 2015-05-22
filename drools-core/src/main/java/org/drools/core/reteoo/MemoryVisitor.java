@@ -23,6 +23,7 @@ import java.io.ObjectOutput;
 import java.lang.reflect.Field;
 
 import org.drools.core.common.InternalWorkingMemory;
+import org.drools.core.impl.InternalKnowledgeBase;
 import org.drools.core.util.AbstractHashTable;
 import org.drools.core.util.Entry;
 import org.drools.core.util.FastIterator;
@@ -38,7 +39,7 @@ public class MemoryVisitor extends ReflectiveVisitor
     implements
     Externalizable {
 
-    protected static transient Logger logger = LoggerFactory.getLogger(MemoryVisitor.class);
+    protected static final transient Logger logger = LoggerFactory.getLogger(MemoryVisitor.class);
 
     private InternalWorkingMemory workingMemory;
     private int                   indent = 0;
@@ -67,8 +68,8 @@ public class MemoryVisitor extends ReflectiveVisitor
     /**
      * RuleBaseImpl visits its Rete.
      */
-    public void visitReteooRuleBase(final ReteooRuleBase ruleBase) {
-        visit( (ruleBase).getRete() );
+    public void visitReteooRuleBase(InternalKnowledgeBase kBase) {
+        visit( kBase.getRete() );
     }
 
     /**

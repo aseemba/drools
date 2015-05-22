@@ -16,14 +16,6 @@
 
 package org.drools.core;
 
-import java.io.Externalizable;
-import java.io.IOException;
-import java.io.ObjectInput;
-import java.io.ObjectOutput;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Properties;
-
 import org.drools.core.command.CommandService;
 import org.drools.core.common.ProjectClassLoader;
 import org.drools.core.process.instance.WorkItemManagerFactory;
@@ -50,6 +42,14 @@ import org.kie.internal.KnowledgeBase;
 import org.kie.internal.runtime.conf.ForceEagerActivationFilter;
 import org.kie.internal.runtime.conf.ForceEagerActivationOption;
 import org.kie.internal.utils.ChainedProperties;
+
+import java.io.Externalizable;
+import java.io.IOException;
+import java.io.ObjectInput;
+import java.io.ObjectOutput;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Properties;
 
 /**
  * SessionConfiguration
@@ -107,11 +107,13 @@ public class SessionConfiguration
         out.writeObject( queryListener );
         out.writeObject( timerJobFactoryType );
     }
-    
-    private static final SessionConfiguration defaultInstance = new SessionConfiguration();
+
+    private static class DefaultSessionConfiguration {
+        private static final SessionConfiguration defaultInstance = new SessionConfiguration();
+    }
     
     public static SessionConfiguration getDefaultInstance() {
-        return defaultInstance;
+        return DefaultSessionConfiguration.defaultInstance;
     }
 
     @SuppressWarnings("unchecked")
@@ -133,6 +135,10 @@ public class SessionConfiguration
      */
     public SessionConfiguration(Properties properties) {
         init( properties, null );
+    }
+
+    public SessionConfiguration(Properties properties, ClassLoader classLoader) {
+        init( properties, classLoader );
     }
 
     /**
@@ -160,8 +166,8 @@ public class SessionConfiguration
             this.chainedProperties.addProperties( properties );
         }
 
-        setKeepReference( Boolean.valueOf( this.chainedProperties.getProperty( KeepReferenceOption.PROPERTY_NAME,
-                                                                               "true" ) ).booleanValue() );
+        setKeepReference(Boolean.valueOf(this.chainedProperties.getProperty(KeepReferenceOption.PROPERTY_NAME,
+                                                                            "true")).booleanValue());
 
         setForceEagerActivationFilter(ForceEagerActivationOption.resolve(this.chainedProperties.getProperty(ForceEagerActivationOption.PROPERTY_NAME,
                                                                                                             "false")).getFilter());
@@ -201,19 +207,19 @@ public class SessionConfiguration
         }
 
         if ( name.equals( KeepReferenceOption.PROPERTY_NAME ) ) {
-            setKeepReference( StringUtils.isEmpty(value) || Boolean.parseBoolean(value) );
+            setKeepReference(StringUtils.isEmpty(value) || Boolean.parseBoolean(value));
         } else if ( name.equals( ForceEagerActivationOption.PROPERTY_NAME ) ) {
             setForceEagerActivationFilter(ForceEagerActivationOption.resolve(StringUtils.isEmpty(value) ? "false" : value).getFilter());
         } else if ( name.equals( TimedRuleExectionOption.PROPERTY_NAME ) ) {
             setTimedRuleExecutionFilter(TimedRuleExectionOption.resolve(StringUtils.isEmpty(value) ? "false" : value).getFilter());
         } else if ( name.equals( ClockTypeOption.PROPERTY_NAME ) ) {
-            setClockType( ClockType.resolveClockType( StringUtils.isEmpty( value ) ? "realtime" : value ) );
+            setClockType(ClockType.resolveClockType(StringUtils.isEmpty(value) ? "realtime" : value));
         } else if ( name.equals( TimerJobFactoryOption.PROPERTY_NAME ) ) {
             setTimerJobFactoryType(TimerJobFactoryType.resolveTimerJobFactoryType(StringUtils.isEmpty(value) ? "default" : value));
         } else if ( name.equals( QueryListenerOption.PROPERTY_NAME ) ) {
-            setQueryListenerClass( StringUtils.isEmpty( value ) ? QueryListenerOption.STANDARD.getAsString() : value );
+            setQueryListenerClass(StringUtils.isEmpty(value) ? QueryListenerOption.STANDARD.getAsString() : value);
         } else if ( name.equals( BeliefSystemTypeOption.PROPERTY_NAME ) ) {
-            setBeliefSystemType( StringUtils.isEmpty( value ) ? BeliefSystemType.SIMPLE : BeliefSystemType.resolveBeliefSystemType( value ) );
+            setBeliefSystemType(StringUtils.isEmpty(value) ? BeliefSystemType.SIMPLE : BeliefSystemType.resolveBeliefSystemType(value));
         }
     }
 
@@ -224,7 +230,7 @@ public class SessionConfiguration
         }
 
         if ( name.equals( KeepReferenceOption.PROPERTY_NAME ) ) {
-            return Boolean.toString( this.keepReference );
+            return Boolean.toString(this.keepReference);
         } else if ( name.equals( ClockTypeOption.PROPERTY_NAME ) ) {
             return this.clockType.toExternalForm();
         } else if ( name.equals( TimerJobFactoryOption.PROPERTY_NAME ) ) {
@@ -276,6 +282,14 @@ public class SessionConfiguration
 
     public ForceEagerActivationFilter getForceEagerActivationFilter() {
         return this.forceEagerActivationFilter;
+    }
+
+    public boolean hasForceEagerActivationFilter() {
+        try {
+            return forceEagerActivationFilter.accept(null);
+        } catch (Exception e) {
+            return true;
+        }
     }
 
     public void setTimedRuleExecutionFilter(TimedRuleExecutionFilter timedRuleExecutionFilter) {
@@ -536,12 +550,12 @@ public class SessionConfiguration
         } else if ( option instanceof TimedRuleExectionOption ) {
             setTimedRuleExecutionFilter(((TimedRuleExectionOption) option).getFilter());
         } else if ( option instanceof WorkItemHandlerOption ) {
-            getWorkItemHandlers().put( ((WorkItemHandlerOption) option).getName(),
-                                       ((WorkItemHandlerOption) option).getHandler() );
+            getWorkItemHandlers().put(((WorkItemHandlerOption) option).getName(),
+                                      ((WorkItemHandlerOption) option).getHandler() );
         } else if ( option instanceof QueryListenerOption ) {
             this.queryListener = (QueryListenerOption) option;
         } else if ( option instanceof BeliefSystemTypeOption ) {
-            this.beliefSystemType = ((BeliefSystemType.resolveBeliefSystemType( ((BeliefSystemTypeOption) option).getBelieSystemType() )));
+            this.beliefSystemType = ((BeliefSystemType.resolveBeliefSystemType( ((BeliefSystemTypeOption) option).getBeliefSystemType() )));
         }
     }
 
@@ -549,4 +563,30 @@ public class SessionConfiguration
         return this.queryListener;
     }
 
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+
+        SessionConfiguration that = (SessionConfiguration) o;
+
+        if (keepReference != that.keepReference) return false;
+        if (beliefSystemType != that.beliefSystemType) return false;
+        if (clockType != that.clockType) return false;
+        if (timerJobFactoryType != that.timerJobFactoryType) return false;
+
+        return true;
+    }
+
+    @Override
+    public int hashCode() {
+        if (this == getDefaultInstance()) {
+            return 0;
+        }
+        int result = (keepReference ? 1 : 0);
+        result = 31 * result + clockType.hashCode();
+        result = 31 * result + beliefSystemType.hashCode();
+        result = 31 * result + timerJobFactoryType.hashCode();
+        return result;
+    }
 }

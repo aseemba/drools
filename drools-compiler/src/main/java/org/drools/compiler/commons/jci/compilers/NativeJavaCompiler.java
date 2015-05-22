@@ -1,14 +1,10 @@
 package org.drools.compiler.commons.jci.compilers;
 
 import org.drools.compiler.commons.jci.problems.CompilationProblem;
-import org.drools.compiler.commons.jci.problems.CompilationProblemHandler;
 import org.drools.compiler.commons.jci.readers.ResourceReader;
 import org.drools.compiler.commons.jci.stores.ResourceStore;
-import org.drools.compiler.compiler.PackageBuilder;
-import org.drools.compiler.compiler.PackageRegistry;
 import org.drools.core.common.ProjectClassLoader;
-import org.drools.core.rule.JavaDialectRuntimeData;
-import org.drools.core.util.ClassUtils;
+import org.drools.core.util.IoUtils;
 
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.NestingKind;
@@ -40,7 +36,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.jar.JarEntry;
-import java.util.regex.Pattern;
 
 import static org.drools.core.util.ClassUtils.convertResourceToClassName;
 
@@ -104,7 +99,7 @@ public class NativeJavaCompiler extends AbstractJavaCompiler {
         }
 
         CompilationUnit(String name, ResourceReader pReader) {
-            this(name, new String(pReader.getBytes(name)));
+            this(name, new String(pReader.getBytes(name), IoUtils.UTF8_CHARSET));
         }
 
         @Override

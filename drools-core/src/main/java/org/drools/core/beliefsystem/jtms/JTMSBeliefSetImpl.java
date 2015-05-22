@@ -1,71 +1,51 @@
 package org.drools.core.beliefsystem.jtms;
 
-import org.drools.core.beliefsystem.BeliefSet;
 import org.drools.core.beliefsystem.BeliefSystem;
 import org.drools.core.common.InternalFactHandle;
 import org.drools.core.common.LogicalDependency;
-import org.drools.core.beliefsystem.simple.SimpleLogicalDependency;
 import org.drools.core.common.WorkingMemoryAction;
 import org.drools.core.util.FastIterator;
 import org.drools.core.util.LinkedList;
-import org.drools.core.util.LinkedListEntry;
-import org.drools.core.util.LinkedListNode;
 import org.drools.core.spi.PropagationContext;
 
-public class JTMSBeliefSetImpl extends LinkedList implements JTMSBeliefSet {
-    private static final FastIterator iterator = new LinkedListFastIterator();
+import java.util.List;
 
-    private BeliefSystem beliefSystem;
+public class JTMSBeliefSetImpl<M extends JTMSMode<M>> extends LinkedList<M> implements JTMSBeliefSet<M> {
+
+    private BeliefSystem<M> beliefSystem;
 
     private WorkingMemoryAction wmAction;
 
     private InternalFactHandle rootHandle;
-    private InternalFactHandle positiveFactHandle;
-    private InternalFactHandle negativeFactHandle;
 
     private int posCounter = 0;
     private int negCounter = 0;
 
-    public JTMSBeliefSetImpl(BeliefSystem beliefSystem, InternalFactHandle rootHandle) {
+    public JTMSBeliefSetImpl(BeliefSystem<M> beliefSystem, InternalFactHandle rootHandle) {
         this.beliefSystem = beliefSystem;
         this.rootHandle = rootHandle;
     }
 
-    public InternalFactHandle getPositiveFactHandle() {
-        return positiveFactHandle;
-    }
-
-    public void setPositiveFactHandle(InternalFactHandle positiveFactHandle) {
-        this.positiveFactHandle = positiveFactHandle;
-    }
-
-    public InternalFactHandle getNegativeFactHandle() {
-        return negativeFactHandle;
-    }
-
-    public void setNegativeFactHandle(InternalFactHandle negativeFactHandle) {
-        this.negativeFactHandle = negativeFactHandle;
-    }
-
-    public void add( LinkedListNode node ) {
-        SimpleLogicalDependency ld = (SimpleLogicalDependency) ((LinkedListEntry) node).getObject();
-        boolean neg = ld.getValue() != null && MODE.NEGATIVE.getId().equals( ld.getValue().toString() );
+    public void add( M node ) {
+        JTMSMode mode = node;
+        String value = mode.getValue();
+        boolean neg = MODE.NEGATIVE.getId().equals( value );
         if ( neg ) {
             super.addLast( node ); //we add negatives to end
             negCounter++;
         } else {
             super.addFirst( node ); // we add positied to start
-            ld.setValue( MODE.POSITIVE.getId() ); // user may not have explicitely set MODE, so implicitely it's positive
             posCounter++;
         }
     }
     
-    public void remove( LinkedListNode node ) {
+    public void remove( M node ) {
         super.remove(node);
 
-        LogicalDependency ld = (LogicalDependency) ((LinkedListEntry) node).getObject();
+        JTMSMode mode = node;
+        String value = mode.getValue();
 
-        boolean neg = ld.getValue() != null && MODE.NEGATIVE.getId().equals( ld.getValue().toString() );
+        boolean neg = MODE.NEGATIVE.getId().equals( value );
         if ( neg ) {
             negCounter--;
         } else {
@@ -88,7 +68,12 @@ public class JTMSBeliefSetImpl extends LinkedList implements JTMSBeliefSet {
     }
 
     @Override
-    public boolean isUndecided() {
+    public boolean isDecided() {
+        return !isConflicting();
+    }
+
+    @Override
+    public boolean isConflicting() {
         return posCounter > 0 && negCounter > 0;
     }
 
@@ -134,29 +119,27 @@ public class JTMSBeliefSetImpl extends LinkedList implements JTMSBeliefSet {
     public void cancel(PropagationContext context) {        
         // get all but last, as that we'll do via the BeliefSystem, for cleanup
         // note we don't update negative, conflict counters. It's needed for the last cleanup operation
-        for ( LinkedListEntry entry = (LinkedListEntry) getFirst(); entry != getLast();  ) {
-            LinkedListEntry temp = (LinkedListEntry) entry.getNext(); // get next, as we are about to remove it
-            final LogicalDependency node = (LogicalDependency) entry.getObject();
+        for ( JTMSMode<M> entry = getFirst(); entry != getLast();  ) {
+            JTMSMode<M> temp = entry.getNext(); // get next, as we are about to remove it
+            final LogicalDependency<M> node =  entry.getLogicalDependency();
             node.getJustifier().getLogicalDependencies().remove( node );
-            remove( entry );
+            remove( (M) entry );
             entry = temp;
         }
-        
-        LinkedListEntry last = (LinkedListEntry) getFirst();
-        final LogicalDependency node = (LogicalDependency) last.getObject();
+
+        JTMSMode<M> last = getFirst();
+        final LogicalDependency node = last.getLogicalDependency();
         node.getJustifier().getLogicalDependencies().remove( node );
         beliefSystem.delete( node, this, context );
-        positiveFactHandle = null;
-        negativeFactHandle = null;
     }
     
     public void clear(PropagationContext context) { 
         // remove all, but don't allow the BeliefSystem to clean up, the FH is most likely going to be used else where
-        for ( LinkedListEntry entry = (LinkedListEntry) getFirst(); entry != null;  ) {
-            LinkedListEntry temp = (LinkedListEntry) entry.getNext(); // get next, as we are about to remove it
-            final LogicalDependency node = (LogicalDependency) entry.getObject();
+        for ( JTMSMode<M> entry = getFirst(); entry != null;  ) {
+            JTMSMode<M> temp =  entry.getNext(); // get next, as we are about to remove it
+            final LogicalDependency<M> node = entry.getLogicalDependency();
             node.getJustifier().getLogicalDependencies().remove( node );
-            remove( entry );
+            remove( (M) entry );
             entry = temp;
         }
     }    

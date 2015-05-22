@@ -17,7 +17,6 @@
 package org.drools.core.common;
 
 import org.drools.core.reteoo.EntryPointNode;
-import org.drools.core.reteoo.NodeSet;
 import org.drools.core.reteoo.ReteooBuilder;
 import org.drools.core.reteoo.RuleRemovalContext;
 import org.drools.core.reteoo.builder.BuildContext;
@@ -41,7 +40,7 @@ public abstract class BaseNode
     protected RuleBasePartitionId      partitionId;
     protected boolean                  partitionsEnabled;
     protected Map<Rule, RuleComponent> associations;
-    protected boolean                  streamMode;
+    private   boolean                  streamMode;
 
     public BaseNode() {
 
@@ -96,6 +95,10 @@ public abstract class BaseNode
         return this.streamMode;
     }
 
+    protected void setStreamMode(boolean streamMode) {
+        this.streamMode = streamMode;
+    }
+
     public void attach() {
         attach(null);
     }
@@ -127,7 +130,6 @@ public abstract class BaseNode
 
     /**
      * Removes the node from teh network. Usually from the parent <code>ObjectSource</code> or <code>TupleSource</code>
-     * @param builder 
      */
     protected abstract void doRemove(RuleRemovalContext context,
                                      ReteooBuilder builder,
@@ -135,7 +137,6 @@ public abstract class BaseNode
 
     /**
      * Returns true in case the current node is in use (is referenced by any other node)
-     * @return
      */
     public abstract boolean isInUse();
 
@@ -152,8 +153,6 @@ public abstract class BaseNode
 
     /**
      * Returns the partition ID for which this node belongs to
-     * 
-     * @return
      */
     public RuleBasePartitionId getPartitionId() {
         return this.partitionId;
@@ -161,8 +160,6 @@ public abstract class BaseNode
 
     /**
      * Sets the partition this node belongs to
-     * 
-     * @param partitionId
      */
     public void setPartitionId(final RuleBasePartitionId partitionId) {
         this.partitionId = partitionId;
@@ -172,9 +169,6 @@ public abstract class BaseNode
      * Creates an association between this node and the rule + rule component
      * that caused the creation of this node. Since nodes might be shared,
      * there might be more than one source for each node.
-     * 
-     * @param rule The rule source
-     * @param component
      */
     public void addAssociation( Rule rule, RuleComponent component ) {
         this.associations.put( rule, component );
@@ -182,8 +176,6 @@ public abstract class BaseNode
     
     /**
      * Returns the map of associations for this node
-     * 
-     * @return
      */
     public Map<Rule, RuleComponent> getAssociations() {
         return this.associations;
@@ -192,10 +184,8 @@ public abstract class BaseNode
     /**
      * Removes the association to the given rule from the
      * associations map.
-     *  
-     * @param rule
      */
     public void removeAssociation( Rule rule ) {
-        this.associations.remove( rule );
-    }   
+        this.associations.remove(rule);
+    }
 }

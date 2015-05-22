@@ -16,6 +16,8 @@
 
 package org.drools.template.parser;
 
+import org.drools.core.util.IoUtils;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -72,7 +74,7 @@ public class DefaultTemplateContainer implements TemplateContainer {
         try {
             final ColumnFactory cf = new ColumnFactory();
             final BufferedReader templateReader = new BufferedReader(
-                    new InputStreamReader(templateStream));
+                    new InputStreamReader(templateStream, IoUtils.UTF8_CHARSET));
             String line = null;
             StringBuffer header = new StringBuffer();
             boolean inTemplate = false;
@@ -85,6 +87,7 @@ public class DefaultTemplateContainer implements TemplateContainer {
                 if (trimmed.length() > 0) {
                     if (trimmed.startsWith("template header")) {
                         inHeader = true;
+
                     } else if (trimmed.startsWith("template")) {
                         inTemplate = true;
                         inHeader = false;
@@ -100,20 +103,30 @@ public class DefaultTemplateContainer implements TemplateContainer {
                         }
                         inHeader = false;
                         header.append(line).append("\n");
+
+                    } else if (trimmed.startsWith("import")) {
+                        inHeader = false;
+                        header.append(line).append("\n");
+
                     } else if (inHeader) {
                         addColumn(cf.getColumn(trimmed));
+
                     } else if (!inTemplate && !inHeader) {
                         header.append(line).append("\n");
+
                     } else if (!inContents && trimmed.startsWith("rule")) {
                         inContents = true;
                         contents.append(line).append("\n");
+
                     } else if (trimmed.equals("end template")) {
                         template.setContents(contents.toString());
                         contents.setLength(0);
                         inTemplate = false;
                         inContents = false;
+
                     } else if (inContents) {
                         contents.append(line).append("\n");
+
                     } else if (inTemplate) {
                         template.addColumn(trimmed);
                     }

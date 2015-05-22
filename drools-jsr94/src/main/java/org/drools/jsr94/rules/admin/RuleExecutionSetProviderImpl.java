@@ -34,9 +34,10 @@ import javax.xml.transform.TransformerFactory;
 import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.sax.SAXResult;
 
-import org.drools.compiler.compiler.PackageBuilder;
+import org.drools.compiler.builder.impl.KnowledgeBuilderImpl;
 import org.drools.compiler.lang.descr.PackageDescr;
-import org.drools.core.rule.Package;
+import org.drools.core.definitions.InternalKnowledgePackage;
+import org.drools.core.util.IoUtils;
 import org.drools.core.xml.SemanticModules;
 import org.drools.compiler.compiler.xml.XmlPackageReader;
 import org.w3c.dom.Element;
@@ -88,9 +89,9 @@ public class RuleExecutionSetProviderImpl
             final PackageDescr packageDescr = xmlPackageReader.getPackageDescr();
 
             //          pre build the package
-            final PackageBuilder builder = new PackageBuilder();
+            final KnowledgeBuilderImpl builder = new KnowledgeBuilderImpl();
             builder.addPackage( packageDescr );
-            final Package pkg = builder.getPackage();
+            InternalKnowledgePackage pkg = builder.getPackage();
 
             final LocalRuleExecutionSetProviderImpl localRuleExecutionSetProvider = new LocalRuleExecutionSetProviderImpl();
             return localRuleExecutionSetProvider.createRuleExecutionSet( pkg,
@@ -154,7 +155,7 @@ public class RuleExecutionSetProviderImpl
         try {
             final LocalRuleExecutionSetProviderImpl localRuleExecutionSetProvider = new LocalRuleExecutionSetProviderImpl();
             in = new URL( ruleExecutionSetUri ).openStream();
-            final Reader reader = new InputStreamReader( in );
+            final Reader reader = new InputStreamReader( in, IoUtils.UTF8_CHARSET );
             return localRuleExecutionSetProvider.createRuleExecutionSet( reader,
                                                                          properties );
         } catch ( final IOException ex ) {

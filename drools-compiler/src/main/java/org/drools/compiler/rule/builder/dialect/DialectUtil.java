@@ -1,22 +1,13 @@
 package org.drools.compiler.rule.builder.dialect;
 
+import org.drools.compiler.builder.impl.KnowledgeBuilderImpl;
 import org.drools.compiler.commons.jci.readers.ResourceReader;
 import org.drools.compiler.compiler.BoundIdentifiers;
 import org.drools.compiler.compiler.DescrBuildError;
-import org.drools.compiler.compiler.PackageBuilder;
-import org.drools.compiler.rule.builder.dialect.java.parser.JavaIfBlockDescr;
-import org.drools.compiler.rule.builder.dialect.java.parser.JavaTryBlockDescr;
-import org.drools.compiler.rule.builder.dialect.mvel.MVELConsequenceBuilder;
-import org.drools.core.util.BitMaskUtil;
-import org.drools.core.util.ClassUtils;
-import org.drools.core.factmodel.ClassDefinition;
 import org.drools.compiler.lang.descr.BaseDescr;
 import org.drools.compiler.lang.descr.FunctionDescr;
 import org.drools.compiler.lang.descr.ImportDescr;
 import org.drools.compiler.lang.descr.PackageDescr;
-import org.drools.core.rule.ConsequenceMetaData;
-import org.drools.core.rule.Declaration;
-import org.drools.core.rule.TypeDeclaration;
 import org.drools.compiler.rule.builder.RuleBuildContext;
 import org.drools.compiler.rule.builder.dialect.java.JavaAnalysisResult;
 import org.drools.compiler.rule.builder.dialect.java.parser.JavaBlockDescr;
@@ -25,16 +16,26 @@ import org.drools.compiler.rule.builder.dialect.java.parser.JavaContainerBlockDe
 import org.drools.compiler.rule.builder.dialect.java.parser.JavaElseBlockDescr;
 import org.drools.compiler.rule.builder.dialect.java.parser.JavaFinalBlockDescr;
 import org.drools.compiler.rule.builder.dialect.java.parser.JavaForBlockDescr;
+import org.drools.compiler.rule.builder.dialect.java.parser.JavaIfBlockDescr;
 import org.drools.compiler.rule.builder.dialect.java.parser.JavaInterfacePointsDescr;
 import org.drools.compiler.rule.builder.dialect.java.parser.JavaLocalDeclarationDescr;
 import org.drools.compiler.rule.builder.dialect.java.parser.JavaLocalDeclarationDescr.IdentifierDescr;
 import org.drools.compiler.rule.builder.dialect.java.parser.JavaModifyBlockDescr;
 import org.drools.compiler.rule.builder.dialect.java.parser.JavaThrowBlockDescr;
+import org.drools.compiler.rule.builder.dialect.java.parser.JavaTryBlockDescr;
 import org.drools.compiler.rule.builder.dialect.java.parser.JavaWhileBlockDescr;
 import org.drools.compiler.rule.builder.dialect.mvel.MVELAnalysisResult;
+import org.drools.compiler.rule.builder.dialect.mvel.MVELConsequenceBuilder;
 import org.drools.compiler.rule.builder.dialect.mvel.MVELDialect;
+import org.drools.core.factmodel.ClassDefinition;
+import org.drools.core.rule.ConsequenceMetaData;
+import org.drools.core.rule.Declaration;
+import org.drools.core.rule.TypeDeclaration;
 import org.drools.core.spi.ClassWireable;
 import org.drools.core.spi.KnowledgeHelper;
+import org.drools.core.util.ClassUtils;
+import org.drools.core.util.bitmask.AllSetBitMask;
+import org.drools.core.util.bitmask.BitMask;
 import org.kie.api.definition.type.FactField;
 import org.mvel2.CompileException;
 import org.mvel2.Macro;
@@ -51,9 +52,10 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import static org.drools.core.util.ClassUtils.findClass;
-import static org.drools.core.util.ClassUtils.getter2property;
-import static org.drools.core.util.ClassUtils.setter2property;
+import static org.drools.core.reteoo.PropertySpecificUtil.allSetButTraitBitMask;
+import static org.drools.core.reteoo.PropertySpecificUtil.getEmptyPropertyReactiveMask;
+import static org.drools.core.reteoo.PropertySpecificUtil.setPropertyOnMask;
+import static org.drools.core.util.ClassUtils.*;
 import static org.drools.core.util.StringUtils.*;
 
 public final class DialectUtil {
@@ -511,7 +513,7 @@ public final class DialectUtil {
             for( JavaLocalDeclarationDescr local : d.getInScopeLocalVars() ) {
                 // these are variables declared in the code itself that are in the scope for this expression
                 try {
-                    Class<?> type = context.getDialect( "java" ).getPackageRegistry().getTypeResolver().resolveType( local.getType() );
+                    Class<?> type = context.getDialect( "java" ).getPackageRegistry().getTypeResolver().resolveType( local.getRawType() );
                     for( IdentifierDescr id : local.getIdentifiers() ) {
                         localTypes.put( id.getIdentifier(), type );
                     }
@@ -519,7 +521,7 @@ public final class DialectUtil {
                     context.addError(new DescrBuildError(context.getRuleDescr(),
                             context.getParentDescr(),
                             null,
-                            "Unable to resolve type " + local.getType() + ":\n" + e.getMessage()));
+                            "Unable to resolve type " + local.getRawType() + ":\n" + e.getMessage()));
                 }
             }
         }
@@ -574,7 +576,7 @@ public final class DialectUtil {
         }
 
         if ( declr == null || declr.isInternalFact() ) {
-           consequence.append( "org.drools.core.FactHandle " );
+           consequence.append( "org.kie.api.runtime.rule.FactHandle " );
            consequence.append( obj );
            consequence.append( "__Handle2__ = drools.getFactHandle(" );
            consequence.append( obj );
@@ -608,7 +610,7 @@ public final class DialectUtil {
         List<String> settableProperties = null;
 
         Class<?> typeClass = findModifiedClass(context, d, declr);
-        TypeDeclaration typeDeclaration = typeClass == null ? null : context.getPackageBuilder().getTypeDeclaration(typeClass);
+        TypeDeclaration typeDeclaration = typeClass == null ? null : context.getKnowledgeBuilder().getTypeDeclaration(typeClass);
         boolean isPropertyReactive = typeDeclaration != null && typeDeclaration.isPropertyReactive();
         if (isPropertyReactive) {
             typeDeclaration.setTypeClass(typeClass);
@@ -620,7 +622,7 @@ public final class DialectUtil {
             statement = new ConsequenceMetaData.Statement(ConsequenceMetaData.Statement.Type.MODIFY, typeClass);
             context.getRule().getConsequenceMetaData().addStatement(statement);
         }
-        long modificationMask = isPropertyReactive ? 0 : Long.MAX_VALUE;
+        BitMask modificationMask = isPropertyReactive ? getEmptyPropertyReactiveMask(settableProperties.size()) : allSetButTraitBitMask();
 
         int end = originalBlock.indexOf("{");
         if (end == -1) {
@@ -654,24 +656,24 @@ public final class DialectUtil {
         appendUpdateStatement(consequence, declr, obj, modificationMask, typeClass);
     }
 
-    private static void rewriteUpdateDescr(RuleBuildContext context,
-                                              JavaBlockDescr d,
-                                              String originalBlock,
-                                              StringBuilder consequence,
-                                              Declaration declr,
-                                              String obj) {
-        long modificationMask = Long.MAX_VALUE;
+    private static void rewriteUpdateDescr( RuleBuildContext context,
+                                            JavaBlockDescr d,
+                                            String originalBlock,
+                                            StringBuilder consequence,
+                                            Declaration declr,
+                                            String obj) {
+        BitMask modificationMask = AllSetBitMask.get();
 
         Class<?> typeClass = findModifiedClass(context, d, declr);
-        TypeDeclaration typeDeclaration = typeClass == null ? null : context.getPackageBuilder().getTypeDeclaration(typeClass);
+        TypeDeclaration typeDeclaration = typeClass == null ? null : context.getKnowledgeBuilder().getTypeDeclaration(typeClass);
 
         if (typeDeclaration != null) {
             boolean isPropertyReactive = typeDeclaration != null && typeDeclaration.isPropertyReactive();
             List<String> settableProperties = null;
             if (isPropertyReactive) {
-                modificationMask = 0;
                 typeDeclaration.setTypeClass(typeClass);
                 settableProperties = typeDeclaration.getSettableProperties();
+                modificationMask = getEmptyPropertyReactiveMask(settableProperties.size());
             }
 
             ConsequenceMetaData.Statement statement = new ConsequenceMetaData.Statement(ConsequenceMetaData.Statement.Type.MODIFY, typeClass);
@@ -688,25 +690,25 @@ public final class DialectUtil {
         appendUpdateStatement(consequence, declr, obj, modificationMask, typeClass);
     }
 
-    private static void appendUpdateStatement(StringBuilder consequence, Declaration declr, String obj, long modificationMask, Class<?> typeClass) {
+    private static void appendUpdateStatement(StringBuilder consequence, Declaration declr, String obj, BitMask modificationMask, Class<?> typeClass) {
         boolean isInternalFact = declr == null || declr.isInternalFact();
         consequence
                 .append("drools.update( ")
                 .append(obj)
                 .append(isInternalFact ? "__Handle2__, " : "__Handle__, ")
-                .append(modificationMask)
-                .append("L, ")
+                .append(modificationMask.getInstancingStatement())
+                .append(", ")
                 .append(typeClass != null ? typeClass.getCanonicalName() : "java.lang.Object")
                 .append(".class")
                 .append(" ); }");
     }
 
-    private static long parseModifiedProperties(ConsequenceMetaData.Statement statement,
-                                                List<String> settableProperties,
-                                                TypeDeclaration typeDeclaration,
-                                                boolean propertyReactive,
-                                                long modificationMask,
-                                                String exprStr) {
+    private static BitMask parseModifiedProperties( ConsequenceMetaData.Statement statement,
+                                                    List<String> settableProperties,
+                                                    TypeDeclaration typeDeclaration,
+                                                    boolean propertyReactive,
+                                                    BitMask modificationMask,
+                                                    String exprStr) {
         int endMethodName = exprStr.indexOf('(');
         if (endMethodName >= 0) {
             String methodName = exprStr.substring(0, endMethodName).trim();
@@ -748,13 +750,15 @@ public final class DialectUtil {
         return modificationMask;
     }
 
-    private static long updateModificationMask(List<String> settableProperties,
-                                               boolean propertyReactive,
-                                               long modificationMask,
-                                               String propertyName) {
+    private static BitMask updateModificationMask( List<String> settableProperties,
+                                                   boolean propertyReactive,
+                                                   BitMask modificationMask,
+                                                   String propertyName) {
         if (propertyReactive) {
-            int pos = settableProperties.indexOf(propertyName);
-            if (pos >= 0) modificationMask = BitMaskUtil.set(modificationMask, pos);
+            int index = settableProperties.indexOf(propertyName);
+            if (index >= 0) {
+                modificationMask = setPropertyOnMask(modificationMask, index);
+            }
         }
         return modificationMask;
     }
@@ -817,7 +821,7 @@ public final class DialectUtil {
         }
 
         String namespace = context.getRuleDescr().getNamespace();
-        PackageBuilder packageBuilder = context.getPackageBuilder();
+        KnowledgeBuilderImpl packageBuilder = context.getKnowledgeBuilder();
 
         Class<?> clazz = null;
         try {
@@ -875,7 +879,7 @@ public final class DialectUtil {
             if (argsStart > 0) {
                 String className = expr.substring(4, argsStart).trim();
                 Class<?> typeClass = findClassByName(context, className);
-                TypeDeclaration typeDeclaration = typeClass == null ? null : context.getPackageBuilder().getTypeDeclaration(typeClass);
+                TypeDeclaration typeDeclaration = typeClass == null ? null : context.getKnowledgeBuilder().getTypeDeclaration(typeClass);
                 if (typeDeclaration != null) {
                     ConsequenceMetaData.Statement statement = new ConsequenceMetaData.Statement(ConsequenceMetaData.Statement.Type.INSERT, typeClass);
                     context.getRule().getConsequenceMetaData().addStatement(statement);
@@ -916,7 +920,7 @@ public final class DialectUtil {
 
     private static FunctionDescr lookupFunction(RuleBuildContext context, String functionName) {
         String packageName = context.getRule().getPackageName();
-        List<PackageDescr> pkgDescrs = context.getPackageBuilder().getPackageDescrs(packageName);
+        List<PackageDescr> pkgDescrs = context.getKnowledgeBuilder().getPackageDescrs(packageName);
         for (PackageDescr pkgDescr : pkgDescrs) {
             for (FunctionDescr function : pkgDescr.getFunctions()) {
                 if (function.getName().equals(functionName)) {

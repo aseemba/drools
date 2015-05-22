@@ -23,22 +23,22 @@ public class ExpressionText extends ExpressionPart {
     public ExpressionText() {
     }
 
-    public ExpressionText( final String name,
+    public ExpressionText( final String text,
                            final String classType,
                            final String genericType ) {
-        super( name,
+        super( text,
                classType,
                genericType );
     }
 
-    public ExpressionText( final String name ) {
-        super( name,
+    public ExpressionText( final String text ) {
+        super( text,
                "java.lang.String",
                DataType.TYPE_STRING );
     }
 
-    public void setName( final String name ) {
-        this.name = name;
+    public void setText( final String text ) {
+        this.name = text;
     }
 
     @Override

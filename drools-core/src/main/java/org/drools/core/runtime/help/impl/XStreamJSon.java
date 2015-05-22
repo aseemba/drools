@@ -45,6 +45,7 @@ import org.drools.core.command.runtime.rule.InsertObjectCommand;
 import org.drools.core.command.runtime.rule.ModifyCommand;
 import org.drools.core.command.runtime.rule.QueryCommand;
 import org.drools.core.common.DefaultFactHandle;
+import org.drools.core.common.InternalFactHandle;
 import org.drools.core.util.StringUtils;
 import org.drools.core.runtime.impl.ExecutionResultImpl;
 import org.drools.core.runtime.rule.impl.FlatQueryResults;
@@ -57,13 +58,17 @@ import org.kie.api.runtime.rule.QueryResults;
 import org.kie.api.runtime.rule.QueryResultsRow;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 
 public class XStreamJSon {
+    public static volatile boolean SORT_MAPS = false;
+
     public static XStream newJSonMarshaller() {
         JettisonMappedXmlDriver jet = new JettisonMappedXmlDriver();
         XStream xstream = new XStream( jet );
@@ -672,7 +677,16 @@ public class XStreamJSon {
             ExecutionResults result = (ExecutionResults) object;
             writer.startNode( "results" );
             if ( !result.getIdentifiers().isEmpty() ) {
-                for ( String identifier : result.getIdentifiers() ) {
+
+                Collection<String> identifiers = result.getIdentifiers();
+                // this gets sorted, otherwise unit tests will not pass
+                if ( SORT_MAPS ) {
+                    String[] array = identifiers.toArray( new String[identifiers.size()]);
+                    Arrays.sort(array);
+                    identifiers = Arrays.asList(array);
+                }
+
+                for ( String identifier : identifiers ) {
                     writer.startNode( "result" );
 
                     writer.startNode( "identifier" );
@@ -697,7 +711,16 @@ public class XStreamJSon {
                 }
             }
 
-            for ( String identifier : ((ExecutionResultImpl) result).getFactHandles().keySet() ) {
+
+            Collection<String> handles = ((ExecutionResultImpl) result).getFactHandles().keySet();
+            // this gets sorted, otherwise unit tests will not pass
+            if (SORT_MAPS) {
+                String[] array = handles.toArray( new String[handles.size()]);
+                Arrays.sort(array);
+                handles = Arrays.asList(array);
+            }
+
+            for ( String identifier : handles ) {
                 Object handle = result.getFactHandle( identifier );
                 if ( handle instanceof FactHandle ) {
                     writer.startNode( "fact-handle" );

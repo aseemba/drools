@@ -1,34 +1,37 @@
 package org.kie.scanner;
 
 import org.apache.maven.project.MavenProject;
+import org.apache.maven.settings.Mirror;
 import org.apache.maven.settings.Profile;
 import org.apache.maven.settings.Repository;
 import org.apache.maven.settings.RepositoryPolicy;
 import org.apache.maven.settings.Server;
 import org.apache.maven.settings.Settings;
+import org.eclipse.aether.util.repository.AuthenticationBuilder;
 import org.kie.api.builder.ReleaseId;
 import org.drools.compiler.kie.builder.impl.InternalKieModule;
 import org.kie.scanner.embedder.MavenSettings;
-import org.sonatype.aether.artifact.Artifact;
-import org.sonatype.aether.collection.CollectRequest;
-import org.sonatype.aether.collection.CollectResult;
-import org.sonatype.aether.collection.DependencyCollectionException;
-import org.sonatype.aether.deployment.DeployRequest;
-import org.sonatype.aether.deployment.DeploymentException;
-import org.sonatype.aether.graph.Dependency;
-import org.sonatype.aether.graph.DependencyNode;
-import org.sonatype.aether.graph.DependencyVisitor;
-import org.sonatype.aether.repository.Authentication;
-import org.sonatype.aether.repository.RemoteRepository;
-import org.sonatype.aether.resolution.ArtifactRequest;
-import org.sonatype.aether.resolution.ArtifactResolutionException;
-import org.sonatype.aether.resolution.ArtifactResult;
-import org.sonatype.aether.resolution.VersionRangeRequest;
-import org.sonatype.aether.resolution.VersionRangeResolutionException;
-import org.sonatype.aether.resolution.VersionRangeResult;
-import org.sonatype.aether.util.artifact.DefaultArtifact;
-import org.sonatype.aether.util.artifact.SubArtifact;
-import org.sonatype.aether.version.Version;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.eclipse.aether.artifact.Artifact;
+import org.eclipse.aether.collection.CollectRequest;
+import org.eclipse.aether.collection.CollectResult;
+import org.eclipse.aether.collection.DependencyCollectionException;
+import org.eclipse.aether.deployment.DeployRequest;
+import org.eclipse.aether.deployment.DeploymentException;
+import org.eclipse.aether.graph.Dependency;
+import org.eclipse.aether.graph.DependencyNode;
+import org.eclipse.aether.graph.DependencyVisitor;
+import org.eclipse.aether.repository.RemoteRepository;
+import org.eclipse.aether.resolution.ArtifactRequest;
+import org.eclipse.aether.resolution.ArtifactResolutionException;
+import org.eclipse.aether.resolution.ArtifactResult;
+import org.eclipse.aether.resolution.VersionRangeRequest;
+import org.eclipse.aether.resolution.VersionRangeResolutionException;
+import org.eclipse.aether.resolution.VersionRangeResult;
+import org.eclipse.aether.artifact.DefaultArtifact;
+import org.eclipse.aether.util.artifact.SubArtifact;
+import org.eclipse.aether.version.Version;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -42,80 +45,116 @@ import static org.kie.scanner.DependencyDescriptor.isRangedVersion;
 
 public class MavenRepository {
 
+    private static final Logger log = LoggerFactory.getLogger(MavenRepository.class);
+
     private static MavenRepository defaultMavenRepository;
 
     private final Aether aether;
-    private static final Collection<RemoteRepository> extraRepositories = new HashSet<RemoteRepository>();
-    
-    private MavenRepository(Aether aether) {
+    private final Collection<RemoteRepository> extraRepositories;
+    private final Collection<RemoteRepository> remoteRepositoriesForRequest;
+
+    protected MavenRepository(Aether aether) {
         this.aether = aether;
+        Settings settings = getSettings();
+        extraRepositories = initExtraRepositories(settings);
+        remoteRepositoriesForRequest = initRemoteRepositoriesForRequest(settings);
+    }
+
+    protected Settings getSettings() {
+        return MavenSettings.getSettings();
+    }
+
+    Collection<RemoteRepository> getRemoteRepositoriesForRequest() {
+        return remoteRepositoriesForRequest;
     }
 
     public static synchronized MavenRepository getMavenRepository() {
         if (defaultMavenRepository == null) {
             Aether defaultAether = Aether.getAether();
             defaultMavenRepository = new MavenRepository(defaultAether);
-            initSettings();
         }
         return defaultMavenRepository;
     }
 
-    private static void initSettings() {
-        Settings settings = MavenSettings.getSettings();
+    private Collection<RemoteRepository> initExtraRepositories(Settings settings) {
+        Collection<RemoteRepository> extraRepositories = new HashSet<RemoteRepository>();
         for (Profile profile : settings.getProfiles()) {
             if (isProfileActive(settings, profile)) {
                 for (Repository repository : profile.getRepositories()) {
-                    addExtraRepository( toRemoteRepository(settings, repository) );
+                    extraRepositories.add( toRemoteRepositoryBuilder(settings, repository).build() );
                 }
                 for (Repository repository : profile.getPluginRepositories()) {
-                    addExtraRepository( toRemoteRepository(settings, repository) );
+                    extraRepositories.add( toRemoteRepositoryBuilder(settings, repository).build() );
                 }
             }
         }
+        return extraRepositories;
     }
 
-    private static boolean isProfileActive(Settings settings, Profile profile) {
+    private Collection<RemoteRepository> initRemoteRepositoriesForRequest(Settings settings) {
+        Collection<RemoteRepository> remoteRepos = new HashSet<RemoteRepository>();
+        for (RemoteRepository repo : extraRepositories) {
+            remoteRepos.add( resolveMirroredRepo(settings, repo) );
+        }
+        for (RemoteRepository repo : aether.getRepositories()) {
+            remoteRepos.add( resolveMirroredRepo(settings, repo) );
+        }
+        return remoteRepos;
+    }
+
+    private RemoteRepository resolveMirroredRepo(Settings settings, RemoteRepository repo) {
+        for (Mirror mirror : settings.getMirrors()) {
+            if (isMirror(repo, mirror.getMirrorOf())) {
+                return toRemoteRepositoryBuilder(settings, mirror.getId(), mirror.getLayout(), mirror.getUrl()).build();
+            }
+        }
+        return repo;
+    }
+
+    private boolean isMirror(RemoteRepository repo, String mirrorOf)  {
+        return mirrorOf.equals("*") ||
+               ( mirrorOf.equals("external:*") && !repo.getUrl().startsWith("file:") ) ||
+               ( mirrorOf.contains("external:*") && !repo.getUrl().startsWith("file:") && !mirrorOf.contains("!" + repo.getId()) ) ||
+               ( mirrorOf.startsWith("*") && !mirrorOf.contains("!" + repo.getId()) ) ||
+               ( !mirrorOf.startsWith("*") && !mirrorOf.contains("external:*") && mirrorOf.contains(repo.getId()) );
+    }
+
+    private boolean isProfileActive(Settings settings, Profile profile) {
         return settings.getActiveProfiles().contains(profile.getId()) ||
                (profile.getActivation() != null && profile.getActivation().isActiveByDefault());
     }
 
-    private static RemoteRepository toRemoteRepository(Settings settings, Repository repository) {
-        RemoteRepository remote = new RemoteRepository( repository.getId(), repository.getLayout(), repository.getUrl() );
-        setPolicy(remote, repository.getSnapshots(), true);
-        setPolicy(remote, repository.getReleases(), false);
-        Server server = settings.getServer( repository.getId() );
+    private static RemoteRepository.Builder toRemoteRepositoryBuilder(Settings settings, Repository repository) {
+        RemoteRepository.Builder remoteBuilder = toRemoteRepositoryBuilder( settings, repository.getId(), repository.getLayout(), repository.getUrl() );
+        setPolicy(remoteBuilder, repository.getSnapshots(), true);
+        setPolicy(remoteBuilder, repository.getReleases(), false);
+        return remoteBuilder;
+    }
+
+    private static RemoteRepository.Builder toRemoteRepositoryBuilder(Settings settings, String id, String layout, String url) {
+        RemoteRepository.Builder remoteBuilder = new RemoteRepository.Builder( id, layout, url );
+        Server server = settings.getServer( id );
         if (server != null) {
-            remote.setAuthentication( new Authentication(server.getUsername(), server.getPassword()) );
+            remoteBuilder.setAuthentication( new AuthenticationBuilder().addUsername(server.getUsername())
+                                                                        .addPassword(server.getPassword())
+                                                                        .build() );
         }
-        return remote;
+        return remoteBuilder;
+
     }
 
-    private static void setPolicy(RemoteRepository remote, RepositoryPolicy policy, boolean snapshot) {
+    private static void setPolicy(RemoteRepository.Builder builder, RepositoryPolicy policy, boolean snapshot) {
         if (policy != null) {
-            remote.setPolicy(snapshot,
-                             new org.sonatype.aether.repository.RepositoryPolicy(policy.isEnabled(),
-                                                                                 policy.getUpdatePolicy(),
-                                                                                 policy.getChecksumPolicy()));
+            org.eclipse.aether.repository.RepositoryPolicy repoPolicy =
+                    new org.eclipse.aether.repository.RepositoryPolicy(policy.isEnabled(),
+                                                                       policy.getUpdatePolicy(),
+                                                                       policy.getChecksumPolicy());
+            if (snapshot) {
+                builder.setSnapshotPolicy(repoPolicy);
+            } else {
+                builder.setReleasePolicy(repoPolicy);
+            }
         }
-    }
-
-    public static void addExtraRepository(RemoteRepository r) {
-        extraRepositories.add(r);
-    }
-
-    public static Collection<RemoteRepository> getExtraRepositories() {
-        return extraRepositories;
-    }
-    
-    public static void clearExtraRepositories() {
-        extraRepositories.clear();
-    }
-
-    private Collection<RemoteRepository> getRemoteRepositoryForRequest() {
-        Collection<RemoteRepository> remoteRepos = new HashSet<RemoteRepository>();
-        remoteRepos.addAll(extraRepositories);
-        remoteRepos.addAll(aether.getRepositories());
-        return remoteRepos;
     }
 
     public static MavenRepository getMavenRepository(MavenProject mavenProject) {
@@ -127,7 +166,7 @@ public class MavenRepository {
         CollectRequest collectRequest = new CollectRequest();
         Dependency root = new Dependency( artifact, "" );
         collectRequest.setRoot( root );
-        for (RemoteRepository repo : getRemoteRepositoryForRequest()) {
+        for (RemoteRepository repo : remoteRepositoriesForRequest) {
             collectRequest.addRepository(repo);
         }
         CollectResult collectResult;
@@ -163,16 +202,27 @@ public class MavenRepository {
     }
 
     public Artifact resolveArtifact(String artifactName) {
+        return resolveArtifact(artifactName, true);
+    }
+
+    public Artifact resolveArtifact(String artifactName, boolean logUnresolvedArtifact) {
         Artifact artifact = new DefaultArtifact( artifactName );
         ArtifactRequest artifactRequest = new ArtifactRequest();
         artifactRequest.setArtifact( artifact );
-        for (RemoteRepository repo : getRemoteRepositoryForRequest()) {
+        for (RemoteRepository repo : remoteRepositoriesForRequest) {
             artifactRequest.addRepository(repo);
         }
         try {
             ArtifactResult artifactResult = aether.getSystem().resolveArtifact(aether.getSession(), artifactRequest);
             return artifactResult.getArtifact();
         } catch (ArtifactResolutionException e) {
+            if (logUnresolvedArtifact) {
+                if (log.isDebugEnabled()) {
+                    log.debug("Unable to resolve artifact: " + artifactName, e);
+                } else {
+                    log.warn("Unable to resolve artifact: " + artifactName);
+                }
+            }
             return null;
         }
     }
@@ -181,14 +231,18 @@ public class MavenRepository {
         Artifact artifact = new DefaultArtifact( artifactName );
         VersionRangeRequest versionRequest = new VersionRangeRequest();
         versionRequest.setArtifact(artifact);
-        for (RemoteRepository repo : getRemoteRepositoryForRequest()) {
+        for (RemoteRepository repo : remoteRepositoriesForRequest) {
             versionRequest.addRepository(repo);
         }
-        VersionRangeResult artifactResult;
         try {
             VersionRangeResult versionRangeResult = aether.getSystem().resolveVersionRange(aether.getSession(), versionRequest);
             return versionRangeResult.getHighestVersion();
         } catch (VersionRangeResolutionException e) {
+            if (log.isDebugEnabled()) {
+                log.debug("Unable to resolve version range for artifact: " + artifactName, e);
+            } else {
+                log.warn("Unable to resolve version range for artifact: " + artifactName);
+            }
             return null;
         }
     }

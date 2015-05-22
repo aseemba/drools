@@ -16,10 +16,15 @@
 
 package org.drools.compiler.lang.descr;
 
+import org.drools.compiler.rule.builder.util.AnnotationFactory;
+
 import java.io.Externalizable;
 import java.io.IOException;
 import java.io.ObjectInput;
 import java.io.ObjectOutput;
+import java.lang.annotation.Annotation;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -56,10 +61,24 @@ public class AnnotatedBaseDescr extends BaseDescr
      * @return returns the previous value of this annotation
      */
     public AnnotationDescr addAnnotation( AnnotationDescr annotation ) {
+        return addAnnotation( annotation.getName(), annotation );
+    }
+
+    public AnnotationDescr addQualifiedAnnotation( AnnotationDescr annotation ) {
+        return addAnnotation( annotation.getFullyQualifiedName(), annotation );
+    }
+
+    protected AnnotationDescr addAnnotation( String name, AnnotationDescr annotation ) {
         if ( this.annotations == null ) {
             this.annotations = new HashMap<String, AnnotationDescr>();
+        } else {
+            AnnotationDescr existingAnnotation = annotations.get( name );
+            if (existingAnnotation != null) {
+                existingAnnotation.setDuplicated();
+                return existingAnnotation;
+            }
         }
-        return this.annotations.put( annotation.getName(),
+        return this.annotations.put( name,
                                      annotation );
     }
 
@@ -73,6 +92,12 @@ public class AnnotatedBaseDescr extends BaseDescr
                                           String value ) {
         if ( this.annotations == null ) {
             this.annotations = new HashMap<String, AnnotationDescr>();
+        } else {
+            AnnotationDescr existingAnnotation = annotations.get( name );
+            if (existingAnnotation != null) {
+                existingAnnotation.setDuplicated();
+                return existingAnnotation;
+            }
         }
         AnnotationDescr annotation = new AnnotationDescr( name,
                                                           value );
@@ -88,6 +113,19 @@ public class AnnotatedBaseDescr extends BaseDescr
         return annotations == null ? null : annotations.get( name );
     }
 
+    public AnnotationDescr getAnnotation( Class<? extends Annotation> annotationClass ) {
+        return annotations == null ? null : annotations.get(annotationClass.getCanonicalName());
+    }
+
+    public <A extends Annotation> A getTypedAnnotation( Class<A> annotationClass ) {
+        AnnotationDescr annotationDescr = getAnnotation(annotationClass);
+        return annotationDescr == null ? null : (A)AnnotationFactory.buildAnnotation( annotationDescr, annotationClass );
+    }
+
+    public boolean hasAnnotation( Class<? extends Annotation> annotationClass ) {
+        return getAnnotation(annotationClass) != null;
+    }
+
     /**
     * Returns the set of annotation names for this type
     * @return
@@ -96,7 +134,19 @@ public class AnnotatedBaseDescr extends BaseDescr
         return annotations == null ? null : annotations.keySet();
     }
     
-    public Map<String, AnnotationDescr> getAnnotations() {
-        return annotations;
+    public Collection<AnnotationDescr> getAnnotations() {
+        return annotations != null ? annotations.values() : Collections.<AnnotationDescr>emptySet();
+    }
+
+    public void indexByFQN(boolean isStrict) {
+        Map<String, AnnotationDescr> fqnAnnotations = new HashMap<String, AnnotationDescr>();
+        for (AnnotationDescr annotationDescr : annotations.values()) {
+            if (annotationDescr.getFullyQualifiedName() != null) {
+                fqnAnnotations.put(annotationDescr.getFullyQualifiedName(), annotationDescr);
+            } else if (!isStrict) {
+                fqnAnnotations.put(annotationDescr.getName(), annotationDescr);
+            }
+        }
+        annotations = fqnAnnotations;
     }
 }

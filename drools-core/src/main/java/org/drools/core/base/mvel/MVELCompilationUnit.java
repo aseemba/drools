@@ -16,8 +16,6 @@
 
 package org.drools.core.base.mvel;
 
-import org.drools.core.FactHandle;
-import org.drools.core.RuntimeDroolsException;
 import org.drools.core.base.EvaluatorWrapper;
 import org.drools.core.base.ModifyInterceptor;
 import org.drools.core.common.InternalFactHandle;
@@ -202,9 +200,13 @@ public class MVELCompilationUnit
         readLocalsFromTuple = in.readBoolean();
     }    
 
-    public Serializable getCompiledExpression(MVELDialectRuntimeData runtimeData ) {        
+    public Serializable getCompiledExpression(MVELDialectRuntimeData runtimeData) {
+        return getCompiledExpression(runtimeData, null);
+    }
+
+    public Serializable getCompiledExpression(MVELDialectRuntimeData runtimeData, Object evaluationContext) {
         ParserConfiguration conf = runtimeData.getParserConfiguration();
-        final ParserContext parserContext = new ParserContext( conf );
+        final ParserContext parserContext = new ParserContext( conf, evaluationContext );
         if ( MVELDebugHandler.isDebugMode() ) {
             parserContext.setDebugSymbols( true );
         }
@@ -231,7 +233,7 @@ public class MVELCompilationUnit
                                         cls );
             }
         } catch ( ClassNotFoundException e ) {
-            throw new RuntimeDroolsException( "Unable to resolve class '" + type + "' for identifier '" + identifier );
+            throw new RuntimeException( "Unable to resolve class '" + type + "' for identifier '" + identifier );
         }
 
         parserContext.setSourceFile( name );
@@ -340,9 +342,9 @@ public class MVELCompilationUnit
             }
         }
 
-        IdentityHashMap<Object, FactHandle> identityMap = null;
+        IdentityHashMap<Object, InternalFactHandle> identityMap = null;
         if ( knowledgeHelper != null ) {
-            identityMap = new IdentityHashMap<Object, FactHandle>();
+            identityMap = new IdentityHashMap<Object, InternalFactHandle>();
         }
 
         if ( tuples != null ) {
@@ -404,7 +406,6 @@ public class MVELCompilationUnit
         
         if ( knowledgeHelper instanceof KnowledgeHelper ) {
             KnowledgeHelper kh = ( KnowledgeHelper ) knowledgeHelper;
-            kh.setIdentityMap( identityMap );
             df.setKnowledgeHelper( kh );
         }        
     }

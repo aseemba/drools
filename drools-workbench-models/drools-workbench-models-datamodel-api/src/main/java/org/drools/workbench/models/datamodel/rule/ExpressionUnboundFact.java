@@ -18,26 +18,54 @@ package org.drools.workbench.models.datamodel.rule;
 
 public class ExpressionUnboundFact extends ExpressionPart {
 
-    private FactPattern fact;
+    private String factType;
 
     public ExpressionUnboundFact() {
     }
 
-    public ExpressionUnboundFact( FactPattern fact ) {
-        this(fact, fact.getFactType());
+    public ExpressionUnboundFact( String factType ) {
+        super( factType,
+               factType,
+               factType );
+        this.factType = factType;
     }
 
-    public ExpressionUnboundFact( FactPattern fact, String classType ) {
-        super( fact.getFactType(), classType, fact.getFactType() );
-        this.fact = fact;
-    }
-
-    public FactPattern getFact() {
-        return fact;
+    public String getFactType() {
+        return factType;
     }
 
     @Override
     public void accept( ExpressionVisitor visitor ) {
         visitor.visit( this );
+    }
+
+    @Override
+    public boolean equals( Object o ) {
+        if ( this == o ) {
+            return true;
+        }
+        if ( o == null || getClass() != o.getClass() ) {
+            return false;
+        }
+        if ( !super.equals( o ) ) {
+            return false;
+        }
+
+        ExpressionUnboundFact that = (ExpressionUnboundFact) o;
+
+        if ( factType != null ? !factType.equals( that.factType ) : that.factType != null ) {
+            return false;
+        }
+
+        return true;
+    }
+
+    @Override
+    public int hashCode() {
+        int result = super.hashCode();
+        result = ~~result;
+        result = 31 * result + ( factType != null ? factType.hashCode() : 0 );
+        result = ~~result;
+        return result;
     }
 }

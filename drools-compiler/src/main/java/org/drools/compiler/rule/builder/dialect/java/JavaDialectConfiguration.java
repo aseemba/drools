@@ -1,21 +1,20 @@
 package org.drools.compiler.rule.builder.dialect.java;
 
-import java.util.Arrays;
-
-import org.drools.core.RuntimeDroolsException;
+import org.drools.compiler.builder.impl.KnowledgeBuilderConfigurationImpl;
 import org.drools.compiler.compiler.Dialect;
 import org.drools.compiler.compiler.DialectConfiguration;
-import org.drools.compiler.compiler.PackageBuilder;
-import org.drools.compiler.compiler.PackageBuilderConfiguration;
 import org.drools.compiler.compiler.PackageRegistry;
-import org.drools.core.rule.Package;
+import org.drools.core.definitions.InternalKnowledgePackage;
 import org.drools.core.rule.builder.dialect.asm.ClassLevel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Arrays;
+
 import static org.mvel2.asm.Opcodes.V1_5;
 import static org.mvel2.asm.Opcodes.V1_6;
 import static org.mvel2.asm.Opcodes.V1_7;
+import static org.mvel2.asm.Opcodes.V1_8;
 
 /**
  * 
@@ -42,7 +41,7 @@ public class JavaDialectConfiguration
     implements
     DialectConfiguration {
 
-    protected static transient Logger logger = LoggerFactory.getLogger(JavaDialectConfiguration.class);
+    protected static final transient Logger logger = LoggerFactory.getLogger(JavaDialectConfiguration.class);
     
     public static final String          JAVA_COMPILER_PROPERTY = "drools.dialect.java.compiler";
 
@@ -50,18 +49,18 @@ public class JavaDialectConfiguration
     public static final int             JANINO          = 1;
     public static final int             NATIVE          = 2;
 
-    public static final String[]        LANGUAGE_LEVELS = new String[]{"1.5", "1.6", "1.7"};
+    public static final String[]        LANGUAGE_LEVELS = new String[]{"1.5", "1.6", "1.7", "1.8"};
 
     private String                      languageLevel;
 
-    private PackageBuilderConfiguration conf;
+    private KnowledgeBuilderConfigurationImpl conf;
 
     private int                         compiler;
 
     public JavaDialectConfiguration() {
     }
 
-    public void init(final PackageBuilderConfiguration conf) {
+    public void init(final KnowledgeBuilderConfigurationImpl conf) {
         this.conf = conf;
 
         setCompiler( getDefaultCompiler() );
@@ -69,12 +68,12 @@ public class JavaDialectConfiguration
         setJavaLanguageLevel( getDefaultLanguageLevel() );
     }
 
-    public PackageBuilderConfiguration getPackageBuilderConfiguration() {
+    public KnowledgeBuilderConfigurationImpl getPackageBuilderConfiguration() {
         return this.conf;
     }
 
-    public Dialect newDialect(PackageBuilder packageBuilder, PackageRegistry pkgRegistry, Package pkg) {
-        return new JavaDialect(packageBuilder, pkgRegistry, pkg);
+    public Dialect newDialect(ClassLoader rootClassLoader, KnowledgeBuilderConfigurationImpl pkgConf, PackageRegistry pkgRegistry, InternalKnowledgePackage pkg) {
+        return new JavaDialect(rootClassLoader, pkgConf, pkgRegistry, pkg);
     }
 
     public String getJavaLanguageLevel() {
@@ -88,7 +87,7 @@ public class JavaDialectConfiguration
     public void setJavaLanguageLevel(final String languageLevel) {
         if ( Arrays.binarySearch( LANGUAGE_LEVELS,
                                   languageLevel ) < 0 ) {
-            throw new RuntimeDroolsException( "value '" + languageLevel + "' is not a valid language level" );
+            throw new RuntimeException( "value '" + languageLevel + "' is not a valid language level" );
         }
         this.languageLevel = languageLevel;
     }
@@ -124,7 +123,7 @@ public class JavaDialectConfiguration
                 this.compiler = NATIVE;
                 break;
             default :
-                throw new RuntimeDroolsException( "value '" + compiler + "' is not a valid compiler" );
+                throw new RuntimeException( "value '" + compiler + "' is not a valid compiler" );
         }
     }
 
@@ -165,8 +164,12 @@ public class JavaDialectConfiguration
                 return "1.6";
             case V1_7:
                 return "1.7";
+            case V1_8:
+                // ecj still doesn't work with version 1.8 it generates the following error
+                // "Pb(591) Syntax error, static imports are only available if source level is 1.5 or greater"
+                return "1.7";
             default:
-                return "1.6";
+                return "1.7";
         }
     }
 }

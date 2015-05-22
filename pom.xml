@@ -6,17 +6,16 @@
   <parent>
     <groupId>org.kie</groupId>
     <artifactId>kie-parent-with-dependencies</artifactId>
-    <version>6.1.0-SNAPSHOT</version>
+    <version>6.3.0-SNAPSHOT</version>
     <!-- relativePath causes out-of-date problems on hudson slaves -->
     <!--<relativePath>../droolsjbpm-build-bootstrap/pom.xml</relativePath>-->
   </parent>
 
   <groupId>org.drools</groupId>
-  <!-- TODO rename to drools once parent pom has been moved -->
-  <artifactId>drools-multiproject</artifactId>
+  <artifactId>drools</artifactId>
   <packaging>pom</packaging>
 
-  <name>Drools multiproject</name>
+  <name>Drools Multiproject</name>
   <description>
     Drools Expert is the rule engine and Drools Fusion does complex event processing (CEP).
   </description>
@@ -26,7 +25,7 @@
     <repository>
       <id>jboss-public-repository-group</id>
       <name>JBoss Public Repository Group</name>
-      <url>http://repository.jboss.org/nexus/content/groups/public/</url>
+      <url>https://repository.jboss.org/nexus/content/groups/public/</url>
       <layout>default</layout>
       <releases>
         <enabled>true</enabled>
@@ -46,6 +45,7 @@
   </scm>
 
   <modules>
+    <module>drools-beliefs</module>
     <module>drools-core</module>
     <module>drools-reteoo</module>
     <module>drools-compiler</module>

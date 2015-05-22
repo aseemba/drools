@@ -21,6 +21,8 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import static org.drools.core.phreak.PhreakJoinNode.updateChildLeftTuple;
+
 /**
 * Created with IntelliJ IDEA.
 * User: mdproctor
@@ -38,7 +40,7 @@ public class PhreakFromNode {
                        LeftTupleSets stagedLeftTuples) {
 
         if (srcLeftTuples.getDeleteFirst() != null) {
-            doLeftDeletes(fromNode, fm, sink, wm, srcLeftTuples, trgLeftTuples, stagedLeftTuples);
+            doLeftDeletes(fm, srcLeftTuples, trgLeftTuples, stagedLeftTuples);
         }
 
         if (srcLeftTuples.getUpdateFirst() != null) {
@@ -64,7 +66,7 @@ public class PhreakFromNode {
         BetaConstraints betaConstraints = fromNode.getBetaConstraints();
         AlphaNodeFieldConstraint[] alphaConstraints = fromNode.getAlphaConstraints();
         DataProvider dataProvider = fromNode.getDataProvider();
-        Class resultClass = fromNode.getResultClass();
+        Class<?> resultClass = fromNode.getResultClass();
 
         for (LeftTuple leftTuple = srcLeftTuples.getInsertFirst(); leftTuple != null; ) {
             LeftTuple next = leftTuple.getStagedNext();
@@ -106,7 +108,6 @@ public class PhreakFromNode {
                                              propagationContext,
                                              wm,
                                              fm,
-                                             bm,
                                              context,
                                              useLeftMemory,
                                              trgLeftTuples,
@@ -131,12 +132,11 @@ public class PhreakFromNode {
                               LeftTupleSets trgLeftTuples,
                               LeftTupleSets stagedLeftTuples) {
         BetaMemory bm = fm.getBetaMemory();
-        LeftTupleMemory ltm = bm.getLeftTupleMemory();
         ContextEntry[] context = bm.getContext();
         BetaConstraints betaConstraints = fromNode.getBetaConstraints();
         AlphaNodeFieldConstraint[] alphaConstraints = fromNode.getAlphaConstraints();
         DataProvider dataProvider = fromNode.getDataProvider();
-        Class resultClass = fromNode.getResultClass();
+        Class<?> resultClass = fromNode.getResultClass();
 
         for (LeftTuple leftTuple = srcLeftTuples.getUpdateFirst(); leftTuple != null; ) {
             LeftTuple next = leftTuple.getStagedNext();
@@ -187,7 +187,6 @@ public class PhreakFromNode {
                                              propagationContext,
                                              wm,
                                              fm,
-                                             bm,
                                              context,
                                              true,
                                              trgLeftTuples,
@@ -199,25 +198,7 @@ public class PhreakFromNode {
 
             for (RightTuple rightTuple : previousMatches.values()) {
                 for (RightTuple current = rightTuple; current != null; current = (RightTuple) rightIt.next(current)) {
-                    LeftTuple childLeftTuple = current.getFirstChild();
-                    if (childLeftTuple != null) {
-                        // childLeftTuple is null, if the constraints in the 'from' pattern fail
-                        childLeftTuple.unlinkFromLeftParent();
-                        childLeftTuple.unlinkFromRightParent();
-
-                        switch (childLeftTuple.getStagedType()) {
-                            // handle clash with already staged entries
-                            case LeftTuple.INSERT:
-                                stagedLeftTuples.removeInsert(childLeftTuple);
-                                break;
-                            case LeftTuple.UPDATE:
-                                stagedLeftTuples.removeUpdate(childLeftTuple);
-                                break;
-                        }
-
-                        childLeftTuple.setPropagationContext(propagationContext);
-                        trgLeftTuples.addDelete(childLeftTuple);
-                    }
+                    deleteChildLeftTuple(propagationContext, trgLeftTuples, stagedLeftTuples, current.getFirstChild());
                 }
             }
 
@@ -227,10 +208,7 @@ public class PhreakFromNode {
         betaConstraints.resetTuple(context);
     }
 
-    public void doLeftDeletes(FromNode fromNode,
-                              FromMemory fm,
-                              LeftTupleSink sink,
-                              InternalWorkingMemory wm,
+    public void doLeftDeletes(FromMemory fm,
                               LeftTupleSets srcLeftTuples,
                               LeftTupleSets trgLeftTuples,
                               LeftTupleSets stagedLeftTuples) {
@@ -278,19 +256,18 @@ public class PhreakFromNode {
         }
     }
 
-    protected void checkConstraintsAndPropagate(final LeftTupleSink sink,
-                                                final LeftTuple leftTuple,
-                                                final RightTuple rightTuple,
-                                                final AlphaNodeFieldConstraint[] alphaConstraints,
-                                                final BetaConstraints betaConstraints,
-                                                final PropagationContext propagationContext,
-                                                final InternalWorkingMemory wm,
-                                                final FromMemory fm,
-                                                final BetaMemory bm,
-                                                final ContextEntry[] context,
-                                                final boolean useLeftMemory,
-                                                LeftTupleSets trgLeftTuples,
-                                                LeftTupleSets stagedLeftTuples) {
+    public static void checkConstraintsAndPropagate(final LeftTupleSink sink,
+                                                    final LeftTuple leftTuple,
+                                                    final RightTuple rightTuple,
+                                                    final AlphaNodeFieldConstraint[] alphaConstraints,
+                                                    final BetaConstraints betaConstraints,
+                                                    final PropagationContext propagationContext,
+                                                    final InternalWorkingMemory wm,
+                                                    final FromMemory fm,
+                                                    final ContextEntry[] context,
+                                                    final boolean useLeftMemory,
+                                                    LeftTupleSets trgLeftTuples,
+                                                    LeftTupleSets stagedLeftTuples) {
         boolean isAllowed = true;
         if (alphaConstraints != null) {
             // First alpha node filters
@@ -320,35 +297,30 @@ public class PhreakFromNode {
                 trgLeftTuples.addInsert(childLeftTuple);
             } else {
                 LeftTuple childLeftTuple = rightTuple.firstChild;
-
-                switch (childLeftTuple.getStagedType()) {
-                    // handle clash with already staged entries
-                    case LeftTuple.INSERT:
-                        stagedLeftTuples.removeInsert(childLeftTuple);
-                        break;
-                    case LeftTuple.UPDATE:
-                        stagedLeftTuples.removeUpdate(childLeftTuple);
-                        break;
-                }
-
                 childLeftTuple.setPropagationContext(propagationContext);
-                trgLeftTuples.addUpdate(childLeftTuple);
+                updateChildLeftTuple(childLeftTuple, stagedLeftTuples, trgLeftTuples);
             }
         } else {
-            LeftTuple childLeftTuple = rightTuple.firstChild;
-            if (childLeftTuple != null) {
-                switch (childLeftTuple.getStagedType()) {
-                    // handle clash with already staged entries
-                    case LeftTuple.INSERT:
-                        stagedLeftTuples.removeInsert(childLeftTuple);
-                        break;
-                    case LeftTuple.UPDATE:
-                        stagedLeftTuples.removeUpdate(childLeftTuple);
-                        break;
-                }
-                childLeftTuple.setPropagationContext(propagationContext);
-                trgLeftTuples.addDelete(childLeftTuple);
+            deleteChildLeftTuple(propagationContext, trgLeftTuples, stagedLeftTuples, rightTuple.firstChild);
+        }
+    }
+
+    private static void deleteChildLeftTuple(PropagationContext propagationContext, LeftTupleSets trgLeftTuples, LeftTupleSets stagedLeftTuples, LeftTuple childLeftTuple) {
+        if (childLeftTuple != null) {
+            childLeftTuple.unlinkFromLeftParent();
+            childLeftTuple.unlinkFromRightParent();
+
+            switch (childLeftTuple.getStagedType()) {
+                // handle clash with already staged entries
+                case LeftTuple.INSERT:
+                    stagedLeftTuples.removeInsert(childLeftTuple);
+                    break;
+                case LeftTuple.UPDATE:
+                    stagedLeftTuples.removeUpdate(childLeftTuple);
+                    break;
             }
+            childLeftTuple.setPropagationContext(propagationContext);
+            trgLeftTuples.addDelete(childLeftTuple);
         }
     }
 }

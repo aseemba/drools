@@ -43,14 +43,14 @@ import java.util.NoSuchElementException;
 public class LinkedList<T extends LinkedListNode<T>>
     implements
     Externalizable {
-    private static final long  serialVersionUID = 510l;
+    private static final long        serialVersionUID = 510l;
 
-    private T                  firstNode;
-    private T                  lastNode;
+    private T                        firstNode;
+    private T                        lastNode;
 
-    private int                size;
+    private int                      size;
     
-    public static FastIterator fastIterator = new LinkedListFastIterator(); // contains no state, so ok to be static    
+    public static final FastIterator fastIterator = new LinkedListFastIterator(); // contains no state, so ok to be static
 
     /**
      * Construct an empty <code>LinkedList</code>
@@ -171,6 +171,10 @@ public class LinkedList<T extends LinkedListNode<T>>
             node.setPrevious( null );
             node.setNext( null );
         }
+    }
+
+    public boolean contains(T node) {
+        return this.firstNode == node || node.getPrevious() != null;
     }
 
     /**

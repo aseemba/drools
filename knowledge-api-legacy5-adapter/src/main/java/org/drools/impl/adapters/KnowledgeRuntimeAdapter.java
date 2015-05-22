@@ -17,6 +17,7 @@ import org.drools.runtime.rule.Agenda;
 import org.drools.runtime.rule.FactHandle;
 import org.drools.runtime.rule.LiveQuery;
 import org.drools.runtime.rule.QueryResults;
+import org.drools.runtime.rule.Variable;
 import org.drools.runtime.rule.ViewChangedEventListener;
 import org.drools.runtime.rule.WorkingMemoryEntryPoint;
 import org.drools.time.SessionClock;
@@ -197,7 +198,8 @@ public class KnowledgeRuntimeAdapter implements org.drools.runtime.KnowledgeRunt
     }
 
     public WorkingMemoryEntryPoint getWorkingMemoryEntryPoint(String name) {
-        return new WorkingMemoryEntryPointAdapter(delegate.getEntryPoint(name));
+        EntryPoint entryPoint = delegate.getEntryPoint(name);
+        return entryPoint == null ? null : new WorkingMemoryEntryPointAdapter(entryPoint);
     }
 
     public Collection<? extends WorkingMemoryEntryPoint> getWorkingMemoryEntryPoints() {
@@ -209,6 +211,13 @@ public class KnowledgeRuntimeAdapter implements org.drools.runtime.KnowledgeRunt
     }
 
     public QueryResults getQueryResults(String query, Object... arguments) {
+        if (arguments != null) {
+            for (int i = 0; i < arguments.length; i++) {
+                if (arguments[i] instanceof Variable) {
+                    arguments[i] = org.kie.api.runtime.rule.Variable.v;
+                }
+            }
+        }
         return new QueryResultsAdapter(delegate.getQueryResults(query, arguments));
     }
 
@@ -248,7 +257,8 @@ public class KnowledgeRuntimeAdapter implements org.drools.runtime.KnowledgeRunt
     }
 
     public FactHandle getFactHandle(Object object) {
-        return new FactHandleAdapter(delegate.getFactHandle(object));
+        org.kie.api.runtime.rule.FactHandle factHandle = delegate.getFactHandle(object);
+        return factHandle != null ? new FactHandleAdapter(factHandle) : null;
     }
 
     public Object getObject(FactHandle factHandle) {

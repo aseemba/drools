@@ -30,6 +30,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
+import org.drools.core.util.IoUtils;
 import org.drools.core.util.StringUtils;
 import org.drools.core.io.internal.InternalResource;
 import org.kie.api.io.Resource;
@@ -41,6 +42,7 @@ import org.kie.api.io.ResourceType;
 public class FileSystemResource  extends BaseResource implements InternalResource, Externalizable {
     private File file;
     private long lastRead = -1;
+    private String encoding;
 
     public FileSystemResource() {
         
@@ -65,16 +67,10 @@ public class FileSystemResource  extends BaseResource implements InternalResourc
         setSourcePath( file.getName() );
         setResourceType( ResourceType.determineResourceType( getSourcePath() ) );
     }
-    
-    public void writeExternal(ObjectOutput out) throws IOException {
-        super.writeExternal( out );
-        out.writeObject( this.file );
-    }
 
-    public void readExternal(ObjectInput in) throws IOException,
-                                            ClassNotFoundException {
-        super.readExternal( in );
-        this.file = (File) in.readObject();
+    public FileSystemResource(File file, String encoding) {
+        this(file);
+        this.encoding = encoding;
     }
 
     /**
@@ -95,7 +91,29 @@ public class FileSystemResource  extends BaseResource implements InternalResourc
         setSourcePath( path );
         setResourceType( ResourceType.determineResourceType( getSourcePath() ) );
     }
-    
+
+    public FileSystemResource(String path, String encoding) {
+        this(path);
+        this.encoding = encoding;
+    }
+
+    public void writeExternal(ObjectOutput out) throws IOException {
+        super.writeExternal( out );
+        out.writeObject(this.file);
+        out.writeObject(this.encoding);
+    }
+
+    public void readExternal(ObjectInput in) throws IOException,
+                                                    ClassNotFoundException {
+        super.readExternal( in );
+        this.file = (File) in.readObject();
+        this.encoding = (String) in.readObject();
+    }
+
+    public String getEncoding() {
+        return this.encoding;
+    }
+
     /**
      * This implementation opens a FileInputStream for the underlying file.
      * @see java.io.FileInputStream
@@ -104,9 +122,13 @@ public class FileSystemResource  extends BaseResource implements InternalResourc
         this.lastRead = getLastModified();
         return new FileInputStream(this.file);
     }
-    
-    public Reader getReader() throws IOException {
-        return new InputStreamReader( getInputStream() );
+     public Reader getReader() throws IOException {
+         if (this.encoding != null) {
+            return new InputStreamReader(getInputStream(), this.encoding);
+        }
+        else {
+            return new InputStreamReader(getInputStream(), IoUtils.UTF8_CHARSET);
+        }
     }
     
     public File getFile() {
@@ -150,7 +172,7 @@ public class FileSystemResource  extends BaseResource implements InternalResourc
     }
     
     public String toString() {
-        return "[FileResource file='" + this.file.toString() + "']";
+        return "FileResource[file=" + this.file.toString() + "]";
     }
     
     public boolean equals(Object object) {

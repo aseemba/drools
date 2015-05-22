@@ -8,10 +8,10 @@ import org.drools.compiler.rule.builder.ConsequenceBuilder;
 import org.drools.compiler.rule.builder.RuleBuildContext;
 import org.drools.core.base.mvel.MVELCompilationUnit;
 import org.drools.core.base.mvel.MVELConsequence;
+import org.drools.core.definitions.rule.impl.RuleImpl;
 import org.drools.core.reteoo.RuleTerminalNode.SortDeclarations;
 import org.drools.core.rule.Declaration;
 import org.drools.core.rule.MVELDialectRuntimeData;
-import org.drools.core.rule.Rule;
 import org.drools.core.spi.DeclarationScopeResolver;
 import org.drools.core.spi.KnowledgeHelper;
 import org.mvel2.Macro;
@@ -40,6 +40,13 @@ public class MVELConsequenceBuilder
                     new Macro() {
                         public String doMacro() {
                             return "drools.insertLogical";
+                        }
+                    } );
+
+        macros.put( "bolster",
+                    new Macro() {
+                        public String doMacro() {
+                            return "drools.bolster";
                         }
                     } );
 
@@ -89,20 +96,6 @@ public class MVELConsequenceBuilder
                             return "drools.shed";
                         }
                     } );
-
-        macros.put( "ward",
-                    new Macro() {
-                        public String doMacro() {
-                            return "drools.ward";
-                        }
-                    } );
-
-        macros.put( "grant",
-                    new Macro() {
-                        public String doMacro() {
-                            return "drools.grant";
-                        }
-                    } );
     }
 
     public MVELConsequenceBuilder() {
@@ -119,7 +112,7 @@ public class MVELConsequenceBuilder
             
             final RuleDescr ruleDescr = context.getRuleDescr();
             
-            String text = ( Rule.DEFAULT_CONSEQUENCE_NAME.equals(consequenceName) ) ?
+            String text = ( RuleImpl.DEFAULT_CONSEQUENCE_NAME.equals(consequenceName) ) ?
                     (String) ruleDescr.getConsequence() :
                     (String) ruleDescr.getNamedConsequences().get( consequenceName );
 
@@ -132,7 +125,7 @@ public class MVELConsequenceBuilder
                                                             dialect.getInterceptors(),
                                                             text,
                                                             new BoundIdentifiers(DeclarationScopeResolver.getDeclarationClasses(decls),
-                                                                                 context.getPackageBuilder().getGlobals(),
+                                                                                 context.getKnowledgeBuilder().getGlobals(),
                                                                                  null,
                                                                                  KnowledgeHelper.class),
                                                             null,
@@ -172,7 +165,7 @@ public class MVELConsequenceBuilder
                                                         dialect.getId(),
                                                         consequenceName );
             
-            if ( Rule.DEFAULT_CONSEQUENCE_NAME.equals( consequenceName ) ) {
+            if ( RuleImpl.DEFAULT_CONSEQUENCE_NAME.equals( consequenceName ) ) {
                 context.getRule().setConsequence( expr );
             } else {
                 context.getRule().addNamedConsequence(consequenceName, expr);
@@ -182,7 +175,7 @@ public class MVELConsequenceBuilder
             data.addCompileable( context.getRule(),
                                  expr );
             
-            expr.compile( data );
+            expr.compile( data, context.getRule() );
         } catch ( final Exception e ) {
             copyErrorLocation(e, context.getRuleDescr());
             context.addError(new DescrBuildError(context.getParentDescr(),
@@ -212,11 +205,18 @@ public class MVELConsequenceBuilder
         int brace = 0;
         int sqre = 0;
         int crly = 0;
+        int skippedNewLines = 0;
         boolean inString = false;
         char lastNonWhite = ';';
         for ( int i = 0; i < cs.length; i++ ) {
             char c = cs[i];
             switch ( c ) {
+                case ' ' :
+                case '\t' :
+                    if (!inString && lookAhead(cs, i+1) == '.') {
+                        continue;
+                    }
+                    break;
                 case '\"' :
                     if ( i == 0 || cs[i-1] != '\\' ) {
                         inString = !inString;
@@ -280,18 +280,41 @@ public class MVELConsequenceBuilder
                 default :
                     break;
             }
-            if ( brace == 0 && sqre == 0 && crly == 0 && ( c == '\n' || c == '\r' ) ){
-                // line break 
-                if ( lastNonWhite != ';' ) {
-                    result.append( ';' );
-                    lastNonWhite = ';';
+
+            if ( c == '\n' || c == '\r' ) {
+                // line break
+                if ( brace == 0 && sqre == 0 && crly == 0 &&
+                     lastNonWhite != '.' && lookAhead(cs, i+1) != '.' ) {
+                    if ( lastNonWhite != ';' ) {
+                        result.append( ';' );
+                        lastNonWhite = ';';
+                    }
+                    for (int j = 0; j < skippedNewLines; j++) {
+                        result.append("\n");
+                    }
+                    skippedNewLines = 0;
+                } else {
+                    skippedNewLines++;
+                    continue;
                 }
             } else if ( !Character.isWhitespace( c ) ) {
                 lastNonWhite = c;
             }
             result.append( c );
         }
+        for (int i = 0; i < skippedNewLines; i++) {
+            result.append("\n");
+        }
         return result.toString();
+    }
+
+    private static char lookAhead(char[] cs, int pos) {
+        for (int i = pos; i < cs.length; i++) {
+            if ( !Character.isWhitespace( cs[i] ) ) {
+                return cs[i];
+            }
+        }
+        return ' ';
     }
 
     private static int processLineComment(char[] cs,

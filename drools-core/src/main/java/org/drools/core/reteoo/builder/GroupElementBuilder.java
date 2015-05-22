@@ -16,12 +16,6 @@
 
 package org.drools.core.reteoo.builder;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-
-import org.drools.core.RuntimeDroolsException;
 import org.drools.core.common.BetaConstraints;
 import org.drools.core.common.TupleStartEqualsConstraint;
 import org.drools.core.reteoo.ExistsNode;
@@ -30,12 +24,16 @@ import org.drools.core.reteoo.NodeTypeEnums;
 import org.drools.core.reteoo.NotNode;
 import org.drools.core.reteoo.ObjectSource;
 import org.drools.core.reteoo.ObjectTypeNode;
-import org.drools.core.reteoo.QueryRiaFixerNode;
 import org.drools.core.reteoo.RightInputAdapterNode;
 import org.drools.core.rule.GroupElement;
 import org.drools.core.rule.GroupElement.Type;
 import org.drools.core.rule.RuleConditionElement;
 import org.drools.core.spi.BetaNodeFieldConstraint;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 public class GroupElementBuilder
         implements
@@ -106,48 +104,50 @@ public class GroupElementBuilder
 
             // iterate over each child and build it
             for (final RuleConditionElement child : ge.getChildren()) {
-
                 final ReteooComponentBuilder builder = utils.getBuilderFor(child);
+                builder.build( context, utils, child );
+                buildTupleSource(context, utils);
+                buildJoinNode(context, utils);
+            }
+        }
 
-                builder.build( context,
-                               utils,
-                               child );
-
-                // if a previous object source was bound, but no tuple source
-                if (context.getObjectSource() != null && context.getTupleSource() == null) {
-                    // we know this is the root OTN, so record it
-                    ObjectSource source = context.getObjectSource();
-                    while ( !(source.getType() ==  NodeTypeEnums.ObjectTypeNode ) ) {
-                        source = source.getParentObjectSource();
-                    }
-                    context.setRootObjectTypeNode( (ObjectTypeNode) source );
-
-
-                    // adapt it to a Tuple source                    
-                    context.setTupleSource( (LeftTupleSource) utils.attachNode( context,
-                                                                                context.getComponentFactory().getNodeFactoryService().buildLeftInputAdapterNode( context.getNextId(),
-                                                                                                                                                                 context.getObjectSource(),
-                                                                                                                                                                 context ) ) );
-
-                    context.setObjectSource( null );
+        public static void buildTupleSource(BuildContext context, BuildUtils utils) {
+            // if a previous object source was bound, but no tuple source
+            if (context.getObjectSource() != null && context.getTupleSource() == null) {
+                // we know this is the root OTN, so record it
+                ObjectSource source = context.getObjectSource();
+                while ( !(source.getType() ==  NodeTypeEnums.ObjectTypeNode ) ) {
+                    source = source.getParentObjectSource();
                 }
+                context.setRootObjectTypeNode( (ObjectTypeNode) source );
 
-                // if there was a previous tuple source, then a join node is needed
-                if (context.getObjectSource() != null && context.getTupleSource() != null) {
-                    // so, create the tuple source and clean up the constraints and object source
-                    final BetaConstraints betaConstraints = utils.createBetaNodeConstraint( context,
-                                                                                            context.getBetaconstraints(),
-                                                                                            false );
 
-                    context.setTupleSource( (LeftTupleSource) utils.attachNode( context,
-                                                                                context.getComponentFactory().getNodeFactoryService().buildJoinNode( context.getNextId(),
-                                                                                                                                                     context.getTupleSource(),
-                                                                                                                                                     context.getObjectSource(),
-                                                                                                                                                     betaConstraints,
-                                                                                                                                                     context) ) );
-                    context.setBetaconstraints( null );
-                    context.setObjectSource( null );
-                }
+                // adapt it to a Tuple source
+                context.setTupleSource( (LeftTupleSource) utils.attachNode( context,
+                                                                            context.getComponentFactory().getNodeFactoryService().buildLeftInputAdapterNode( context.getNextId(),
+                                                                                                                                                             context.getObjectSource(),
+                                                                                                                                                             context ) ) );
+
+                context.setObjectSource( null );
+            }
+        }
+
+        public static void buildJoinNode(BuildContext context, BuildUtils utils) {
+            // if there was a previous tuple source, then a join node is needed
+            if (context.getObjectSource() != null && context.getTupleSource() != null) {
+                // so, create the tuple source and clean up the constraints and object source
+                final BetaConstraints betaConstraints = utils.createBetaNodeConstraint( context,
+                                                                                        context.getBetaconstraints(),
+                                                                                        false );
+
+                context.setTupleSource( (LeftTupleSource) utils.attachNode( context,
+                                                                            context.getComponentFactory().getNodeFactoryService().buildJoinNode( context.getNextId(),
+                                                                                                                                                 context.getTupleSource(),
+                                                                                                                                                 context.getObjectSource(),
+                                                                                                                                                 betaConstraints,
+                                                                                                                                                 context) ) );
+                context.setBetaconstraints( null );
+                context.setObjectSource( null );
             }
         }
 
@@ -179,12 +179,12 @@ public class GroupElementBuilder
         public void build(final BuildContext context,
                           final BuildUtils utils,
                           final RuleConditionElement rce) {
-            throw new RuntimeDroolsException( "BUG: Can't build a rete network with an inner OR group element" );
+            throw new RuntimeException( "BUG: Can't build a rete network with an inner OR group element" );
         }
 
         public boolean requiresLeftActivation(final BuildUtils utils,
                                               final RuleConditionElement rce) {
-            throw new RuntimeDroolsException( "BUG: Can't build a rete network with an inner OR group element" );
+            throw new RuntimeException( "BUG: Can't build a rete network with an inner OR group element" );
         }
     }
 
@@ -246,7 +246,7 @@ public class GroupElementBuilder
 
             NodeFactory nfactory = context.getComponentFactory().getNodeFactoryService();
 
-            if ( !context.getRuleBase().getConfiguration().isPhreakEnabled() && !context.isTupleMemoryEnabled() && existSubNetwort ) {
+            if ( !context.getKnowledgeBase().getConfiguration().isPhreakEnabled() && !context.isTupleMemoryEnabled() && existSubNetwort ) {
                 // If there is a RIANode, so need to handle. This only happens with queries, so need to worry about sharing
                 context.setTupleSource( (LeftTupleSource) utils.attachNode( context, nfactory.buildQueryRiaFixerNode( context.getNextId(), context.getTupleSource(), context ) ) );
             }
@@ -340,7 +340,7 @@ public class GroupElementBuilder
 
             NodeFactory nfactory = context.getComponentFactory().getNodeFactoryService();
 
-            if ( !context.getRuleBase().getConfiguration().isPhreakEnabled() && !context.isTupleMemoryEnabled() && existSubNetwort ) {
+            if ( !context.getKnowledgeBase().getConfiguration().isPhreakEnabled() && !context.isTupleMemoryEnabled() && existSubNetwort ) {
                 // If there is a RIANode, so need to handle. This only happens with queries, so need to worry about sharing
                 context.setTupleSource( (LeftTupleSource) utils.attachNode( context, nfactory.buildQueryRiaFixerNode( context.getNextId(), context.getTupleSource(), context ) ) );
             }

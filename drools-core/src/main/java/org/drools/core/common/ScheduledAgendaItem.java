@@ -16,12 +16,14 @@
 
 package org.drools.core.common;
 
-import org.drools.core.FactHandle;
+import org.drools.core.beliefsystem.ModedAssertion;
+import org.drools.core.beliefsystem.simple.SimpleMode;
+import org.kie.api.runtime.rule.FactHandle;
+import org.drools.core.definitions.rule.impl.RuleImpl;
 import org.drools.core.phreak.RuleAgendaItem;
 import org.drools.core.reteoo.LeftTuple;
 import org.drools.core.reteoo.TerminalNode;
 import org.drools.core.rule.GroupElement;
-import org.drools.core.rule.Rule;
 import org.drools.core.spi.Consequence;
 import org.drools.core.spi.PropagationContext;
 import org.drools.core.time.JobHandle;
@@ -29,13 +31,14 @@ import org.drools.core.util.LinkedList;
 import org.drools.core.util.LinkedListEntry;
 import org.drools.core.util.LinkedListNode;
 import org.kie.internal.event.rule.ActivationUnMatchListener;
+import org.kie.internal.runtime.beliefs.Mode;
 
 import java.util.List;
 
-public class ScheduledAgendaItem
+public class ScheduledAgendaItem<T extends ModedAssertion<T>>
             implements
-            AgendaItem,
-            LinkedListNode<ScheduledAgendaItem> {
+            AgendaItem<T>,
+            LinkedListNode<ScheduledAgendaItem<T>> {
 
     private static final long serialVersionUID = 510l;
     private ScheduledAgendaItem previous;
@@ -91,11 +94,11 @@ public class ScheduledAgendaItem
         return agendaItem.toExternalForm();
     }
 
-    public LinkedList<LogicalDependency> getBlocked() {
+    public LinkedList<LogicalDependency<SimpleMode>> getBlocked() {
         return agendaItem.getBlocked();
     }
 
-    public void setBlocked(LinkedList<LogicalDependency> justified) {
+    public void setBlocked(LinkedList<LogicalDependency<SimpleMode>> justified) {
         agendaItem.setBlocked(justified);
     }
 
@@ -127,7 +130,7 @@ public class ScheduledAgendaItem
         agendaItem.setActivationUnMatchListener(activationUnMatchListener);
     }
 
-    public Rule getRule() {
+    public RuleImpl getRule() {
         return agendaItem.getRule();
     }
 
@@ -167,11 +170,11 @@ public class ScheduledAgendaItem
         agendaItem.setQueued(queued);
     }
 
-    public void addLogicalDependency(LogicalDependency node) {
+    public void addLogicalDependency(LogicalDependency<T> node) {
         agendaItem.addLogicalDependency(node);
     }
 
-    public LinkedList<LinkedListEntry<LogicalDependency>> getBlockers() {
+    public LinkedList<SimpleMode> getBlockers() {
         return agendaItem.getBlockers();
     }
 
@@ -223,11 +226,11 @@ public class ScheduledAgendaItem
         return agendaItem.isRuleAgendaItem();
     }
 
-    public LinkedList<LogicalDependency> getLogicalDependencies() {
+    public LinkedList<LogicalDependency<T>> getLogicalDependencies() {
         return agendaItem.getLogicalDependencies();
     }
 
-    public void setLogicalDependencies(LinkedList<LogicalDependency> justified) {
+    public void setLogicalDependencies(LinkedList<LogicalDependency<T>> justified) {
         agendaItem.setLogicalDependencies(justified);
     }
 

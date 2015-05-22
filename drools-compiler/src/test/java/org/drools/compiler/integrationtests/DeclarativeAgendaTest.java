@@ -1,35 +1,33 @@
 package org.drools.compiler.integrationtests;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-
 import org.drools.compiler.CommonTestMethodBase;
 import org.junit.Test;
+import org.kie.api.KieBaseConfiguration;
 import org.kie.api.KieServices;
 import org.kie.api.builder.KieBuilder;
 import org.kie.api.builder.KieFileSystem;
 import org.kie.api.builder.model.KieBaseModel;
 import org.kie.api.builder.model.KieModuleModel;
-import org.kie.api.runtime.KieSession;
-import org.kie.internal.KnowledgeBase;
-import org.kie.api.KieBaseConfiguration;
-import org.kie.internal.KnowledgeBaseFactory;
 import org.kie.api.conf.DeclarativeAgendaOption;
-import org.kie.api.event.rule.MatchCancelledEvent;
-import org.kie.api.event.rule.MatchCreatedEvent;
 import org.kie.api.event.rule.AfterMatchFiredEvent;
 import org.kie.api.event.rule.AgendaEventListener;
 import org.kie.api.event.rule.AgendaGroupPoppedEvent;
 import org.kie.api.event.rule.AgendaGroupPushedEvent;
 import org.kie.api.event.rule.BeforeMatchFiredEvent;
+import org.kie.api.event.rule.MatchCancelledEvent;
+import org.kie.api.event.rule.MatchCreatedEvent;
 import org.kie.api.event.rule.RuleFlowGroupActivatedEvent;
 import org.kie.api.event.rule.RuleFlowGroupDeactivatedEvent;
-import org.kie.internal.runtime.StatefulKnowledgeSession;
+import org.kie.api.runtime.KieSession;
 import org.kie.api.runtime.rule.FactHandle;
 import org.kie.api.runtime.rule.Match;
+import org.kie.internal.KnowledgeBase;
+import org.kie.internal.KnowledgeBaseFactory;
+import org.kie.internal.runtime.StatefulKnowledgeSession;
 
-import static org.junit.Assert.assertEquals;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 public class DeclarativeAgendaTest extends CommonTestMethodBase {
     
@@ -137,7 +135,7 @@ public class DeclarativeAgendaTest extends CommonTestMethodBase {
         ksession.dispose();
     }
 
-    @Test(timeout=10000)
+    @Test//(timeout=10000)
     public void testApplyBlockerFirst() {
         StatefulKnowledgeSession ksession = getStatefulKnowledgeSession();
 
@@ -145,6 +143,7 @@ public class DeclarativeAgendaTest extends CommonTestMethodBase {
         ksession.setGlobal( "list",
                             list );
         FactHandle go2 = ksession.insert( "go2" );
+        //((InternalWorkingMemory) ksession).flushPropagations();
         FactHandle go1 = ksession.insert( "go1" );
         ksession.fireAllRules();
 
@@ -191,7 +190,7 @@ public class DeclarativeAgendaTest extends CommonTestMethodBase {
         assertTrue( list.contains( "rule1:go1" ) );
     }
 
-    @Test(timeout=10000)
+    @Test//(timeout=10000)
     public void testApplyBlockerSecond() {
         StatefulKnowledgeSession ksession = getStatefulKnowledgeSession();
 
@@ -415,7 +414,7 @@ public class DeclarativeAgendaTest extends CommonTestMethodBase {
         str += "global java.util.List list \n";
         str += "dialect 'mvel' \n";
 
-        str += "rule rule0 @eager(true) @department(sales) \n";
+        str += "rule rule0 @Propagation(EAGER) @department(sales) \n";
         str += "when \n";
         str += "     $s : String( this == 'go0' ) \n";
         str += "then \n";

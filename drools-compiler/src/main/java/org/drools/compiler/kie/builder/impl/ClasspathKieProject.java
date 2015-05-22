@@ -2,6 +2,7 @@ package org.drools.compiler.kie.builder.impl;
 
 import org.drools.compiler.kie.builder.impl.event.KieModuleDiscovered;
 import org.drools.compiler.kie.builder.impl.event.KieServicesEventListerner;
+import org.drools.core.util.IoUtils;
 import org.drools.core.util.StringUtils;
 import org.drools.compiler.kproject.ReleaseIdImpl;
 import org.drools.compiler.kproject.models.KieModuleModelImpl;
@@ -15,9 +16,10 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.Reader;
 import java.io.UnsupportedEncodingException;
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Method;
@@ -130,12 +132,14 @@ public class ClasspathKieProject extends AbstractKieProject {
             Class<?> c = Class.forName(OSGI_KIE_MODULE_CLASS_NAME);
             m = c.getMethod("create", URL.class);
         } catch (Exception e) {
-            throw new RuntimeException("It is necessary to have the drools-osgi-integration module on the path in order to create a KieProject from an ogsi bundle", e);
+            log.error("It is necessary to have the drools-osgi-integration module on the path in order to create a KieProject from an ogsi bundle", e);
+            throw new RuntimeException(e);
         }
         try {
             return (InternalKieModule) m.invoke(null, url);
         } catch (Exception e) {
-            throw new RuntimeException("Failure creating a OsgiKieModule caused by: " + e.getMessage(), e);
+            log.error("Failure creating a OsgiKieModule caused by: " + e.getMessage(), e);
+            throw new RuntimeException(e);
         }
     }
 
@@ -144,7 +148,8 @@ public class ClasspathKieProject extends AbstractKieProject {
             Class clazz = Class.forName("org.kie.spring.KModuleSpringMarshaller");
             Method method = clazz.getDeclaredMethod("fromXML", java.net.URL.class, String.class);
             method.invoke(null, kModuleUrl, fixedURL);
-        } catch (Exception e){
+        } catch (Exception e) {
+            log.error("It is necessary to have the kie-spring module on the path in order to create a KieProject from a spring context", e);
             throw new RuntimeException(e);
         }
     }
@@ -161,12 +166,17 @@ public class ClasspathKieProject extends AbstractKieProject {
         setDefaultsforEmptyKieModule(kieProject);
 
         String pomProperties = getPomProperties( fixedURL );
-        
-        ReleaseId releaseId = ReleaseIdImpl.fromPropertiesString(pomProperties);
+        if (pomProperties == null) {
+            log.warn("Cannot find maven pom properties for this project. Using the container's default ReleaseId");
+        }
+
+        ReleaseId releaseId = pomProperties != null ?
+                              ReleaseIdImpl.fromPropertiesString(pomProperties) :
+                              KieServices.Factory.get().getRepository().getDefaultReleaseId();
 
         String rootPath = fixedURL;
         if ( rootPath.lastIndexOf( ':' ) > 0 ) {
-            rootPath = fixedURL.substring( rootPath.lastIndexOf( ':' ) + 1 );
+            rootPath = IoUtils.asSystemSpecificPath( rootPath, rootPath.lastIndexOf( ':') );
         }
 
         return createInternalKieModule(url, fixedURL, kieProject, releaseId, rootPath);
@@ -183,7 +193,7 @@ public class ClasspathKieProject extends AbstractKieProject {
         String pomProperties = null;
         String rootPath = urlPathToAdd;
         if ( rootPath.lastIndexOf( ':' ) > 0 ) {
-            rootPath = urlPathToAdd.substring( rootPath.lastIndexOf( ':' ) + 1 );
+            rootPath = IoUtils.asSystemSpecificPath( rootPath, rootPath.lastIndexOf( ':' ) );
         }
 
         if ( urlPathToAdd.endsWith( ".jar" ) || urlPathToAdd.endsWith( "/content" ) ) {
@@ -212,6 +222,7 @@ public class ClasspathKieProject extends AbstractKieProject {
         File actualZipFile = new File( rootPath );
         if ( !actualZipFile.exists() ) {
             log.error( "Unable to load pom.properties from" + rootPath + " as jarPath cannot be found\n" + rootPath );
+            return null;
         }
 
         ZipFile zipFile = null;
@@ -226,7 +237,8 @@ public class ClasspathKieProject extends AbstractKieProject {
             }
             ZipEntry zipEntry = zipFile.getEntry( file );
 
-            String pomProps = StringUtils.readFileAsString( new InputStreamReader( zipFile.getInputStream( zipEntry ) ) );
+            String pomProps = StringUtils.readFileAsString(
+                    new InputStreamReader( zipFile.getInputStream( zipEntry ), IoUtils.UTF8_CHARSET ) );
             log.debug( "Found and used pom.properties " + file);
             return pomProps;
         } catch ( Exception e ) {
@@ -242,14 +254,14 @@ public class ClasspathKieProject extends AbstractKieProject {
     }
 
     private static String getPomPropertiesFromFileSystem(String rootPath) {
-        FileReader reader = null;
+        Reader reader = null;
         try {
             File file = KieBuilderImpl.findPomProperties( new File( rootPath ) );
             if ( file == null ) {
                 log.warn( "Unable to find pom.properties in " + rootPath );
                 return null;
             }
-            reader = new FileReader( file );
+            reader = new InputStreamReader( new FileInputStream( file ), IoUtils.UTF8_CHARSET );
             log.debug( "Found and used pom.properties " + file);
             return StringUtils.toString( reader );
         } catch ( Exception e ) {
@@ -288,7 +300,7 @@ public class ClasspathKieProject extends AbstractKieProject {
                 ReleaseIdImpl gav = (ReleaseIdImpl) pomModel.getReleaseId();
 
                 String str =  KieBuilderImpl.generatePomProperties( gav );
-                log.info( "Recursed up folders,  found and used pom.xml " + file );
+                log.info( "Recursed up folders, found and used pom.xml " + file );
 
                 return str;
             } catch ( Exception e ) {
@@ -346,7 +358,7 @@ public class ClasspathKieProject extends AbstractKieProject {
         int firstSlash = urlPath.indexOf( '/' );
         colonIndex = firstSlash > 0 ? urlPath.lastIndexOf( ":", firstSlash ) : urlPath.lastIndexOf( ":" );
         if ( colonIndex >= 0 ) {
-            urlPath = urlPath.substring( colonIndex + 1 );
+            urlPath = IoUtils.asSystemSpecificPath(urlPath, colonIndex);
         }
 
         try {
@@ -401,5 +413,9 @@ public class ClasspathKieProject extends AbstractKieProject {
 
     public ClassLoader getClonedClassLoader() {
         return createProjectClassLoader(classLoader.getParent());
+    }
+
+    public InputStream getPomAsStream() {
+        return classLoader.getResourceAsStream("pom.xml");
     }
 }

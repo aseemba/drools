@@ -16,29 +16,31 @@
 
 package org.drools.core.base;
 
-import java.util.Collection;
-import java.util.Collections;
-import java.util.IdentityHashMap;
-import java.util.Map;
-
-import org.drools.core.FactHandle;
 import org.drools.core.WorkingMemory;
-import org.drools.core.common.AbstractWorkingMemory;
+import org.drools.core.common.InternalFactHandle;
 import org.drools.core.common.InternalWorkingMemoryActions;
+import org.drools.core.definitions.rule.impl.RuleImpl;
 import org.drools.core.factmodel.traits.Thing;
 import org.drools.core.factmodel.traits.TraitableBean;
 import org.drools.core.impl.StatefulKnowledgeSessionImpl;
 import org.drools.core.rule.Declaration;
 import org.drools.core.rule.GroupElement;
-import org.drools.core.rule.Rule;
 import org.drools.core.spi.Activation;
 import org.drools.core.spi.KnowledgeHelper;
 import org.drools.core.spi.Tuple;
-import org.kie.internal.runtime.KnowledgeRuntime;
+import org.drools.core.util.bitmask.BitMask;
 import org.kie.api.runtime.Channel;
 import org.kie.api.runtime.KieRuntime;
-import org.kie.api.runtime.rule.Match;
 import org.kie.api.runtime.rule.EntryPoint;
+import org.kie.api.runtime.rule.FactHandle;
+import org.kie.api.runtime.rule.Match;
+import org.kie.internal.runtime.KnowledgeRuntime;
+import org.kie.internal.runtime.beliefs.Mode;
+
+import java.util.Collection;
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.Map;
 
 public class SequentialKnowledgeHelper
     implements
@@ -46,12 +48,11 @@ public class SequentialKnowledgeHelper
 
     private static final long                  serialVersionUID = 510l;
 
-    private Rule                               rule;
+    private RuleImpl                           rule;
     private GroupElement                       subrule;
     private Activation                         activation;
     private Tuple                              tuple;
     private final InternalWorkingMemoryActions workingMemory;
-    private IdentityHashMap<Object,FactHandle>              identityMap;
 
     public SequentialKnowledgeHelper(final WorkingMemory workingMemory) {
         this.workingMemory = (InternalWorkingMemoryActions) workingMemory;
@@ -62,7 +63,6 @@ public class SequentialKnowledgeHelper
         this.subrule = agendaItem.getSubRule();
         this.activation = agendaItem;
         this.tuple = agendaItem.getTuple();
-        this.identityMap = new IdentityHashMap<Object,FactHandle>();
     }
     
     public void reset() {
@@ -73,7 +73,7 @@ public class SequentialKnowledgeHelper
     }
     
 
-    public Rule getRule() {
+    public RuleImpl getRule() {
         return this.rule;
     }
 
@@ -103,7 +103,7 @@ public class SequentialKnowledgeHelper
     }
     
     public KnowledgeRuntime getKnowledgeRuntime() {
-        return new StatefulKnowledgeSessionImpl( (AbstractWorkingMemory) this.workingMemory );
+        return (StatefulKnowledgeSessionImpl) this.workingMemory;
      }
 
     public KieRuntime getKieRuntime() {
@@ -144,27 +144,15 @@ public class SequentialKnowledgeHelper
     }
 
     public EntryPoint getEntryPoint(String id) {
-        return this.workingMemory.getEntryPoints().get( id );
+        return ((StatefulKnowledgeSessionImpl) this.workingMemory).getEntryPoint( id );
     }
 
     public Channel getChannel(String id) {
         return this.workingMemory.getChannels().get( id );
     }
 
-    public Map<String, EntryPoint> getEntryPoints() {
-        return Collections.unmodifiableMap( this.workingMemory.getEntryPoints() );
-    }
-
     public Map<String, Channel> getChannels() {
         return Collections.unmodifiableMap( this.workingMemory.getChannels() );
-    }
-
-    public IdentityHashMap<Object, FactHandle> getIdentityMap() {
-        return this.identityMap;
-    }
-
-    public void setIdentityMap(IdentityHashMap<Object, FactHandle> identityMap) {
-        this.identityMap = identityMap;
     }
 
     public <T> T getContext(Class<T> contextClass) {
@@ -177,6 +165,16 @@ public class SequentialKnowledgeHelper
 
     public <T, K> T don(Thing<K> core, Class<T> trait, boolean logical) {
         return null;  //To change body of implemented methods use File | Settings | File Templates.
+    }
+
+    @Override
+    public <T, K> T don( K core, Class<T> trait, Mode... modes ) {
+        return null;
+    }
+
+    @Override
+    public <T, K> T don( Thing<K> core, Class<T> trait, Mode... modes ) {
+        return null;
     }
 
     public <T, K> T don( K core, Class<T> trait) {
@@ -193,6 +191,11 @@ public class SequentialKnowledgeHelper
     }
 
     @Override
+    public <T, K> T don( K core, Collection<Class<? extends Thing>> trait, Mode... modes ) {
+        return null;
+    }
+
+    @Override
     public <T, K> T don( K core, Collection<Class<? extends Thing>> trait ) {
         return null;  //To change body of implemented methods use File | Settings | File Templates.
     }
@@ -205,57 +208,61 @@ public class SequentialKnowledgeHelper
         return null;  //To change body of implemented methods use File | Settings | File Templates.
     }
 
-    public <T, K> Thing<K> ward(Thing<K> core, Class<T> trait) {
+    @Override
+    public InternalFactHandle bolster( Object object, Object value ) {
         return null;
     }
 
-    public <T, K> Thing<K> ward(K core, Class<T> trait) {
-        return null;  //To change body of implemented methods use File | Settings | File Templates.
-    }
-
-    public <T, K> Thing<K> grant(Thing<K> core, Class<T> trait) {
+    @Override
+    public InternalFactHandle bolster( Object object ) {
         return null;
-    }
-
-    public <T, K> Thing<K> grant(K core, Class<T> trait) {
-        return null;  //To change body of implemented methods use File | Settings | File Templates.
     }
 
     public void cancelRemainingPreviousLogicalDependencies() {
     }
 
-    public FactHandle insert(Object object) {
+    public InternalFactHandle insert(Object object) {
         return null;
     }
 
-    public FactHandle insert(Object object,
+    public InternalFactHandle insert(Object object,
                        boolean dynamic) {
         return null;
     }
 
-    public void insertLogical(Object object) {
-        // TODO Auto-generated method stub
-        
+    @Override
+    public InternalFactHandle insertLogical(Object object, Mode belief) {
+        return null;
     }
 
-    public void insertLogical(Object object,
-                              boolean dynamic) {
-        // TODO Auto-generated method stub
-        
-    }
-    
-    public void insertLogical(Object object,
-                              Object value) {
-        // TODO Auto-generated method stub
-        
+    @Override
+    public InternalFactHandle insertLogical(Object object, Mode... beliefs) {
+        return null;
     }
 
-    public FactHandle getFactHandle(Object object) {
+    public InternalFactHandle insertLogical(Object object) {
         // TODO Auto-generated method stub
         return null;
     }
 
-    public FactHandle getFactHandle(FactHandle handle) {
+    public InternalFactHandle insertLogical(Object object,
+                                    boolean dynamic) {
+        // TODO Auto-generated method stub
+        return null;
+    }
+    
+    public InternalFactHandle insertLogical(Object object,
+                                    Object value) {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    public InternalFactHandle getFactHandle(Object object) {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    public InternalFactHandle getFactHandle(InternalFactHandle handle) {
         // TODO Auto-generated method stub
         return null;
     }
@@ -268,7 +275,7 @@ public class SequentialKnowledgeHelper
         // TODO Auto-generated method stub
     }
 
-    public void update(FactHandle newObject, long mask, Class<?> typeClass) {
+    public void update(FactHandle newObject, BitMask mask, Class<?> typeClass) {
         // TODO Auto-generated method stub
     }
 
@@ -284,7 +291,7 @@ public class SequentialKnowledgeHelper
         // TODO Auto-generated method stub
     }
 
-    public void update(Object newObject, long mask, Class<?> typeClass) {
+    public void update(Object newObject, BitMask mask, Class<?> typeClass) {
         // TODO Auto-generated method stub
     }
 

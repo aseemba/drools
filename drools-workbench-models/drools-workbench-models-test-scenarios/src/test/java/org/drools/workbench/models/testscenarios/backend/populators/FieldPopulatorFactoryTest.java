@@ -16,31 +16,29 @@
 
 package org.drools.workbench.models.testscenarios.backend.populators;
 
-import static org.junit.Assert.assertNotNull;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
-
 import org.drools.core.base.TypeResolver;
-import org.drools.workbench.models.testscenarios.shared.Field;
-import org.junit.Before;
-import org.junit.Test;
 import org.drools.workbench.models.testscenarios.backend.Cheese;
 import org.drools.workbench.models.testscenarios.shared.Fact;
 import org.drools.workbench.models.testscenarios.shared.FactAssignmentField;
+import org.drools.workbench.models.testscenarios.shared.Field;
+import org.junit.Before;
+import org.junit.Test;
 import org.mockito.Matchers;
+import org.mockito.Mockito;
+
+import static org.junit.Assert.assertNotNull;
+import static org.mockito.Mockito.mock;
 
 public class FieldPopulatorFactoryTest {
 
     private FieldPopulatorFactory fieldPopulatorFactory;
     private TypeResolver typeResolver;
-    private ClassLoader classLoader;
 
     @Before
     public void setUp() throws Exception {
         Object factObject = mock(Object.class);
         typeResolver = mock(TypeResolver.class);
-        classLoader = Thread.currentThread().getContextClassLoader();
-        fieldPopulatorFactory = new FieldPopulatorFactory(factObject, typeResolver, classLoader);
+        fieldPopulatorFactory = new FieldPopulatorFactory(factObject, typeResolver);
     }
 
     @Test
@@ -50,7 +48,7 @@ public class FieldPopulatorFactoryTest {
         field.setFact(new Fact());
 
 
-        when(
+        Mockito.<Class>when(
                 typeResolver.resolveType(Matchers.<String>any())
         ).thenReturn(
                 Cheese.class

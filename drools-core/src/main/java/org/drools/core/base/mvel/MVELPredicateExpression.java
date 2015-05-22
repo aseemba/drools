@@ -16,23 +16,24 @@
 
 package org.drools.core.base.mvel;
 
+import org.drools.core.WorkingMemory;
+import org.drools.core.common.InternalFactHandle;
+import org.drools.core.common.InternalWorkingMemory;
+import org.drools.core.definitions.InternalKnowledgePackage;
+import org.drools.core.definitions.rule.impl.RuleImpl;
+import org.drools.core.reteoo.LeftTuple;
+import org.drools.core.rule.Declaration;
+import org.drools.core.rule.MVELDialectRuntimeData;
+import org.drools.core.spi.PredicateExpression;
+import org.drools.core.spi.Tuple;
+import org.drools.core.util.MVELSafeHelper;
+import org.mvel2.integration.VariableResolverFactory;
+
 import java.io.Externalizable;
 import java.io.IOException;
 import java.io.ObjectInput;
 import java.io.ObjectOutput;
 import java.io.Serializable;
-
-import org.drools.core.WorkingMemory;
-import org.drools.core.common.InternalFactHandle;
-import org.drools.core.common.InternalWorkingMemory;
-import org.drools.core.reteoo.LeftTuple;
-import org.drools.core.rule.Declaration;
-import org.drools.core.rule.MVELDialectRuntimeData;
-import org.drools.core.rule.Package;
-import org.drools.core.spi.PredicateExpression;
-import org.drools.core.spi.Tuple;
-import org.drools.core.util.MVELSafeHelper;
-import org.mvel2.integration.VariableResolverFactory;
 
 public class MVELPredicateExpression
     implements
@@ -70,6 +71,10 @@ public class MVELPredicateExpression
         expr = unit.getCompiledExpression( runtimeData );
     }
 
+    public void compile( MVELDialectRuntimeData runtimeData, RuleImpl rule ) {
+        expr = unit.getCompiledExpression( runtimeData, rule.toRuleNameAndPathString() );
+    }
+
     public Object createContext() {
         return this.unit.createFactory();
     }
@@ -92,7 +97,7 @@ public class MVELPredicateExpression
                             factory );
 
         // do we have any functions for this namespace?
-        Package pkg = workingMemory.getRuleBase().getPackage( "MAIN" );
+        InternalKnowledgePackage pkg = workingMemory.getKnowledgeBase().getPackage( "MAIN" );
         if ( pkg != null ) {
             MVELDialectRuntimeData data = (MVELDialectRuntimeData) pkg.getDialectRuntimeRegistry().getDialectData( this.id );
             factory.setNextFactory( data.getFunctionFactory() );

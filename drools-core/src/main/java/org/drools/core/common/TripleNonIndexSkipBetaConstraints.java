@@ -24,11 +24,14 @@ import org.drools.core.rule.ContextEntry;
 import org.drools.core.rule.MutableTypeConstraint;
 import org.drools.core.rule.constraint.MvelConstraint;
 import org.drools.core.spi.BetaNodeFieldConstraint;
+import org.drools.core.util.bitmask.BitMask;
 
 import java.io.IOException;
 import java.io.ObjectInput;
 import java.io.ObjectOutput;
 import java.util.List;
+
+import static org.drools.core.reteoo.PropertySpecificUtil.allSetButTraitBitMask;
 
 public class TripleNonIndexSkipBetaConstraints 
     implements
@@ -154,16 +157,28 @@ public class TripleNonIndexSkipBetaConstraints
         return this.constraints.isAllowedCachedRight( context, tuple );
     }
 
-    public long getListenedPropertyMask(List<String> settableProperties) {
+    public BitMask getListenedPropertyMask(List<String> settableProperties) {
         if (constraint0 instanceof MvelConstraint && constraint1 instanceof MvelConstraint && constraint2 instanceof MvelConstraint) {
-            return ((MvelConstraint)constraint0).getListenedPropertyMask(settableProperties) |
-                    ((MvelConstraint)constraint1).getListenedPropertyMask(settableProperties) |
-                    ((MvelConstraint)constraint2).getListenedPropertyMask(settableProperties);
+            return ((MvelConstraint)constraint0).getListenedPropertyMask(settableProperties)
+                                                .setAll(((MvelConstraint) constraint1).getListenedPropertyMask(settableProperties))
+                                                .setAll(((MvelConstraint) constraint2).getListenedPropertyMask(settableProperties));
         }
-        return Long.MAX_VALUE;
+        return allSetButTraitBitMask();
     }
 
     public boolean isLeftUpdateOptimizationAllowed() {
         return true;
+    }
+
+    public void registerEvaluationContext(BuildContext buildContext) {
+        if (constraint0 instanceof MvelConstraint) {
+            ((MvelConstraint) constraint0).registerEvaluationContext(buildContext);
+        }
+        if (constraint1 instanceof MvelConstraint) {
+            ((MvelConstraint) constraint1).registerEvaluationContext(buildContext);
+        }
+        if (constraint2 instanceof MvelConstraint) {
+            ((MvelConstraint) constraint2).registerEvaluationContext(buildContext);
+        }
     }
 }

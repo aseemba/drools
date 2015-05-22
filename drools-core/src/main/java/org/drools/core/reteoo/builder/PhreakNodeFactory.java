@@ -22,6 +22,7 @@ import org.drools.core.base.ValueType;
 import org.drools.core.common.BaseNode;
 import org.drools.core.common.BetaConstraints;
 import org.drools.core.common.RuleBasePartitionId;
+import org.drools.core.definitions.rule.impl.RuleImpl;
 import org.drools.core.factmodel.traits.TraitProxy;
 import org.drools.core.reteoo.AccumulateNode;
 import org.drools.core.reteoo.AlphaNode;
@@ -38,29 +39,32 @@ import org.drools.core.reteoo.NotNode;
 import org.drools.core.reteoo.ObjectSource;
 import org.drools.core.reteoo.ObjectTypeNode;
 import org.drools.core.reteoo.PropagationQueuingNode;
+import org.drools.core.reteoo.QueryElementNode;
 import org.drools.core.reteoo.QueryRiaFixerNode;
+import org.drools.core.reteoo.QueryTerminalNode;
+import org.drools.core.reteoo.ReactiveFromNode;
 import org.drools.core.reteoo.RightInputAdapterNode;
 import org.drools.core.reteoo.RuleTerminalNode;
-import org.drools.core.reteoo.QueryElementNode;
-import org.drools.core.reteoo.QueryTerminalNode;
 import org.drools.core.reteoo.TerminalNode;
 import org.drools.core.reteoo.TimerNode;
 import org.drools.core.reteoo.TraitObjectTypeNode;
 import org.drools.core.reteoo.TraitProxyObjectTypeNode;
+import org.drools.core.reteoo.WindowNode;
 import org.drools.core.rule.Accumulate;
+import org.drools.core.rule.Behavior;
 import org.drools.core.rule.Declaration;
 import org.drools.core.rule.EntryPointId;
 import org.drools.core.rule.EvalCondition;
 import org.drools.core.rule.From;
 import org.drools.core.rule.GroupElement;
 import org.drools.core.rule.QueryElement;
-import org.drools.core.rule.Rule;
 import org.drools.core.spi.AlphaNodeFieldConstraint;
 import org.drools.core.spi.DataProvider;
 import org.drools.core.spi.ObjectType;
 import org.drools.core.time.impl.Timer;
 
 import java.io.Serializable;
+import java.util.List;
 
 public class PhreakNodeFactory implements NodeFactory, Serializable {
 
@@ -77,7 +81,7 @@ public class PhreakNodeFactory implements NodeFactory, Serializable {
         return new AlphaNode( id, constraint, objectSource, context );
     }
 
-    public TerminalNode buildTerminalNode( int id, LeftTupleSource source, Rule rule, GroupElement subrule, int subruleIndex, BuildContext context ) {
+    public TerminalNode buildTerminalNode( int id, LeftTupleSource source, RuleImpl rule, GroupElement subrule, int subruleIndex, BuildContext context ) {
         return new RuleTerminalNode( id, source, rule, subrule, subruleIndex, context );
     }
 
@@ -136,7 +140,7 @@ public class PhreakNodeFactory implements NodeFactory, Serializable {
         return new LeftInputAdapterNode( id, objectSource, context );
     }
 
-    public TerminalNode buildQueryTerminalNode(int id, LeftTupleSource source, Rule rule, GroupElement subrule, int subruleIndex, BuildContext context) {
+    public TerminalNode buildQueryTerminalNode(int id, LeftTupleSource source, RuleImpl rule, GroupElement subrule, int subruleIndex, BuildContext context) {
         return new QueryTerminalNode( id, source, rule, subrule, subruleIndex, context );
     }
 
@@ -146,6 +150,10 @@ public class PhreakNodeFactory implements NodeFactory, Serializable {
 
     public BaseNode buildFromNode(int id, DataProvider dataProvider, LeftTupleSource tupleSource, AlphaNodeFieldConstraint[] alphaNodeFieldConstraints, BetaConstraints betaConstraints, boolean tupleMemoryEnabled, BuildContext context, From from) {
         return new FromNode( id, dataProvider, tupleSource, alphaNodeFieldConstraints, betaConstraints, tupleMemoryEnabled, context, from );
+    }
+
+    public BaseNode buildReactiveFromNode(int id, DataProvider dataProvider, LeftTupleSource tupleSource, AlphaNodeFieldConstraint[] alphaNodeFieldConstraints, BetaConstraints betaConstraints, boolean tupleMemoryEnabled, BuildContext context, From from) {
+        return new ReactiveFromNode( id, dataProvider, tupleSource, alphaNodeFieldConstraints, betaConstraints, tupleMemoryEnabled, context, from );
     }
 
     public BaseNode buildTimerNode( int id,
@@ -163,5 +171,13 @@ public class PhreakNodeFactory implements NodeFactory, Serializable {
                                                             BuildContext context) {
         return new ConditionalBranchNode( id, tupleSource, branchEvaluator, context );
 
+    }
+
+    public WindowNode buildWindowNode(int id,
+                                      List<AlphaNodeFieldConstraint> constraints,
+                                      List<Behavior> behaviors,
+                                      ObjectSource objectSource,
+                                      BuildContext context) {
+        return new WindowNode(id, constraints, behaviors, objectSource, context);
     }
 }

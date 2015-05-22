@@ -26,16 +26,8 @@ import org.drools.core.command.runtime.process.CompleteWorkItemCommand;
 import org.drools.core.command.runtime.process.RegisterWorkItemHandlerCommand;
 import org.drools.core.command.runtime.process.SignalEventCommand;
 import org.drools.core.command.runtime.process.StartProcessCommand;
-import org.drools.core.command.runtime.rule.DeleteCommand;
-import org.drools.core.command.runtime.rule.FireAllRulesCommand;
-import org.drools.core.command.runtime.rule.FromExternalFactHandleCommand;
-import org.drools.core.command.runtime.rule.GetObjectCommand;
-import org.drools.core.command.runtime.rule.GetObjectsCommand;
-import org.drools.core.command.runtime.rule.InsertElementsCommand;
-import org.drools.core.command.runtime.rule.InsertObjectCommand;
-import org.drools.core.command.runtime.rule.ModifyCommand;
+import org.drools.core.command.runtime.rule.*;
 import org.drools.core.command.runtime.rule.ModifyCommand.SetterImpl;
-import org.drools.core.command.runtime.rule.QueryCommand;
 import org.kie.api.command.BatchExecutionCommand;
 import org.kie.api.command.Command;
 import org.kie.api.command.KieCommands;
@@ -111,7 +103,11 @@ public class CommandFactoryServiceImpl implements KieCommands {
     public Command newDelete(FactHandle factHandle) {
         return new DeleteCommand( factHandle );
     }
-    
+
+    public Command newDeleteObject(Object object,String entryPoint) {
+        return new DeleteObjectCommand( object, entryPoint );
+    }
+
     public Setter newSetter(String accessor,
                              String value) {
         return new SetterImpl(accessor, value);
@@ -173,8 +169,18 @@ public class CommandFactoryServiceImpl implements KieCommands {
         return new FireAllRulesCommand(max);
     }
 
-        public Command newFireAllRules(String outidentifier) {
+    public Command newFireAllRules(String outidentifier) {
         return new FireAllRulesCommand(outidentifier);
+    }
+
+    @Override
+    public Command newGetFactHandle( Object object ) {
+        return new GetFactHandleCommand( object );
+    }
+
+    @Override
+    public Command newGetFactHandleInEntryPoint( Object object, String entryPoint ) {
+        return new GetFactHandleInEntryPointCommand( object, entryPoint );
     }
 
     public Command newStartProcess(String processId) {
@@ -254,5 +260,7 @@ public class CommandFactoryServiceImpl implements KieCommands {
         return new FromExternalFactHandleCommand(factHandleExternalForm, disconnected);
     }
 
-
+    public Command newAgendaGroupSetFocus(String name) {
+        return new AgendaGroupSetFocusCommand(name);
+    }
 }

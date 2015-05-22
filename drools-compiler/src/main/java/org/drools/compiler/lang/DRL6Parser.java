@@ -13,11 +13,6 @@
  */
 package org.drools.compiler.lang;
 
-import java.util.ArrayList;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.ListIterator;
-
 import org.antlr.runtime.CommonToken;
 import org.antlr.runtime.MismatchedTokenException;
 import org.antlr.runtime.MissingTokenException;
@@ -72,9 +67,13 @@ import org.drools.compiler.lang.descr.PackageDescr;
 import org.drools.compiler.lang.descr.RuleDescr;
 import org.drools.compiler.lang.descr.TypeDeclarationDescr;
 import org.drools.compiler.lang.descr.WindowDeclarationDescr;
-import org.drools.core.rule.TypeDeclaration;
 import org.drools.core.util.StringUtils;
 import org.kie.internal.builder.conf.LanguageLevelOption;
+
+import java.util.ArrayList;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.ListIterator;
 
 public class DRL6Parser extends AbstractDRLParser implements DRLParser {
 
@@ -733,9 +732,7 @@ public class DRL6Parser extends AbstractDRLParser implements DRLParser {
                     TypeDeclarationDescrBuilder.class,
                     null);
 
-            if (isTrait) {
-                declare.newAnnotation(TypeDeclaration.Kind.ID).value(TypeDeclaration.Kind.TRAIT.name());
-            }
+            declare.setTrait(isTrait);
 
             if (helper.validateIdentifierKey(DroolsSoftKeywords.TYPE)) {
                 // 'type'
@@ -944,7 +941,6 @@ public class DRL6Parser extends AbstractDRLParser implements DRLParser {
                 if (state.failed)
                     return;
             }
-            field.processAnnotations();
 
             if (input.LA(1) == DRL6Lexer.SEMICOLON) {
                 match(input,
@@ -1350,7 +1346,7 @@ public class DRL6Parser extends AbstractDRLParser implements DRLParser {
      * @return
      * @throws org.antlr.runtime.RecognitionException
      */
-    private String stringId() throws RecognitionException {
+    String stringId() throws RecognitionException {
         if (input.LA(1) == DRL6Lexer.ID) {
             Token id = match(input,
                     DRL6Lexer.ID,
@@ -1380,7 +1376,7 @@ public class DRL6Parser extends AbstractDRLParser implements DRLParser {
      * @param rule
      * @throws org.antlr.runtime.RecognitionException
      */
-    private void attributes(RuleDescrBuilder rule) throws RecognitionException {
+    void attributes( RuleDescrBuilder rule ) throws RecognitionException {
         if (helper.validateIdentifierKey(DroolsSoftKeywords.ATTRIBUTES)) {
             match(input,
                     DRL6Lexer.ID,
@@ -1970,7 +1966,7 @@ public class DRL6Parser extends AbstractDRLParser implements DRLParser {
      * @param rule
      * @throws org.antlr.runtime.RecognitionException
      */
-    private void lhs(RuleDescrBuilder rule) throws RecognitionException {
+    void lhs( RuleDescrBuilder rule ) throws RecognitionException {
         match(input,
                 DRL6Lexer.ID,
                 DroolsSoftKeywords.WHEN,
@@ -3081,9 +3077,6 @@ public class DRL6Parser extends AbstractDRLParser implements DRLParser {
             AccumulateDescrBuilder<?> accumulate = helper.start(pattern,
                     AccumulateDescrBuilder.class,
                     null);
-            if (state.backtracking == 0) {
-                accumulate.multiFunction(true);
-            }
             try {
                 if (helper.validateIdentifierKey(DroolsSoftKeywords.ACCUMULATE)) {
                     match(input,
@@ -3229,7 +3222,7 @@ public class DRL6Parser extends AbstractDRLParser implements DRLParser {
         }
     }
 
-    private void failMissingTokenException() throws MissingTokenException {
+    void failMissingTokenException() throws MissingTokenException {
         if (state.backtracking > 0) {
             state.failed = true;
         } else {
@@ -3249,8 +3242,8 @@ public class DRL6Parser extends AbstractDRLParser implements DRLParser {
      * @param isUnification
      * @throws org.antlr.runtime.RecognitionException
      */
-    private void lhsPattern(PatternDescrBuilder<?> pattern,
-            String label,
+     void lhsPattern(PatternDescrBuilder<?> pattern,
+                     String label,
             boolean isUnification) throws RecognitionException {
         boolean query = false;
         if (input.LA(1) == DRL6Lexer.QUESTION) {
@@ -3327,7 +3320,7 @@ public class DRL6Parser extends AbstractDRLParser implements DRLParser {
      * @return
      * @throws org.antlr.runtime.RecognitionException
      */
-    private String label(DroolsEditorType edType) throws RecognitionException {
+    String label( DroolsEditorType edType ) throws RecognitionException {
         Token label = match(input,
                 DRL6Lexer.ID,
                 null,
@@ -3928,7 +3921,7 @@ public class DRL6Parser extends AbstractDRLParser implements DRLParser {
     }
 
     /**
-     * fromAccumulate := ACCUMULATE LEFT_PAREN lhsAnd COMMA
+     * fromAccumulate := ACCUMULATE LEFT_PAREN lhsAnd (COMMA|SEMICOLON)
      *                   ( INIT chunk_(_) COMMA ACTION chunk_(_) COMMA
      *                     ( REVERSE chunk_(_) COMMA)? RESULT chunk_(_)
      *                   | accumulateFunction
@@ -3999,6 +3992,14 @@ public class DRL6Parser extends AbstractDRLParser implements DRLParser {
                         null,
                         null,
                         DroolsEditorType.SYMBOL);
+                if (state.failed)
+                    return;
+            } else if (input.LA(-1) != DRL6Lexer.SEMICOLON) {
+                match(input,
+                      DRL6Lexer.SEMICOLON,
+                      null,
+                      null,
+                      DroolsEditorType.SYMBOL);
                 if (state.failed)
                     return;
             }
@@ -4121,7 +4122,8 @@ public class DRL6Parser extends AbstractDRLParser implements DRLParser {
             } else {
                 // accumulate functions
                 accumulateFunction(accumulate,
-                        null);
+                                   false,
+                                   null);
                 if (state.failed)
                     return;
             }
@@ -4147,10 +4149,18 @@ public class DRL6Parser extends AbstractDRLParser implements DRLParser {
      * @param accumulate
      * @throws org.antlr.runtime.RecognitionException
      */
-    private void accumulateFunctionBinding(AccumulateDescrBuilder<?> accumulate) throws RecognitionException {
-        String label = label(DroolsEditorType.IDENTIFIER_VARIABLE);
-        accumulateFunction(accumulate,
-                label);
+    private void accumulateFunctionBinding( AccumulateDescrBuilder<?> accumulate ) throws RecognitionException {
+        String label = null;
+        boolean unif = false;
+        if (input.LA(2) == DRL6Lexer.COLON) {
+            label = label(DroolsEditorType.IDENTIFIER_VARIABLE);
+        } else if (input.LA(2) == DRL6Lexer.UNIFY) {
+            label = unif(DroolsEditorType.IDENTIFIER_VARIABLE);
+            unif = true;
+        }
+        accumulateFunction( accumulate,
+                            unif,
+                            label );
     }
 
     /**
@@ -4159,7 +4169,8 @@ public class DRL6Parser extends AbstractDRLParser implements DRLParser {
      * @throws org.antlr.runtime.RecognitionException
      */
     private void accumulateFunction(AccumulateDescrBuilder<?> accumulate,
-            String label) throws RecognitionException {
+                                    boolean unif,
+                                    String label) throws RecognitionException {
         Token function = match(input,
                 DRL6Lexer.ID,
                 null,
@@ -4175,6 +4186,7 @@ public class DRL6Parser extends AbstractDRLParser implements DRLParser {
         if (state.backtracking == 0) {
             accumulate.function(function.getText(),
                     label,
+                    unif,
                     parameters.toArray(new String[parameters.size()]));
         }
     }
@@ -4231,7 +4243,7 @@ public class DRL6Parser extends AbstractDRLParser implements DRLParser {
      * rhs := defaultConsequence namedConsequence* (~END)*
      * @param rule
      */
-    private void rhs(RuleDescrBuilder rule) {
+    void rhs( RuleDescrBuilder rule ) {
         defaultConsequence(rule);
         while (input.LA(1) != DRL6Lexer.EOF && helper.validateIdentifierKey(DroolsSoftKeywords.THEN)) {
             namedConsequence(rule);
@@ -4316,7 +4328,7 @@ public class DRL6Parser extends AbstractDRLParser implements DRLParser {
         }
     }
 
-    private String getConsequenceCode(int first) {
+    protected String getConsequenceCode( int first ) {
         while (input.LA(1) != DRL6Lexer.EOF &&
                 !helper.validateIdentifierKey(DroolsSoftKeywords.END) &&
                 !helper.validateIdentifierKey(DroolsSoftKeywords.THEN)) {
@@ -4348,7 +4360,7 @@ public class DRL6Parser extends AbstractDRLParser implements DRLParser {
     /**
      * annotation := fullAnnotation | AT ID chunk_(_)?
      */
-    private void annotation(AnnotatedDescrBuilder<?> adb) {
+    void annotation( AnnotatedDescrBuilder<?> adb ) {
         AnnotationDescrBuilder<?> annotation = null;
 
         try {
@@ -4784,11 +4796,11 @@ public class DRL6Parser extends AbstractDRLParser implements DRLParser {
      *  single token insertion or deletion error recovery.  If
      *  that fails, throw MismatchedTokenException.
      */
-    private Token match(TokenStream input,
-            int ttype,
-            String text,
-            int[] follow,
-            DroolsEditorType etype) throws RecognitionException {
+    Token match( TokenStream input,
+                 int ttype,
+                 String text,
+                 int[] follow,
+                 DroolsEditorType etype ) throws RecognitionException {
         Token matchedSymbol = null;
         matchedSymbol = input.LT(1);
         if (input.LA(1) == ttype && (text == null || text.equals(matchedSymbol.getText()))) {

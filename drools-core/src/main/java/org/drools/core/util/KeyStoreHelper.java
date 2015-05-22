@@ -15,7 +15,6 @@ import java.security.cert.CertificateException;
 import java.util.Properties;
 
 import org.drools.core.RuleBaseConfiguration;
-import org.drools.core.RuntimeDroolsException;
 
 /**
  * A helper class to deal with the key store and signing process during 
@@ -66,32 +65,30 @@ public class KeyStoreHelper {
      */
     public KeyStoreHelper() {
         try {
-            Properties prop = System.getProperties();
-            this.signed = Boolean.valueOf( prop.getProperty( PROP_SIGN,
-                                                             RuleBaseConfiguration.DEFAULT_SIGN_ON_SERIALIZATION ) ).booleanValue();
-            String url = prop.getProperty( PROP_PVT_KS_URL,
-                                           "" );
+            this.signed = Boolean.valueOf( System.getProperty( PROP_SIGN,
+                                                               RuleBaseConfiguration.DEFAULT_SIGN_ON_SERIALIZATION ) ).booleanValue();
+            String url = System.getProperty( PROP_PVT_KS_URL,
+                                             "" );
             if ( url.length() > 0 ) {
                 this.pvtKeyStoreURL = new URL( url );
             }
-            this.pvtKeyStorePwd = prop.getProperty( PROP_PVT_KS_PWD,
-                                                    "" ).toCharArray();
-            this.pvtKeyAlias = prop.getProperty( PROP_PVT_ALIAS,
-                                                 "" );
-            this.pvtKeyPassword = prop.getProperty( PROP_PVT_PWD,
-                                                    "" ).toCharArray();
+            this.pvtKeyStorePwd = System.getProperty( PROP_PVT_KS_PWD,
+                                                       "" ).toCharArray();
+            this.pvtKeyAlias = System.getProperty( PROP_PVT_ALIAS,
+                                                   "" );
+            this.pvtKeyPassword = System.getProperty( PROP_PVT_PWD,
+                                                      "" ).toCharArray();
 
-            url = prop.getProperty( PROP_PUB_KS_URL,
-                                    "" );
+            url = System.getProperty( PROP_PUB_KS_URL,
+                                      "" );
             if ( url.length() > 0 ) {
                 this.pubKeyStoreURL = new URL( url );
             }
-            this.pubKeyStorePwd = prop.getProperty( PROP_PUB_KS_PWD,
-                                                    "" ).toCharArray();
+            this.pubKeyStorePwd = System.getProperty( PROP_PUB_KS_PWD,
+                                                       "" ).toCharArray();
             initKeyStore();
         } catch ( Exception e ) {
-            throw new RuntimeDroolsException( "Error initialising KeyStore: " + e.getMessage(),
-                                              e );
+            throw new RuntimeException( "Error initialising KeyStore: " + e.getMessage(), e );
         }
     }
 
@@ -131,7 +128,7 @@ public class KeyStoreHelper {
                                                      InvalidKeyException,
                                                      SignatureException {
         if( pvtKeyStore == null ) {
-            throw new RuntimeDroolsException( "Key store with private key not configured. Please configure it properly before using signed serialization." );
+            throw new RuntimeException( "Key store with private key not configured. Please configure it properly before using signed serialization." );
         }
         PrivateKey pvtkey = (PrivateKey) pvtKeyStore.getKey( pvtKeyAlias,
                                                              pvtKeyPassword );
@@ -163,11 +160,11 @@ public class KeyStoreHelper {
                                                                  InvalidKeyException,
                                                                  SignatureException {
         if( pubKeyStore == null ) {
-            throw new RuntimeDroolsException( "Key store with public key not configured. Please configure it properly before using signed serialization." );
+            throw new RuntimeException( "Key store with public key not configured. Please configure it properly before using signed serialization." );
         }
         Certificate cert = pubKeyStore.getCertificate( publicKeyAlias );
         if( cert == null ) {
-            throw new RuntimeDroolsException( "Public certificate for key '"+publicKeyAlias+"' not found in the configured key store. Impossible to deserialize the object." );
+            throw new RuntimeException( "Public certificate for key '"+publicKeyAlias+"' not found in the configured key store. Impossible to deserialize the object." );
         }
         Signature sig = Signature.getInstance( "MD5withRSA" );
         sig.initVerify( cert.getPublicKey() );

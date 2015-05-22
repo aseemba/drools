@@ -16,6 +16,9 @@
 
 package org.drools.core.base;
 
+import org.drools.core.spi.GlobalResolver;
+import org.kie.api.runtime.Globals;
+
 import java.io.Externalizable;
 import java.io.IOException;
 import java.io.ObjectInput;
@@ -27,9 +30,6 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.concurrent.ConcurrentHashMap;
-
-import org.drools.core.spi.GlobalResolver;
-import org.kie.api.runtime.Globals;
 
 public class MapGlobalResolver
     implements
@@ -103,6 +103,10 @@ public class MapGlobalResolver
                       value );
     }
 
+    public void removeGlobal(String identifier) {
+        this.map.remove( identifier );
+    }
+
     public Entry<String, Object>[] getGlobals() {
         if ( delegate == null ) {
             return (Entry<String, Object>[]) this.map.entrySet().toArray(new Entry[this.map.size()]);
@@ -130,4 +134,7 @@ public class MapGlobalResolver
         return "MapGlobalResolver [map=" + map + ", delegate=" + delegate + "]";
     }
 
+    public void clear() {
+        map.clear();
+    }
 }

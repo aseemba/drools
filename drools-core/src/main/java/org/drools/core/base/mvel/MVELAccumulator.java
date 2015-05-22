@@ -16,35 +16,36 @@
 
 package org.drools.core.base.mvel;
 
+import org.drools.core.WorkingMemory;
+import org.drools.core.base.mvel.MVELCompilationUnit.DroolsVarFactory;
+import org.drools.core.common.InternalFactHandle;
+import org.drools.core.common.InternalWorkingMemory;
+import org.drools.core.definitions.InternalKnowledgePackage;
+import org.drools.core.definitions.rule.impl.RuleImpl;
+import org.drools.core.reteoo.LeftTuple;
+import org.drools.core.rule.Declaration;
+import org.drools.core.rule.MVELDialectRuntimeData;
+import org.drools.core.spi.MvelAccumulator;
+import org.drools.core.spi.Tuple;
+import org.drools.core.util.MVELSafeHelper;
+import org.mvel2.integration.VariableResolverFactory;
+
 import java.io.Externalizable;
 import java.io.IOException;
 import java.io.ObjectInput;
 import java.io.ObjectOutput;
 import java.io.Serializable;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
-
-import org.drools.core.WorkingMemory;
-import org.drools.core.base.mvel.MVELCompilationUnit.DroolsVarFactory;
-import org.drools.core.common.InternalFactHandle;
-import org.drools.core.common.InternalWorkingMemory;
-import org.drools.core.reteoo.LeftTuple;
-import org.drools.core.rule.Declaration;
-import org.drools.core.rule.MVELDialectRuntimeData;
-import org.drools.core.rule.Package;
-import org.drools.core.spi.Accumulator;
-import org.drools.core.spi.Tuple;
-import org.drools.core.util.MVELSafeHelper;
-import org.mvel2.integration.VariableResolverFactory;
+import java.util.Set;
 
 /**
  * An MVEL accumulator implementation
  */
 public class MVELAccumulator
-    implements
-    MVELCompileable,
-    Accumulator,
-    Externalizable {
+    implements MVELCompileable, MvelAccumulator, Externalizable {
 
     private static final long serialVersionUID = 510l;
 
@@ -88,12 +89,16 @@ public class MVELAccumulator
     }
 
     public void compile(MVELDialectRuntimeData runtimeData) {
+        compile(runtimeData, null);
+    }
+
+    public void compile(MVELDialectRuntimeData runtimeData, RuleImpl rule) {
         init = initUnit.getCompiledExpression( runtimeData );
         action = actionUnit.getCompiledExpression( runtimeData );
         result = resultUnit.getCompiledExpression( runtimeData );
                 
         if ( reverseUnit != null ) {
-            reverse = reverseUnit.getCompiledExpression( runtimeData );
+            reverse = reverseUnit.getCompiledExpression( runtimeData, rule != null ? rule.toRuleNameAndPathString() : null );
         }
     }
 
@@ -121,8 +126,8 @@ public class MVELAccumulator
         MVELAccumulatorFactoryContext factoryContext = (MVELAccumulatorFactoryContext)workingMemoryContext;
         VariableResolverFactory factory = factoryContext.getInitFactory();
         initUnit.updateFactory( null, null, null, (LeftTuple) leftTuple, localVars, (InternalWorkingMemory) workingMemory, workingMemory.getGlobalResolver(), factory  );
-        
-        Package pkg = workingMemory.getRuleBase().getPackage( "MAIN" );
+
+        InternalKnowledgePackage pkg = workingMemory.getKnowledgeBase().getPackage( "MAIN" );
         if ( pkg != null ) {
             MVELDialectRuntimeData data = (MVELDialectRuntimeData) pkg.getDialectRuntimeRegistry().getDialectData( "mvel" );
             factory.setNextFactory( data.getFunctionFactory() );
@@ -255,7 +260,29 @@ public class MVELAccumulator
                                                  actionUnit.createFactory(),
                                                  resultUnit.createFactory() );
     }
-    
+
+    @Override
+    public Declaration[] getRequiredDeclarations() {
+        Set<Declaration> declarationSet = new HashSet<Declaration>();
+        if ( initUnit != null ) {
+            declarationSet.addAll( Arrays.asList( initUnit.getPreviousDeclarations() ) );
+        }
+        if ( actionUnit != null ) {
+            declarationSet.addAll( Arrays.asList( actionUnit.getPreviousDeclarations() ) );
+        }
+        if ( resultUnit != null ) {
+            declarationSet.addAll( Arrays.asList( resultUnit.getPreviousDeclarations() ) );
+        }
+        if ( reverseUnit != null ) {
+            declarationSet.addAll( Arrays.asList( reverseUnit.getPreviousDeclarations() ) );
+        }
+        if ( ! declarationSet.isEmpty() ) {
+            return declarationSet.toArray( new Declaration[ declarationSet.size() ] );
+        } else {
+            return new Declaration[ 0 ];
+        }
+    }
+
     private static class MVELAccumulatorFactoryContext {
         VariableResolverFactory initFactory;
         VariableResolverFactory actionFactory;

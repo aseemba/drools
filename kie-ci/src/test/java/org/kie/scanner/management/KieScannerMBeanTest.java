@@ -1,21 +1,12 @@
 package org.kie.scanner.management;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-import static org.kie.scanner.MavenRepository.getMavenRepository;
-
-import java.io.File;
-import java.util.ArrayList;
-import java.util.List;
-
-import javax.management.ObjectName;
-
 import org.drools.compiler.kie.builder.impl.InternalKieModule;
 import org.drools.compiler.kie.builder.impl.InternalKieScanner;
 import org.drools.core.util.FileManager;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.kie.api.KieServices;
 import org.kie.api.builder.ReleaseId;
@@ -25,6 +16,14 @@ import org.kie.scanner.AbstractKieCiTest;
 import org.kie.scanner.KieRepositoryScannerImpl;
 import org.kie.scanner.MavenRepository;
 
+import javax.management.ObjectName;
+import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+import static org.kie.scanner.MavenRepository.getMavenRepository;
 
 public class KieScannerMBeanTest extends AbstractKieCiTest {
     
@@ -33,10 +32,11 @@ public class KieScannerMBeanTest extends AbstractKieCiTest {
 
     @Before
     public void setUp() throws Exception {
+        MBeanUtils.setMBeanEnabled(true);
         System.setProperty(MBeanUtils.MBEANS_PROPERTY, "enabled");
         this.fileManager = new FileManager();
         this.fileManager.setUp();
-        ReleaseId releaseId = KieServices.Factory.get().newReleaseId("org.kie", "scanner-test", "1.0-SNAPSHOT");
+        ReleaseId releaseId = KieServices.Factory.get().newReleaseId("org.kie", "scanner-mbean-test", "1.0-SNAPSHOT");
         kPom = createKPom(fileManager, releaseId);
     }
 
@@ -44,12 +44,13 @@ public class KieScannerMBeanTest extends AbstractKieCiTest {
     public void tearDown() throws Exception {
         this.fileManager.tearDown();
         System.setProperty(MBeanUtils.MBEANS_PROPERTY, "");
+        MBeanUtils.setMBeanEnabled(false);
     }
     
     @Test
     public void testKScannerMBean() throws Exception {
         KieServices ks = KieServices.Factory.get();
-        ReleaseId releaseId = ks.newReleaseId("org.kie", "scanner-test", "1.0-SNAPSHOT");
+        ReleaseId releaseId = ks.newReleaseId("org.kie", "scanner-mbean-test", "1.0-SNAPSHOT");
 
         InternalKieModule kJar1 = createKieJar(ks, releaseId, "rule1", "rule2");
         KieContainer kieContainer = ks.newKieContainer(releaseId);

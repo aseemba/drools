@@ -20,26 +20,32 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import org.drools.core.FactHandle;
+import org.drools.core.beliefsystem.ModedAssertion;
+import org.drools.core.beliefsystem.simple.SimpleMode;
+import org.kie.api.runtime.rule.FactHandle;
+import org.drools.core.definitions.rule.impl.RuleImpl;
 import org.drools.core.phreak.RuleAgendaItem;
 import org.drools.core.reteoo.LeftTuple;
 import org.drools.core.reteoo.RuleTerminalNode;
 import org.drools.core.reteoo.TerminalNode;
 import org.drools.core.rule.Declaration;
 import org.drools.core.rule.GroupElement;
-import org.drools.core.rule.Rule;
 import org.drools.core.spi.Consequence;
 import org.drools.core.spi.PropagationContext;
 import org.drools.core.util.LinkedList;
 import org.drools.core.util.LinkedListEntry;
+import org.kie.api.runtime.rule.FactHandle;
 import org.kie.internal.event.rule.ActivationUnMatchListener;
+import org.kie.internal.runtime.beliefs.Mode;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * Item entry in the <code>Agenda</code>.
  */
-public class AgendaItemImpl
-        implements
-        AgendaItem {
+public class AgendaItemImpl<T extends ModedAssertion<T>>  implements  AgendaItem<T> {
     // ------------------------------------------------------------
     // Instance members
     // ------------------------------------------------------------
@@ -67,9 +73,9 @@ public class AgendaItemImpl
     private           long                                           activationNumber;
     private volatile  int                                            index;
     private volatile  boolean                                        queued;
-    private           LinkedList<LogicalDependency>                  justified;
-    private           LinkedList<LogicalDependency>                  blocked;
-    private           LinkedList<LinkedListEntry<LogicalDependency>> blockers;
+    private           LinkedList<LogicalDependency<T>>  justified;
+    private           LinkedList<LogicalDependency<SimpleMode>>      blocked;
+    private           LinkedList<SimpleMode>                         blockers;
     private           InternalAgendaGroup                            agendaGroup;
     private           ActivationGroupNode                            activationGroupNode;
     private           ActivationNode                                 activationNode;
@@ -78,7 +84,6 @@ public class AgendaItemImpl
     private           boolean                                        matched;
     private           boolean                                        active;
     private           ActivationUnMatchListener                      activationUnMatchListener;
-    private           RuleAgendaItem                                 ruleAgendaItem;
 
     // ------------------------------------------------------------
     // Constructors
@@ -92,7 +97,6 @@ public class AgendaItemImpl
      * Construct.
      *
      * @param tuple          The tuple.
-     * @param ruleAgendaItem
      * @param agendaGroup
      */
     public AgendaItemImpl(final long activationNumber,
@@ -100,7 +104,6 @@ public class AgendaItemImpl
                           final int salience,
                           final PropagationContext context,
                           final TerminalNode rtn,
-                          final RuleAgendaItem ruleAgendaItem,
                           final InternalAgendaGroup agendaGroup) {
         this.tuple = tuple;
         this.context = context;
@@ -109,7 +112,6 @@ public class AgendaItemImpl
         this.activationNumber = activationNumber;
         this.index = -1;
         this.matched = true;
-        this.ruleAgendaItem = ruleAgendaItem;
         this.agendaGroup = agendaGroup;
     }
 
@@ -129,14 +131,14 @@ public class AgendaItemImpl
      * @return The rule.
      */
     @Override
-    public Rule getRule() {
+    public RuleImpl getRule() {
         return this.rtn.getRule();
     }
 
     @Override
     public Consequence getConsequence() {
         String consequenceName = ((RuleTerminalNode) rtn).getConsequenceName();
-        return consequenceName.equals(Rule.DEFAULT_CONSEQUENCE_NAME) ? rtn.getRule().getConsequence() : rtn.getRule().getNamedConsequence(consequenceName);
+        return consequenceName.equals(RuleImpl.DEFAULT_CONSEQUENCE_NAME) ? rtn.getRule().getConsequence() : rtn.getRule().getNamedConsequence(consequenceName);
     }
 
     /**
@@ -171,7 +173,7 @@ public class AgendaItemImpl
 
     @Override
     public RuleAgendaItem getRuleAgendaItem() {
-        return ruleAgendaItem;
+        return null;
     }
 
     /*
@@ -185,10 +187,10 @@ public class AgendaItemImpl
     }
 
     @Override
-    public void addBlocked(final LogicalDependency dep) {
+    public void addBlocked(final LogicalDependency<SimpleMode> dep) {
         // Adds the blocked to the blockers list
         if (this.blocked == null) {
-            this.blocked = new LinkedList<LogicalDependency>();
+            this.blocked = new LinkedList<LogicalDependency<SimpleMode>>();
         }
 
         this.blocked.add(dep);
@@ -196,10 +198,10 @@ public class AgendaItemImpl
         // now ad the blocker to the blocked's list - we need to check that references are null first
         AgendaItemImpl blocked = (AgendaItemImpl) dep.getJustified();
         if (blocked.blockers == null) {
-            blocked.blockers = new LinkedList<LinkedListEntry<LogicalDependency>>();
-            blocked.blockers.add(dep.getJustifierEntry());
-        } else if (dep.getJustifierEntry().getNext() == null && dep.getJustifierEntry().getPrevious() == null && blocked.getBlockers().getFirst() != dep.getJustifierEntry()) {
-            blocked.blockers.add(dep.getJustifierEntry());
+            blocked.blockers = new LinkedList<SimpleMode>();
+            blocked.blockers.add( dep.getMode());
+        } else if (dep.getMode().getNext() == null && dep.getMode().getPrevious() == null && blocked.getBlockers().getFirst() != dep.getMode()) {
+            blocked.blockers.add(dep.getMode());
         }
     }
 
@@ -207,7 +209,7 @@ public class AgendaItemImpl
     public void removeAllBlockersAndBlocked(InternalAgenda agenda) {
         if (this.blockers != null) {
             // Iterate and remove this node's logical dependency list from each of it's blockers
-            for (LinkedListEntry<LogicalDependency> node = blockers.getFirst(); node != null; node = node.getNext()) {
+            for (LinkedListEntry<SimpleMode, LogicalDependency<SimpleMode>> node = blockers.getFirst(); node != null; node = node.getNext()) {
                 LogicalDependency dep = node.getObject();
                 dep.getJustifier().getBlocked().remove(dep);
             }
@@ -216,12 +218,12 @@ public class AgendaItemImpl
 
         if (this.blocked != null) {
             // Iterate and remove this node's logical dependency list from each of it's blocked
-            for (LogicalDependency dep = blocked.getFirst(); dep != null; ) {
-                LogicalDependency tmp = dep.getNext();
+            for (LogicalDependency<SimpleMode> dep = blocked.getFirst(); dep != null; ) {
+                LogicalDependency<SimpleMode> tmp = dep.getNext();
                 removeBlocked(dep);
                 AgendaItem justified = (AgendaItem) dep.getJustified();
                 if (justified.getBlockers().isEmpty()) {
-                    agenda.stageLeftTuple(ruleAgendaItem,justified);
+                    agenda.stageLeftTuple(null,justified);
                 }
                 dep = tmp;
             }
@@ -230,44 +232,44 @@ public class AgendaItemImpl
     }
 
     @Override
-    public void removeBlocked(final LogicalDependency dep) {
+    public void removeBlocked(final LogicalDependency<SimpleMode> dep) {
         this.blocked.remove(dep);
 
         AgendaItemImpl blocked = (AgendaItemImpl) dep.getJustified();
-        blocked.blockers.remove(dep.getJustifierEntry());
+        blocked.blockers.remove(dep.getMode());
     }
 
     @Override
-    public LinkedList<LogicalDependency> getBlocked() {
+    public LinkedList<LogicalDependency<SimpleMode>> getBlocked() {
         return this.blocked;
     }
 
     @Override
-    public void setBlocked(LinkedList<LogicalDependency> justified) {
+    public void setBlocked(LinkedList<LogicalDependency<SimpleMode>> justified) {
         this.blocked = justified;
     }
 
     @Override
-    public LinkedList<LinkedListEntry<LogicalDependency>> getBlockers() {
+    public LinkedList<SimpleMode> getBlockers() {
         return this.blockers;
     }
 
     @Override
-    public void addLogicalDependency(final LogicalDependency node) {
+    public void addLogicalDependency(final LogicalDependency<T> node) {
         if (this.justified == null) {
-            this.justified = new LinkedList<LogicalDependency>();
+            this.justified = new LinkedList<LogicalDependency<T>>();
         }
 
         this.justified.add(node);
     }
 
     @Override
-    public LinkedList<LogicalDependency> getLogicalDependencies() {
+    public LinkedList<LogicalDependency<T>> getLogicalDependencies() {
         return this.justified;
     }
 
     @Override
-    public void setLogicalDependencies(LinkedList<LogicalDependency> justified) {
+    public void setLogicalDependencies(LinkedList<LogicalDependency<T>> justified) {
         this.justified = justified;
     }
 
@@ -407,11 +409,10 @@ public class AgendaItemImpl
     public List<Object> getObjects() {
         FactHandle[] factHandles = this.tuple.toFactHandles();
         List<Object> list = new ArrayList<Object>(factHandles.length);
+        int j = 0;
         for (FactHandle factHandle : factHandles) {
             Object o = ((InternalFactHandle) factHandle).getObject();
-            if (!(o instanceof QueryElementFactHandle)) {
-                list.add(o);
-            }
+            list.set( j++, o instanceof QueryElementFactHandle ? null : o );
         }
         return Collections.unmodifiableList(list);
     }

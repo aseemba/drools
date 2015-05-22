@@ -1,16 +1,26 @@
 package org.drools.compiler.compiler;
 
-import org.junit.Assert;
+import org.drools.compiler.integrationtests.KieHelloWorldTest;
 import org.drools.core.common.EventFactHandle;
-import org.drools.core.definitions.impl.KnowledgePackageImp;
-import org.drools.core.marshalling.impl.ProtobufMessages;
+import org.drools.core.definitions.impl.KnowledgePackageImpl;
 import org.drools.core.rule.TypeDeclaration;
+import org.junit.Assert;
 import org.junit.Test;
 import org.kie.api.KieBase;
 import org.kie.api.KieServices;
 import org.kie.api.builder.KieBuilder;
 import org.kie.api.builder.KieFileSystem;
 import org.kie.api.builder.Message;
+import org.kie.api.builder.model.KieModuleModel;
+import org.kie.api.definition.type.Annotation;
+import org.kie.api.definition.type.FactField;
+import org.kie.api.definition.type.FactType;
+import org.kie.api.definition.type.Role;
+import org.kie.api.io.KieResources;
+import org.kie.api.io.Resource;
+import org.kie.api.io.ResourceType;
+import org.kie.api.runtime.KieContainer;
+import org.kie.api.runtime.KieSession;
 import org.kie.api.runtime.rule.FactHandle;
 import org.kie.internal.KnowledgeBase;
 import org.kie.internal.KnowledgeBaseFactory;
@@ -18,29 +28,21 @@ import org.kie.internal.builder.KnowledgeBuilder;
 import org.kie.internal.builder.KnowledgeBuilderFactory;
 import org.kie.internal.builder.KnowledgeBuilderResults;
 import org.kie.internal.builder.ResultSeverity;
-import org.kie.api.definition.type.Annotation;
-import org.kie.api.definition.type.FactField;
-import org.kie.api.definition.type.FactType;
 import org.kie.internal.definition.KnowledgePackage;
 import org.kie.internal.io.ResourceFactory;
-import org.kie.api.io.Resource;
-import org.kie.api.io.ResourceType;
 import org.kie.internal.runtime.StatefulKnowledgeSession;
-import org.mvel2.asm.Type;
-
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.fail;
+import org.kie.internal.utils.KieHelper;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
+import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Iterator;
+import java.util.Collections;
+import java.util.List;
+
+import static org.junit.Assert.*;
 
 public class TypeDeclarationTest {
 
@@ -98,7 +100,7 @@ public class TypeDeclarationTest {
         Assert.assertEquals(1, kbuilder.getKnowledgePackages().size());
 
         //Get the Fact Type for org.kie.EventA
-        FactType factType = ((KnowledgePackageImp)kbuilder.getKnowledgePackages().iterator().next()).pkg.getFactType("org.kie.EventA");
+        FactType factType = ((KnowledgePackageImpl)kbuilder.getKnowledgePackages().iterator().next()).getFactType("org.kie.EventA");
         assertNotNull( factType );
 
         //'name' field must still be there
@@ -110,9 +112,9 @@ public class TypeDeclarationTest {
         assertNotNull( field );
 
         //New Annotations must be there too
-        TypeDeclaration typeDeclaration = ((KnowledgePackageImp)kbuilder.getKnowledgePackages().iterator().next()).pkg.getTypeDeclaration("EventA");
+        TypeDeclaration typeDeclaration = ((KnowledgePackageImpl)kbuilder.getKnowledgePackages().iterator().next()).getTypeDeclaration("EventA");
 
-        assertEquals(TypeDeclaration.Role.EVENT, typeDeclaration.getRole());
+        assertEquals(Role.Type.EVENT, typeDeclaration.getRole());
         assertEquals("duration", typeDeclaration.getDurationAttribute());
 
     }
@@ -454,10 +456,13 @@ public class TypeDeclarationTest {
         assertEquals( "Bean", bean.getSimpleName() );
         assertEquals( "org.drools.compiler.test", bean.getPackageName() );
 
-        assertEquals( 2, bean.getClassAnnotations().size() );
+        assertEquals( 3, bean.getClassAnnotations().size() );
         Annotation ann = bean.getClassAnnotations().get( 0 );
         if (!ann.getName().equals("org.drools.compiler.compiler.TypeDeclarationTest$KlassAnnotation")) {
             ann = bean.getClassAnnotations().get( 1 );
+        }
+        if (!ann.getName().equals("org.drools.compiler.compiler.TypeDeclarationTest$KlassAnnotation")) {
+            ann = bean.getClassAnnotations().get( 2 );
         }
         assertEquals( "org.drools.compiler.compiler.TypeDeclarationTest$KlassAnnotation", ann.getName() );
         assertEquals( "klass", ann.getPropertyValue( "value" ) );
@@ -470,8 +475,8 @@ public class TypeDeclarationTest {
         assertNotNull( field );
         assertEquals( 2, field.getFieldAnnotations().size() );
         Annotation fnn = field.getFieldAnnotations().get( 0 );
-        if (!ann.getName().equals("org.drools.compiler.compiler.TypeDeclarationTest$FieldAnnotation")) {
-            ann = bean.getClassAnnotations().get( 1 );
+        if (!fnn.getName().equals("org.drools.compiler.compiler.TypeDeclarationTest$FieldAnnotation")) {
+            fnn = field.getFieldAnnotations().get( 1 );
         }
         assertEquals( "org.drools.compiler.compiler.TypeDeclarationTest$FieldAnnotation", fnn.getName() );
         assertEquals( "fld", fnn.getPropertyValue( "prop" ) );
@@ -744,18 +749,353 @@ public class TypeDeclarationTest {
                      "end \n" +
 
                      "";
-        KieServices kieServices = KieServices.Factory.get();
-        KieFileSystem kfs = kieServices.newKieFileSystem();
-        kfs.write( kieServices.getResources().newByteArrayResource( drl.getBytes() )
-                           .setSourcePath( "test.drl" )
-                           .setResourceType( ResourceType.DRL ) );
-        KieBuilder kieBuilder = kieServices.newKieBuilder( kfs );
-        kieBuilder.buildAll();
+
+        KieBuilder kieBuilder = build(drl);
 
         assertFalse( kieBuilder.getResults().hasMessages( Message.Level.ERROR ) );
-        KieBase kieBase = kieServices.newKieContainer( kieBuilder.getKieModule().getReleaseId() ).getKieBase();
+        KieBase kieBase = KieServices.Factory.get().newKieContainer( kieBuilder.getKieModule().getReleaseId() ).getKieBase();
 
         FactType type = kieBase.getFactType( "org.drools.compiler", "Person" );
 
     }
+
+    @Test
+    public void testCrossPackageDeclares() {
+        String pkg1 =
+                "package org.drools.compiler.test1; " +
+                "import org.drools.compiler.test2.GrandChild; " +
+                "import org.drools.compiler.test2.Child; " +
+                "import org.drools.compiler.test2.BarFuu; " +
+
+                "declare FuBaz foo : String end " +
+
+                "declare Parent " +
+                "   unknown : BarFuu " +
+                "end " +
+
+                "declare GreatChild extends GrandChild " +
+                "   father : Child " +
+                "end "
+                ;
+
+        String pkg2 =
+                "package org.drools.compiler.test2; " +
+                "import org.drools.compiler.test1.Parent; " +
+                "import org.drools.compiler.test1.FuBaz; " +
+
+                "declare BarFuu " +
+                "   baz : FuBaz " +
+                "end " +
+
+                "declare Child extends Parent " +
+                "end " +
+
+                "declare GrandChild extends Child " +
+                "   notknown : FuBaz " +
+                "end "
+                ;
+
+        KieServices ks = KieServices.Factory.get();
+        KieFileSystem kfs = ks.newKieFileSystem();
+
+        kfs.generateAndWritePomXML( ks.newReleaseId( "test", "foo", "1.0" ) );
+        KieModuleModel km = ks.newKieModuleModel();
+        km.newKieBaseModel( "rules" )
+                .addPackage( "org.drools.compiler.test2" )
+                .addPackage( "org.drools.compiler.test1" );
+        kfs.writeKModuleXML( km.toXML() );
+
+        KieResources kr = ks.getResources();
+        Resource r1 = kr.newByteArrayResource( pkg1.getBytes() )
+                .setResourceType( ResourceType.DRL )
+                .setSourcePath( "org/drools/compiler/test1/p1.drl" );
+        Resource r2 = kr.newByteArrayResource( pkg2.getBytes() )
+                .setResourceType( ResourceType.DRL )
+                .setSourcePath( "org/drools/compiler/test2/p2.drl" );
+
+        kfs.write( r1 );
+        kfs.write( r2 );
+
+        KieBuilder builder = ks.newKieBuilder( kfs );
+        builder.buildAll();
+
+        assertEquals( Collections.emptyList(), builder.getResults().getMessages( Message.Level.ERROR ) );
+
+        KieContainer kc = ks.newKieContainer(builder.getKieModule().getReleaseId());
+        FactType ft = kc.getKieBase( "rules" ).getFactType( "org.drools.compiler.test2", "Child" );
+
+        assertNotNull( ft );
+        assertNotNull( ft.getFactClass() );
+        assertEquals( "org.drools.compiler.test1.Parent", ft.getFactClass().getSuperclass().getName() );
+    }
+
+
+    @Test
+    public void testUnknownField() throws InstantiationException, IllegalAccessException {
+        // DROOLS-546
+        String drl = "package org.test; " +
+                     "declare Pet" +
+                     " " +
+                     "end \n";
+
+        KieBuilder kieBuilder = build(drl);
+
+        assertFalse( kieBuilder.getResults().hasMessages( Message.Level.ERROR ) );
+        KieBase kieBase = KieServices.Factory.get().newKieContainer( kieBuilder.getKieModule().getReleaseId() ).getKieBase();
+
+        FactType factType = kieBase.getFactType("org.test", "Pet");
+        Object instance = factType.newInstance();
+        factType.get(instance, "unknownField");
+        factType.set(instance, "unknownField", "myValue");
+    }
+
+    @Test
+    public void testPositionalArguments() throws InstantiationException, IllegalAccessException {
+        String drl = "package org.test;\n" +
+                     "global java.util.List names;\n" +
+                     "declare Person\n" +
+                     "    name : String\n" +
+                     "    age : int\n" +
+                     "end\n" +
+                     "rule R when \n" +
+                     "    $p : Person( \"Mark\", 37; )\n" +
+                     "then\n" +
+                     "    names.add( $p.getName() );\n" +
+                     "end\n";
+
+        KieBuilder kieBuilder = build(drl);
+
+        assertFalse(kieBuilder.getResults().hasMessages(Message.Level.ERROR));
+        KieBase kieBase = KieServices.Factory.get().newKieContainer( kieBuilder.getKieModule().getReleaseId() ).getKieBase();
+
+        FactType factType = kieBase.getFactType( "org.test", "Person" );
+        Object instance = factType.newInstance();
+        factType.set(instance, "name", "Mark");
+        factType.set(instance, "age", 37);
+
+        List<String> names = new ArrayList<String>();
+        KieSession ksession = kieBase.newKieSession();
+        ksession.setGlobal("names", names);
+
+        ksession.insert(instance);
+        ksession.fireAllRules();
+
+        assertEquals( 1, names.size() );
+        assertEquals( "Mark", names.get( 0 ) );
+    }
+
+    @Test
+    public void testExplictPositionalArguments() throws InstantiationException, IllegalAccessException {
+        String drl = "package org.test;\n" +
+                     "global java.util.List names;\n" +
+                     "declare Person\n" +
+                     "    name : String @position(1)\n" +
+                     "    age : int @position(0)\n" +
+                     "end\n" +
+                     "rule R when \n" +
+                     "    $p : Person( 37, \"Mark\"; )\n" +
+                     "then\n" +
+                     "    names.add( $p.getName() );\n" +
+                     "end\n";
+
+        KieBuilder kieBuilder = build(drl);
+
+        assertFalse(kieBuilder.getResults().hasMessages(Message.Level.ERROR));
+        KieBase kieBase = KieServices.Factory.get().newKieContainer( kieBuilder.getKieModule().getReleaseId() ).getKieBase();
+
+        FactType factType = kieBase.getFactType("org.test", "Person");
+        Object instance = factType.newInstance();
+        factType.set(instance, "name", "Mark");
+        factType.set(instance, "age", 37);
+
+        List<String> names = new ArrayList<String>();
+        KieSession ksession = kieBase.newKieSession();
+        ksession.setGlobal("names", names);
+
+        ksession.insert(instance);
+        ksession.fireAllRules();
+
+        assertEquals(1, names.size());
+        assertEquals("Mark", names.get(0));
+    }
+
+    @Test
+    public void testTooManyPositionalArguments() throws InstantiationException, IllegalAccessException {
+        // DROOLS-559
+        String drl = "package org.test;\n" +
+                     "global java.util.List names;\n" +
+                     "declare Person\n" +
+                     "    name : String\n" +
+                     "    age : int\n" +
+                     "end\n" +
+                     "rule R when \n" +
+                     "    $p : Person( \"Mark\", 37, 42; )\n" +
+                     "then\n" +
+                     "    names.add( $p.getName() );\n" +
+                     "end\n";
+
+        KieBuilder kieBuilder = build(drl);
+
+        assertTrue( kieBuilder.getResults().hasMessages( Message.Level.ERROR ) );
+    }
+
+    @Test
+    public void testOutOfRangePositions() throws InstantiationException, IllegalAccessException {
+        // DROOLS-559
+        String drl = "package org.test;\n" +
+                     "global java.util.List names;\n" +
+                     "declare Person\n" +
+                     "    name : String @position(3)\n" +
+                     "    age : int @position(1)\n" +
+                     "end\n" +
+                     "rule R when \n" +
+                     "    $p : Person( 37, \"Mark\"; )\n" +
+                     "then\n" +
+                     "    names.add( $p.getName() );\n" +
+                     "end\n";
+
+        KieBuilder kieBuilder = build(drl);
+
+        assertTrue( kieBuilder.getResults().hasMessages( Message.Level.ERROR ) );
+    }
+
+    @Test
+    public void testDuplicatedPositions() throws InstantiationException, IllegalAccessException {
+        // DROOLS-559
+        String drl = "package org.test;\n" +
+                     "global java.util.List names;\n" +
+                     "declare Person\n" +
+                     "    name : String @position(1)\n" +
+                     "    age : int @position(1)\n" +
+                     "end\n" +
+                     "rule R when \n" +
+                     "    $p : Person( 37, \"Mark\"; )\n" +
+                     "then\n" +
+                     "    names.add( $p.getName() );\n" +
+                     "end\n";
+
+        KieBuilder kieBuilder = build(drl);
+
+        assertTrue( kieBuilder.getResults().hasMessages( Message.Level.ERROR ) );
+    }
+
+    private KieBuilder build(String drl) {
+        KieServices kieServices = KieServices.Factory.get();
+        KieFileSystem kfs = kieServices.newKieFileSystem();
+        kfs.write( kieServices.getResources().newByteArrayResource( drl.getBytes() )
+                              .setSourcePath( "test.drl" )
+                              .setResourceType( ResourceType.DRL ) );
+        KieBuilder kieBuilder = kieServices.newKieBuilder( kfs );
+        kieBuilder.buildAll();
+        return kieBuilder;
+    }
+
+    @Test
+    public void testMultipleAnnotationDeclarations() {
+        String str1 = "";
+        str1 += "package org.kie1 " +
+                "" +
+               "declare Foo \n" +
+               "    name : String " +
+               "    age : int " +
+               "end ";
+
+        String str2 = "";
+        str2 += "package org.kie2 " +
+               "" +
+               "declare org.kie1.Foo " +
+               "    @role(event) " +
+               "end ";
+
+        String str3 = "";
+        str3 += "package org.kie3 " +
+               "" +
+               "declare org.kie1.Foo " +
+               "    @propertyReactive " +
+               "end ";
+
+        String str4 = "" +
+                      "package org.kie4; " +
+                      "import org.kie1.Foo; " +
+                      "" +
+                      "rule Check " +
+                      "when " +
+                      " $f : Foo( name == 'bar' ) " +
+                      "then " +
+                      " modify( $f ) { setAge( 99 ); } " +
+                      "end ";
+
+        KieHelper helper = new KieHelper();
+        helper.addContent( str1, ResourceType.DRL );
+        helper.addContent( str2, ResourceType.DRL );
+        helper.addContent( str3, ResourceType.DRL );
+        helper.addContent( str4, ResourceType.DRL );
+
+        List<Message> msg = helper.verify().getMessages( Message.Level.ERROR );
+        System.out.println( msg );
+        assertEquals( 0, msg.size() );
+
+        KieBase kieBase = helper.build();
+        FactType type = kieBase.getFactType( "org.kie1", "Foo" );
+        assertEquals( 2, type.getFields().size() );
+
+        Object foo = null;
+        try {
+            foo = type.newInstance();
+            type.set( foo, "name", "bar" );
+            assertEquals( "bar", type.get( foo, "name" ) );
+        } catch ( InstantiationException e ) {
+            fail( e.getMessage() );
+        } catch ( IllegalAccessException e ) {
+            fail( e.getMessage() );
+        }
+
+        KieSession session = kieBase.newKieSession();
+        FactHandle handle = session.insert( foo );
+        int n = session.fireAllRules( 5 );
+
+        assertTrue( handle instanceof EventFactHandle );
+        assertEquals( 1, n );
+        assertEquals( 99, type.get( foo, "age" ) );
+    }
+
+
+
+    @Test()
+    public void testTraitExtendPojo() {
+        //DROOLS-697
+        final String s1 = "package test;\n" +
+
+                          "declare Poojo " +
+                          "end " +
+
+                          "declare trait Mask extends Poojo " +
+                          "end " +
+                          "";
+
+        KieHelper kh = new KieHelper();
+        kh.addContent( s1, ResourceType.DRL );
+
+        assertEquals( 1, kh.verify().getMessages( Message.Level.ERROR ).size() );
+    }
+
+    @Test()
+    public void testPojoExtendInterface() {
+        //DROOLS-697
+        final String s1 = "package test;\n" +
+
+                          "declare Poojo extends Mask " +
+                          "end " +
+
+                          "declare trait Mask " +
+                          "end " +
+                          "";
+
+        KieHelper kh = new KieHelper();
+        kh.addContent( s1, ResourceType.DRL );
+
+        assertEquals( 1, kh.verify().getMessages( Message.Level.ERROR ).size() );
+    }
+
+
 }

@@ -7,10 +7,8 @@ import org.drools.core.common.InternalAgendaGroup;
 import org.drools.core.common.InternalWorkingMemory;
 import org.drools.core.common.Memory;
 import org.drools.core.common.NetworkNode;
-import org.drools.core.common.TupleEntryQueue;
-import org.drools.core.common.TupleEntryQueueImpl;
+import org.drools.core.definitions.rule.impl.RuleImpl;
 import org.drools.core.phreak.RuleAgendaItem;
-import org.drools.core.rule.Rule;
 import org.drools.core.util.AbstractBaseLinkedListNode;
 import org.drools.core.util.AtomicBitwiseLong;
 import org.slf4j.Logger;
@@ -19,34 +17,28 @@ import org.slf4j.LoggerFactory;
 public class PathMemory extends AbstractBaseLinkedListNode<Memory>
         implements
         Memory {
-    protected static transient Logger log = LoggerFactory.getLogger(PathMemory.class);
+
+    protected static final Logger log = LoggerFactory.getLogger(PathMemory.class);
+    protected static final boolean isLogTraceEnabled = log.isTraceEnabled();
+
     private          AtomicBitwiseLong linkedSegmentMask;
     private          long              allLinkedMaskTest;
     private          NetworkNode       networkNode;
     private volatile RuleAgendaItem    agendaItem;
     private          SegmentMemory[]   segmentMemories;
     private          SegmentMemory     segmentMemory;
-    protected TupleEntryQueue queue;
 
     public PathMemory(NetworkNode networkNode) {
         this.networkNode = networkNode;
         this.linkedSegmentMask = new AtomicBitwiseLong();
     }
 
-    public void initQueue() {
-        this.queue = new TupleEntryQueueImpl();
-    }
-
-    public TupleEntryQueue getTupleQueue() {
-        return queue;
-    }
-
     public NetworkNode getNetworkNode() {
         return networkNode;
     }
 
-    public Rule getRule() {
-        return ((TerminalNode) getNetworkNode()).getRule();
+    public RuleImpl getRule() {
+        return networkNode instanceof TerminalNode ? ((TerminalNode) networkNode).getRule() : null;
     }
 
     public RuleAgendaItem getRuleAgendaItem() {
@@ -76,7 +68,7 @@ public class PathMemory extends AbstractBaseLinkedListNode<Memory>
     public void linkSegment(long mask,
                             InternalWorkingMemory wm) {
         linkedSegmentMask.getAndBitwiseOr( mask );
-        if (log.isTraceEnabled()) {
+        if (isLogTraceEnabled) {
             if (NodeTypeEnums.isTerminalNode(getNetworkNode())) {
                 TerminalNode rtn = (TerminalNode) getNetworkNode();
                 log.trace("  LinkSegment smask={} rmask={} name={}", mask, linkedSegmentMask, rtn.getRule().getName());
@@ -89,37 +81,41 @@ public class PathMemory extends AbstractBaseLinkedListNode<Memory>
         }
     }
 
-    public synchronized void doLinkRule(InternalWorkingMemory wm) {
+    public synchronized RuleAgendaItem getOrCreateRuleAgendaItem(InternalWorkingMemory wm) {
+        ensureAgendaItemCreated(wm);
+        return agendaItem;
+    }
+
+    private TerminalNode ensureAgendaItemCreated(InternalWorkingMemory wm) {
         TerminalNode rtn = (TerminalNode) getNetworkNode();
-        if (log.isTraceEnabled()) {
-            log.trace("    LinkRule name={}", rtn.getRule().getName());
-        }
         if (agendaItem == null) {
             int salience = ( rtn.getRule().getSalience() instanceof MVELSalienceExpression)
                            ? 0
                            : rtn.getRule().getSalience().getValue(null, rtn.getRule(), wm);
             agendaItem = ((InternalAgenda) wm.getAgenda()).createRuleAgendaItem(salience, this, rtn);
         }
+        return rtn;
+    }
 
-        queueRuleAgendaItem(wm);
+    public synchronized boolean doLinkRule(InternalWorkingMemory wm) {
+        TerminalNode rtn = ensureAgendaItemCreated(wm);
+        if (isLogTraceEnabled) {
+            log.trace(" LinkRule name={}", rtn.getRule().getName());
+        }
+
+        return queueRuleAgendaItem(wm);
     }
 
     public synchronized void doUnlinkRule(InternalWorkingMemory wm) {
-        TerminalNode rtn = (TerminalNode) getNetworkNode();
-        if (log.isTraceEnabled()) {
+        TerminalNode rtn = ensureAgendaItemCreated(wm);
+        if (isLogTraceEnabled) {
             log.trace("    UnlinkRule name={}", rtn.getRule().getName());
-        }
-        if (agendaItem == null) {
-            int salience = ( rtn.getRule().getSalience() instanceof MVELSalienceExpression)
-                           ? 0
-                           : rtn.getRule().getSalience().getValue(null, rtn.getRule(), wm);
-            agendaItem = ((InternalAgenda) wm.getAgenda()).createRuleAgendaItem(salience, this, rtn);
         }
 
         queueRuleAgendaItem(wm);
     }
 
-    public void queueRuleAgendaItem(InternalWorkingMemory wm) {
+    public boolean queueRuleAgendaItem(InternalWorkingMemory wm) {
         InternalAgenda agenda = (InternalAgenda) wm.getAgenda();
         synchronized ( agendaItem ) {
             agendaItem.getRuleExecutor().setDirty(true);
@@ -127,29 +123,32 @@ public class PathMemory extends AbstractBaseLinkedListNode<Memory>
             if ( activationFilter != null && !activationFilter.accept( agendaItem,
                                                                        wm,
                                                                        agendaItem.getTerminalNode() ) ) {
-                return;
+                return false;
             }
 
-            if (!agendaItem.isQueued() && !agendaItem.isBlocked()) {
-                if ( log.isTraceEnabled() ) {
+            if ( !agendaItem.isQueued() ) {
+                if ( isLogTraceEnabled ) {
                     log.trace("Queue RuleAgendaItem {}", agendaItem);
                 }
                 InternalAgendaGroup ag = agendaItem.getAgendaGroup();
                 ag.add( agendaItem );
             }
         }
-        if ( agendaItem.getRule().isEager() ) {
-            // will return if already added
+
+        if ( agendaItem.getRule().isQuery() ) {
+            ((InternalAgenda)wm.getAgenda()).addQueryAgendaItem( agendaItem );
+        } else if ( agendaItem.getRule().isEager() ) {
             ((InternalAgenda)wm.getAgenda()).addEagerRuleAgendaItem( agendaItem );
         }
-        agenda.notifyHalt();
+
+        return true;
     }
 
     public void unlinkedSegment(long mask,
                                 InternalWorkingMemory wm) {
         boolean linkedRule =  isRuleLinked();
         linkedSegmentMask.getAndBitwiseXor( mask );
-        if (log.isTraceEnabled()) {
+        if (isLogTraceEnabled) {
             log.trace("  UnlinkSegment smask={} rmask={} name={}", mask, linkedSegmentMask, this);
         }
         if (linkedRule && !isRuleLinked()) {
@@ -185,4 +184,7 @@ public class PathMemory extends AbstractBaseLinkedListNode<Memory>
         return "[RuleMem " + getRule().getName() + "]";
     }
 
+    public void reset() {
+        this.linkedSegmentMask.set(0);
+    }
 }

@@ -76,6 +76,80 @@ import static org.junit.Assert.*;
 public class GuidedDTDRLPersistenceTest {
 
     @Test
+    public void testInWithSimpleSingleLiteralValue() {
+        GuidedDecisionTable52 dt = new GuidedDecisionTable52();
+        dt.setTableName( "in_operator" );
+
+        Pattern52 p1 = new Pattern52();
+        p1.setFactType( "Person" );
+
+        ConditionCol52 con = new ConditionCol52();
+        con.setConstraintValueType( BaseSingleFieldConstraint.TYPE_LITERAL );
+        con.setFieldType( DataType.TYPE_STRING );
+        con.setFactField( "field1" );
+        con.setHeader( "Person field1" );
+        con.setOperator( "in" );
+        p1.getChildColumns().add( con );
+
+        dt.getConditions().add( p1 );
+
+        dt.setData( DataUtilities.makeDataLists( new String[][]{
+                new String[]{ "1", "desc1", "ak1,mk1" },
+                new String[]{ "2", "desc2", "(ak2,mk2)" },
+                new String[]{ "3", "desc3", "( ak3, mk3 )" },
+                new String[]{ "4", "desc4", "( \"ak4\", \"mk4\" )" },
+                new String[]{ "5", "desc5", "( \"ak5 \", \" mk5\" )" },
+        } ) );
+
+        GuidedDTDRLPersistence p = GuidedDTDRLPersistence.getInstance();
+        String drl = p.marshal( dt );
+
+        String expected = "//from row number: 1\n" +
+                "//desc1\n" +
+                "rule \"Row 1 in_operator\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "  Person( field1 in ( \"ak1\", \"mk1\" ) )\n" +
+                "then\n" +
+                "end\n" +
+                "//from row number: 2\n" +
+                "//desc2\n" +
+                "rule \"Row 2 in_operator\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "  Person( field1 in ( \"ak2\", \"mk2\" ) )\n" +
+                "then\n" +
+                "end\n" +
+                "//from row number: 3\n" +
+                "//desc3\n" +
+                "rule \"Row 3 in_operator\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "  Person( field1 in ( \"ak3\", \"mk3\" ) )\n" +
+                "then\n" +
+                "end\n" +
+                "//from row number: 4\n" +
+                "//desc4\n" +
+                "rule \"Row 4 in_operator\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "  Person( field1 in ( \"ak4\", \"mk4\" ) )\n" +
+                "then\n" +
+                "end\n" +
+                "//from row number: 5\n" +
+                "//desc5\n" +
+                "rule \"Row 5 in_operator\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "  Person( field1 in ( \"ak5 \", \" mk5\" ) )\n" +
+                "then\n" +
+                "end";
+
+        assertEqualsIgnoreWhitespace( expected,
+                                      drl );
+    }
+
+    @Test
     public void test2Rules() throws Exception {
         GuidedDecisionTable52 dt = new GuidedDecisionTable52();
 
@@ -167,7 +241,7 @@ public class GuidedDTDRLPersistenceTest {
     @Test
     public void testAttribs() {
         GuidedDTDRLPersistence p = new GuidedDTDRLPersistence();
-        String[] row = new String[]{ "1", "desc", "a", "" };
+        Object[] row = new Object[]{ "1", "desc", "a", null };
 
         List<BaseColumn> allColumns = new ArrayList<BaseColumn>();
         allColumns.add( new RowNumberCol52() );
@@ -204,7 +278,7 @@ public class GuidedDTDRLPersistenceTest {
         assertEquals( "a",
                       rm.attributes[ 0 ].getValue() );
 
-        row = new String[]{ "1", "desc", "a", "b" };
+        row = new Object[]{ "1", "desc", 1l, "b" };
         p.doAttribs( allColumns,
                      attributeCols,
                      DataUtilities.makeDataRowList( row ),
@@ -213,7 +287,7 @@ public class GuidedDTDRLPersistenceTest {
                       rm.attributes.length );
         assertEquals( "salience",
                       rm.attributes[ 0 ].getAttributeName() );
-        assertEquals( "a",
+        assertEquals( "1",
                       rm.attributes[ 0 ].getValue() );
         assertEquals( "agenda-group",
                       rm.attributes[ 1 ].getAttributeName() );
@@ -238,11 +312,37 @@ public class GuidedDTDRLPersistenceTest {
     }
 
     @Test
-    public void testCellVal() {
+    public void testConditionAndActionCellValue() {
         GuidedDTDRLPersistence p = new GuidedDTDRLPersistence();
-        assertFalse( p.validCell( null ) );
-        assertFalse( p.validCell( "" ) );
-        assertFalse( p.validCell( "  " ) );
+        assertFalse( p.validCell( null,
+                                  DataType.DataTypes.NUMERIC ) );
+        assertFalse( p.validCell( "",
+                                  DataType.DataTypes.NUMERIC ) );
+        assertFalse( p.validCell( "  ",
+                                  DataType.DataTypes.NUMERIC ) );
+
+        assertFalse( p.validCell( null,
+                                  DataType.DataTypes.STRING ) );
+        assertFalse( p.validCell( "",
+                                  DataType.DataTypes.STRING ) );
+        assertFalse( p.validCell( "  ",
+                                  DataType.DataTypes.STRING ) );
+    }
+
+    @Test
+    public void testAttributeCellValue() {
+        GuidedDTDRLPersistence p = new GuidedDTDRLPersistence();
+        assertFalse( p.validateAttributeCell( null ) );
+        assertFalse( p.validateAttributeCell( "" ) );
+        assertFalse( p.validateAttributeCell( "  " ) );
+    }
+
+    @Test
+    public void testMetadataCellValue() {
+        GuidedDTDRLPersistence p = new GuidedDTDRLPersistence();
+        assertFalse( p.validateMetadataCell( null ) );
+        assertFalse( p.validateMetadataCell( ( "" ) ) );
+        assertFalse( p.validateMetadataCell( ( "  " ) ) );
     }
 
     @Test
@@ -1348,6 +1448,8 @@ public class GuidedDTDRLPersistenceTest {
     @Test
     public void testNoConstraints() {
         GuidedDecisionTable52 dt = new GuidedDecisionTable52();
+        dt.setTableFormat( GuidedDecisionTable52.TableFormat.EXTENDED_ENTRY );
+        dt.setTableName( "no-constraints" );
 
         Pattern52 p1 = new Pattern52();
         p1.setBoundName( "x" );
@@ -1355,6 +1457,9 @@ public class GuidedDTDRLPersistenceTest {
 
         ConditionCol52 c = new ConditionCol52();
         c.setConstraintValueType( BaseSingleFieldConstraint.TYPE_LITERAL );
+        c.setFieldType( DataType.TYPE_STRING );
+        c.setFactField( "name" );
+        c.setOperator( "==" );
         p1.getChildColumns().add( c );
 
         dt.getConditions().add( p1 );
@@ -1362,28 +1467,44 @@ public class GuidedDTDRLPersistenceTest {
         ActionSetFieldCol52 asf = new ActionSetFieldCol52();
         asf.setBoundName( "x" );
         asf.setFactField( "age" );
-        asf.setType( DataType.TYPE_STRING );
+        asf.setType( DataType.TYPE_NUMERIC_INTEGER );
 
         dt.getActionCols().add( asf );
 
-        String[][] data = new String[][]{
-                new String[]{ "1", "desc", "y", "old" }
-        };
-        dt.setData( DataUtilities.makeDataLists( data ) );
-
-        String drl = GuidedDTDRLPersistence.getInstance().marshal( dt );
-
-        assertTrue( drl.indexOf( "Context( )" ) > -1 );
-        assertTrue( drl.indexOf( "x.setAge" ) > drl.indexOf( "Context( )" ) );
-        assertFalse( drl.indexOf( "update( x );" ) > -1 );
-
-        dt.setData( DataUtilities.makeDataLists( new String[][]{
-                new String[]{ "1", "desc", "", "old" }
+        dt.setData( DataUtilities.makeDataLists( new Object[][]{
+                new Object[]{ "1", "desc", "Fred", 75l }
         } ) );
-        drl = GuidedDTDRLPersistence.getInstance().marshal( dt );
-        assertEquals( -1,
-                      drl.indexOf( "Context( )" ) );
 
+        String drl1 = GuidedDTDRLPersistence.getInstance().marshal( dt );
+        String expected1 = "//from row number: 1\n" +
+                "//desc\n" +
+                "rule \"Row 1 no-constraints\"\n" +
+                "  dialect \"mvel\"\n" +
+                "  when\n" +
+                "    x : Context( name == \"Fred\" )\n" +
+                "  then\n" +
+                "    x.setAge( 75 );\n" +
+                "end";
+
+        assertEqualsIgnoreWhitespace( expected1,
+                                      drl1 );
+
+        dt.setData( DataUtilities.makeDataLists( new Object[][]{
+                new Object[]{ "1", "desc", null, 75l }
+        } ) );
+
+        String drl2 = GuidedDTDRLPersistence.getInstance().marshal( dt );
+        String expected2 = "//from row number: 1\n" +
+                "//desc\n" +
+                "rule \"Row 1 no-constraints\"\n" +
+                "  dialect \"mvel\"\n" +
+                "  when\n" +
+                "  then\n" +
+                "    x.setAge( 75 );\n" +
+                "end";
+
+        assertEqualsIgnoreWhitespace( expected2,
+                                      drl2 );
     }
 
     @Test
@@ -1436,7 +1557,7 @@ public class GuidedDTDRLPersistenceTest {
     @Test
     public void testRHS() {
         GuidedDTDRLPersistence p = new GuidedDTDRLPersistence();
-        String[] row = new String[]{ "1", "desc", "a", "a condition", "actionsetfield1", "actionsetfield2", "retract", "actioninsertfact1", "actioninsertfact2" };
+        String[] row = new String[]{ "1", "desc", "a", "a condition", "actionsetfield1", "actionupdatefield2", "retract", "actioninsertfact1", "actioninsertfact2" };
 
         List<BaseColumn> allColumns = new ArrayList<BaseColumn>();
         allColumns.add( new RowNumberCol52() );
@@ -1492,14 +1613,14 @@ public class GuidedDTDRLPersistenceTest {
                      rowDataProvider,
                      rowData,
                      rm );
-        assertEquals( 3,
+        assertEquals( 4,
                       rm.rhs.length );
 
         // examine the set field action that is produced
         ActionSetField a1 = (ActionSetField) rm.rhs[ 0 ];
         assertEquals( "a",
                       a1.getVariable() );
-        assertEquals( 2,
+        assertEquals( 1,
                       a1.getFieldValues().length );
 
         assertEquals( "field1",
@@ -1509,43 +1630,49 @@ public class GuidedDTDRLPersistenceTest {
         assertEquals( DataType.TYPE_STRING,
                       a1.getFieldValues()[ 0 ].getType() );
 
+        ActionSetField a2 = (ActionSetField) rm.rhs[ 1 ];
+        assertEquals( "a",
+                      a2.getVariable() );
+        assertEquals( 1,
+                      a2.getFieldValues().length );
+
         assertEquals( "field2",
-                      a1.getFieldValues()[ 1 ].getField() );
-        assertEquals( "actionsetfield2",
-                      a1.getFieldValues()[ 1 ].getValue() );
+                      a2.getFieldValues()[ 0 ].getField() );
+        assertEquals( "actionupdatefield2",
+                      a2.getFieldValues()[ 0 ].getValue() );
         assertEquals( DataType.TYPE_NUMERIC_INTEGER,
-                      a1.getFieldValues()[ 1 ].getType() );
+                      a2.getFieldValues()[ 0 ].getType() );
 
         // examine the retract
-        ActionRetractFact a2 = (ActionRetractFact) rm.rhs[ 1 ];
+        ActionRetractFact a3 = (ActionRetractFact) rm.rhs[ 2 ];
         assertEquals( "retract",
-                      a2.getVariableName() );
+                      a3.getVariableName() );
 
         // examine the insert
-        ActionInsertFact a3 = (ActionInsertFact) rm.rhs[ 2 ];
+        ActionInsertFact a4 = (ActionInsertFact) rm.rhs[ 3 ];
         assertEquals( "Cheese",
-                      a3.getFactType() );
+                      a4.getFactType() );
         assertEquals( 2,
-                      a3.getFieldValues().length );
+                      a4.getFieldValues().length );
 
         assertEquals( "price",
-                      a3.getFieldValues()[ 0 ].getField() );
+                      a4.getFieldValues()[ 0 ].getField() );
         assertEquals( "actioninsertfact1",
-                      a3.getFieldValues()[ 0 ].getValue() );
+                      a4.getFieldValues()[ 0 ].getValue() );
         assertEquals( DataType.TYPE_NUMERIC_INTEGER,
-                      a3.getFieldValues()[ 0 ].getType() );
+                      a4.getFieldValues()[ 0 ].getType() );
 
         assertEquals( "type",
-                      a3.getFieldValues()[ 1 ].getField() );
+                      a4.getFieldValues()[ 1 ].getField() );
         assertEquals( "actioninsertfact2",
-                      a3.getFieldValues()[ 1 ].getValue() );
+                      a4.getFieldValues()[ 1 ].getValue() );
         assertEquals( DataType.TYPE_NUMERIC_INTEGER,
-                      a3.getFieldValues()[ 1 ].getType() );
+                      a4.getFieldValues()[ 1 ].getType() );
 
     }
 
     @Test
-    public void testUpdateModify() {
+    public void testUpdateModifySingleField() {
         GuidedDecisionTable52 dt = new GuidedDecisionTable52();
 
         Pattern52 p1 = new Pattern52();
@@ -1565,25 +1692,216 @@ public class GuidedDTDRLPersistenceTest {
 
         dt.getActionCols().add( asf );
 
-        String[][] data = new String[][]{
-                new String[]{ "1", "desc", "y", "old" }
-        };
-        dt.setData( DataUtilities.makeDataLists( data ) );
+        dt.setData( DataUtilities.makeDataLists( new Object[][]{
+                new Object[]{ "1", "desc", "y", "old" }
+        } ) );
 
         String drl = GuidedDTDRLPersistence.getInstance().marshal( dt );
 
         assertTrue( drl.indexOf( "Context( )" ) > -1 );
-        assertTrue( drl.indexOf( "x.setAge" ) > drl.indexOf( "Context( )" ) );
+        assertTrue( drl.indexOf( "modify( x ) {" ) > drl.indexOf( "Context( )" ) );
+        assertTrue( drl.indexOf( "setAge(" ) > drl.indexOf( "modify( x ) {" ) );
 
-        dt.setData( DataUtilities.makeDataLists( new String[][]{
-                new String[]{ "1", "desc", "", "old" }
+        dt.setData( DataUtilities.makeDataLists( new Object[][]{
+                new Object[]{ "1", "desc", null, "old" }
         } ) );
+
         drl = GuidedDTDRLPersistence.getInstance().marshal( dt );
+
         assertEquals( -1,
                       drl.indexOf( "Context( )" ) );
 
-        assertTrue( drl.indexOf( "update( x );" ) > -1 );
+        assertTrue( drl.indexOf( "modify( x ) {" ) > -1 );
+        assertTrue( drl.indexOf( "setAge(" ) > drl.indexOf( "modify( x ) {" ) );
 
+        dt.setData( DataUtilities.makeDataLists( new Object[][]{
+                new Object[]{ "1", "desc", null, null }
+        } ) );
+
+        drl = GuidedDTDRLPersistence.getInstance().marshal( dt );
+
+        assertEquals( -1,
+                      drl.indexOf( "Context( )" ) );
+
+        assertEquals( -1,
+                      drl.indexOf( "modify( x ) {" ) );
+        assertEquals( -1,
+                      drl.indexOf( "setAge(" ) );
+    }
+
+    @Test
+    public void testUpdateModifyMultipleFields() {
+        GuidedDecisionTable52 dt = new GuidedDecisionTable52();
+
+        Pattern52 p1 = new Pattern52();
+        p1.setBoundName( "x" );
+        p1.setFactType( "Context" );
+
+        ConditionCol52 c = new ConditionCol52();
+        c.setConstraintValueType( BaseSingleFieldConstraint.TYPE_LITERAL );
+        p1.getChildColumns().add( c );
+        dt.getConditions().add( p1 );
+
+        ActionSetFieldCol52 asf1 = new ActionSetFieldCol52();
+        asf1.setBoundName( "x" );
+        asf1.setFactField( "age" );
+        asf1.setType( DataType.TYPE_NUMERIC_INTEGER );
+        asf1.setUpdate( true );
+
+        dt.getActionCols().add( asf1 );
+
+        ActionSetFieldCol52 asf2 = new ActionSetFieldCol52();
+        asf2.setBoundName( "x" );
+        asf2.setFactField( "name" );
+        asf2.setType( DataType.TYPE_STRING );
+        asf2.setUpdate( true );
+
+        dt.getActionCols().add( asf2 );
+
+        dt.setData( DataUtilities.makeDataLists( new Object[][]{
+                new Object[]{ "1", "desc", "x", 55l, "Fred" }
+        } ) );
+
+        String drl = GuidedDTDRLPersistence.getInstance().marshal( dt );
+        final String expected1 = "//from row number: 1\n" +
+                "//desc\n" +
+                "rule \"Row 1 null\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "  x : Context( )\n" +
+                "then\n" +
+                "  modify( x ) {\n" +
+                "    setAge( 55 ), \n" +
+                "    setName( \"Fred\" )\n" +
+                "}\n" +
+                "end\n";
+        assertEqualsIgnoreWhitespace( expected1,
+                                      drl );
+
+        dt.setData( DataUtilities.makeDataLists( new Object[][]{
+                new Object[]{ "1", "desc", "x", null, "Fred" }
+        } ) );
+        drl = GuidedDTDRLPersistence.getInstance().marshal( dt );
+        final String expected2 = "//from row number: 1\n" +
+                "//desc\n" +
+                "rule \"Row 1 null\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "  x : Context( )\n" +
+                "then\n" +
+                "  modify( x ) {\n" +
+                "    setName( \"Fred\" )\n" +
+                "}\n" +
+                "end\n";
+        assertEqualsIgnoreWhitespace( expected2,
+                                      drl );
+
+        dt.setData( DataUtilities.makeDataLists( new Object[][]{
+                new Object[]{ "1", "desc", "x", 55l, null }
+        } ) );
+        drl = GuidedDTDRLPersistence.getInstance().marshal( dt );
+        final String expected3 = "//from row number: 1\n" +
+                "//desc\n" +
+                "rule \"Row 1 null\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "  x : Context( )\n" +
+                "then\n" +
+                "  modify( x ) {\n" +
+                "    setAge( 55 ) \n" +
+                "}\n" +
+                "end\n";
+        assertEqualsIgnoreWhitespace( expected3,
+                                      drl );
+    }
+
+    @Test
+    public void testUpdateModifyMultipleFieldsUpdateOneModifyTheOther() {
+        GuidedDecisionTable52 dt = new GuidedDecisionTable52();
+
+        Pattern52 p1 = new Pattern52();
+        p1.setBoundName( "x" );
+        p1.setFactType( "Context" );
+
+        ConditionCol52 c = new ConditionCol52();
+        c.setConstraintValueType( BaseSingleFieldConstraint.TYPE_LITERAL );
+        p1.getChildColumns().add( c );
+        dt.getConditions().add( p1 );
+
+        ActionSetFieldCol52 asf1 = new ActionSetFieldCol52();
+        asf1.setBoundName( "x" );
+        asf1.setFactField( "age" );
+        asf1.setType( DataType.TYPE_NUMERIC_INTEGER );
+        asf1.setUpdate( true );
+
+        dt.getActionCols().add( asf1 );
+
+        ActionSetFieldCol52 asf2 = new ActionSetFieldCol52();
+        asf2.setBoundName( "x" );
+        asf2.setFactField( "name" );
+        asf2.setType( DataType.TYPE_STRING );
+        asf2.setUpdate( false );
+
+        dt.getActionCols().add( asf2 );
+
+        dt.setData( DataUtilities.makeDataLists( new Object[][]{
+                new Object[]{ "1", "desc", "x", 55l, "Fred" }
+        } ) );
+
+        String drl = GuidedDTDRLPersistence.getInstance().marshal( dt );
+        final String expected1 = "//from row number: 1\n" +
+                "//desc\n" +
+                "rule \"Row 1 null\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "  x : Context( )\n" +
+                "then\n" +
+                "  modify( x ) {\n" +
+                "    setAge( 55 ) \n" +
+                "}\n" +
+                "x.setName( \"Fred\" );\n" +
+                "end\n";
+
+        assertEqualsIgnoreWhitespace( expected1,
+                                      drl );
+
+        dt.setData( DataUtilities.makeDataLists( new Object[][]{
+                new Object[]{ "1", "desc", "x", null, "Fred" }
+        } ) );
+
+        drl = GuidedDTDRLPersistence.getInstance().marshal( dt );
+        final String expected2 = "//from row number: 1\n" +
+                "//desc\n" +
+                "rule \"Row 1 null\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "  x : Context( )\n" +
+                "then\n" +
+                "x.setName( \"Fred\" );\n" +
+                "end\n";
+
+        assertEqualsIgnoreWhitespace( expected2,
+                                      drl );
+
+        dt.setData( DataUtilities.makeDataLists( new Object[][]{
+                new Object[]{ "1", "desc", "x", 55l, "" }
+        } ) );
+
+        drl = GuidedDTDRLPersistence.getInstance().marshal( dt );
+        final String expected3 = "//from row number: 1\n" +
+                "//desc\n" +
+                "rule \"Row 1 null\"\n" +
+                "dialect \"mvel\"\n" +
+                "when\n" +
+                "  x : Context( )\n" +
+                "then\n" +
+                "  modify( x ) {\n" +
+                "    setAge( 55 ) \n" +
+                "}\n" +
+                "end\n";
+
+        assertEqualsIgnoreWhitespace( expected3,
+                                      drl );
     }
 
     @Test
@@ -4399,6 +4717,301 @@ public class GuidedDTDRLPersistenceTest {
 
         assertTrue( drl.indexOf( "package org.drools.guvnor.models.guided.dtable.backend;" ) == 0 );
         assertTrue( drl.indexOf( "import java.lang.String;" ) > 0 );
+    }
+
+    @Test
+    public void testLHSNonEmptyStringValues() {
+        GuidedDecisionTable52 dt = new GuidedDecisionTable52();
+        dt.setTableFormat( GuidedDecisionTable52.TableFormat.EXTENDED_ENTRY );
+        dt.setTableName( "extended-entry" );
+
+        Pattern52 p1 = new Pattern52();
+        p1.setBoundName( "p1" );
+        p1.setFactType( "Smurf" );
+        dt.getConditions().add( p1 );
+
+        ConditionCol52 cc1 = new ConditionCol52();
+        cc1.setConstraintValueType( BaseSingleFieldConstraint.TYPE_LITERAL );
+        cc1.setFieldType( DataType.TYPE_STRING );
+        cc1.setFactField( "name" );
+        cc1.setOperator( "==" );
+        p1.getChildColumns().add( cc1 );
+
+        ConditionCol52 cc2 = new ConditionCol52();
+        cc2.setConstraintValueType( BaseSingleFieldConstraint.TYPE_LITERAL );
+        cc2.setFieldType( DataType.TYPE_NUMERIC_INTEGER );
+        cc2.setFactField( "age" );
+        cc2.setOperator( "==" );
+        p1.getChildColumns().add( cc2 );
+
+        dt.setData( DataUtilities.makeDataLists( new Object[][]{
+                new Object[]{ 1l, "desc-row1", null, null },
+                new Object[]{ 2l, "desc-row2", "   ", 35l },
+                new Object[]{ 3l, "desc-row3", "", null },
+                new Object[]{ 4l, "desc-row4", "", 35l },
+        } ) );
+
+        GuidedDTDRLPersistence p = GuidedDTDRLPersistence.getInstance();
+        String drl = p.marshal( dt );
+
+        final String expected = "//from row number: 1\n" +
+                "//desc-row1\n" +
+                "rule \"Row 1 extended-entry\"\n" +
+                "  dialect \"mvel\"\n" +
+                "  when\n" +
+                "  then\n" +
+                "end\n" +
+                "//from row number: 2\n" +
+                "//desc-row2\n" +
+                "rule \"Row 2 extended-entry\"\n" +
+                "  dialect \"mvel\"\n" +
+                "  when\n" +
+                "    p1 : Smurf( age == 35 )\n" +
+                "  then\n" +
+                "end\n" +
+                "//from row number: 3\n" +
+                "//desc-row3\n" +
+                "rule \"Row 3 extended-entry\"\n" +
+                "  dialect \"mvel\"\n" +
+                "  when\n" +
+                "  then\n" +
+                "end\n" +
+                "//from row number: 4\n" +
+                "//desc-row4\n" +
+                "rule \"Row 4 extended-entry\"\n" +
+                "  dialect \"mvel\"\n" +
+                "  when\n" +
+                "    p1 : Smurf( age == 35 )\n" +
+                "  then\n" +
+                "end";
+
+        assertEqualsIgnoreWhitespace( expected,
+                                      drl );
+    }
+
+    @Test
+    public void testLHSDelimitedNonEmptyStringValues() {
+        GuidedDecisionTable52 dt = new GuidedDecisionTable52();
+        dt.setTableFormat( GuidedDecisionTable52.TableFormat.EXTENDED_ENTRY );
+        dt.setTableName( "extended-entry" );
+
+        Pattern52 p1 = new Pattern52();
+        p1.setBoundName( "p1" );
+        p1.setFactType( "Smurf" );
+        dt.getConditions().add( p1 );
+
+        ConditionCol52 cc1 = new ConditionCol52();
+        cc1.setConstraintValueType( BaseSingleFieldConstraint.TYPE_LITERAL );
+        cc1.setFieldType( DataType.TYPE_STRING );
+        cc1.setFactField( "name" );
+        cc1.setOperator( "==" );
+        p1.getChildColumns().add( cc1 );
+
+        ConditionCol52 cc2 = new ConditionCol52();
+        cc2.setConstraintValueType( BaseSingleFieldConstraint.TYPE_LITERAL );
+        cc2.setFieldType( DataType.TYPE_NUMERIC_INTEGER );
+        cc2.setFactField( "age" );
+        cc2.setOperator( "==" );
+        p1.getChildColumns().add( cc2 );
+
+        dt.setData( DataUtilities.makeDataLists( new Object[][]{
+                new Object[]{ 1l, "desc-row1", null, null },
+                new Object[]{ 2l, "desc-row2", "\"   \"", 35l },
+                new Object[]{ 3l, "desc-row3", "\"\"", null },
+                new Object[]{ 4l, "desc-row4", "\"\"", 35l },
+        } ) );
+
+        GuidedDTDRLPersistence p = GuidedDTDRLPersistence.getInstance();
+        String drl = p.marshal( dt );
+
+        final String expected = "//from row number: 1\n" +
+                "//desc-row1\n" +
+                "rule \"Row 1 extended-entry\"\n" +
+                "  dialect \"mvel\"\n" +
+                "  when\n" +
+                "  then\n" +
+                "end\n" +
+                "//from row number: 2\n" +
+                "//desc-row2\n" +
+                "rule \"Row 2 extended-entry\"\n" +
+                "  dialect \"mvel\"\n" +
+                "  when\n" +
+                "    p1 : Smurf( name == \"   \", age == 35 )\n" +
+                "  then\n" +
+                "end\n" +
+                "//from row number: 3\n" +
+                "//desc-row3\n" +
+                "rule \"Row 3 extended-entry\"\n" +
+                "  dialect \"mvel\"\n" +
+                "  when\n" +
+                "    p1 : Smurf( name == \"\" )\n" +
+                "  then\n" +
+                "end\n" +
+                "//from row number: 4\n" +
+                "//desc-row4\n" +
+                "rule \"Row 4 extended-entry\"\n" +
+                "  dialect \"mvel\"\n" +
+                "  when\n" +
+                "    p1 : Smurf( name == \"\", age == 35 )\n" +
+                "  then\n" +
+                "end";
+
+        assertEqualsIgnoreWhitespace( expected,
+                                      drl );
+    }
+
+    @Test
+    public void testRHSNonEmptyStringValues() {
+        GuidedDecisionTable52 dt = new GuidedDecisionTable52();
+        dt.setTableFormat( GuidedDecisionTable52.TableFormat.EXTENDED_ENTRY );
+        dt.setTableName( "extended-entry" );
+
+        ActionInsertFactCol52 ins1 = new ActionInsertFactCol52();
+        ins1.setBoundName( "$f" );
+        ins1.setFactType( "Smurf" );
+        ins1.setFactField( "name" );
+        ins1.setType( DataType.TYPE_STRING );
+        dt.getActionCols().add( ins1 );
+
+        ActionInsertFactCol52 ins2 = new ActionInsertFactCol52();
+        ins2.setBoundName( "$f" );
+        ins2.setFactType( "Smurf" );
+        ins2.setFactField( "age" );
+        ins2.setType( DataType.TYPE_NUMERIC_INTEGER );
+        dt.getActionCols().add( ins2 );
+
+        dt.setData( DataUtilities.makeDataLists( new Object[][]{
+                new Object[]{ 1l, "desc-row1", null, null },
+                new Object[]{ 2l, "desc-row2", "   ", 35l },
+                new Object[]{ 3l, "desc-row3", "", null },
+                new Object[]{ 4l, "desc-row4", "", 35l },
+        } ) );
+
+        GuidedDTDRLPersistence p = GuidedDTDRLPersistence.getInstance();
+        String drl = p.marshal( dt );
+
+        final String expected = "//from row number: 1\n" +
+                "//desc-row1\n" +
+                "rule \"Row 1 extended-entry\"\n" +
+                "  dialect \"mvel\"\n" +
+                "  when\n" +
+                "  then\n" +
+                "end\n" +
+                "//from row number: 2\n" +
+                "//desc-row2\n" +
+                "rule \"Row 2 extended-entry\"\n" +
+                "  dialect \"mvel\"\n" +
+                "  when\n" +
+                "  then\n" +
+                "    Smurf $f = new Smurf();\n" +
+                "    $f.setAge( 35 );\n" +
+                "    insert( $f );\n" +
+                "end\n" +
+                "//from row number: 3\n" +
+                "//desc-row3\n" +
+                "rule \"Row 3 extended-entry\"\n" +
+                "  dialect \"mvel\"\n" +
+                "  when\n" +
+                "  then\n" +
+                "end\n" +
+                "//from row number: 4\n" +
+                "//desc-row4\n" +
+                "rule \"Row 4 extended-entry\"\n" +
+                "  dialect \"mvel\"\n" +
+                "  when\n" +
+                "  then\n" +
+                "    Smurf $f = new Smurf();\n" +
+                "    $f.setAge( 35 );\n" +
+                "    insert( $f );\n" +
+                "end";
+
+        assertEqualsIgnoreWhitespace( expected,
+                                      drl );
+    }
+
+    @Test
+    public void testRHSDelimitedNonEmptyStringValues() {
+        GuidedDecisionTable52 dt = new GuidedDecisionTable52();
+        dt.setTableFormat( GuidedDecisionTable52.TableFormat.EXTENDED_ENTRY );
+        dt.setTableName( "extended-entry" );
+
+        ActionInsertFactCol52 ins1 = new ActionInsertFactCol52();
+        ins1.setBoundName( "$f" );
+        ins1.setFactType( "Smurf" );
+        ins1.setFactField( "name" );
+        ins1.setType( DataType.TYPE_STRING );
+        dt.getActionCols().add( ins1 );
+
+        ActionInsertFactCol52 ins2 = new ActionInsertFactCol52();
+        ins2.setBoundName( "$f" );
+        ins2.setFactType( "Smurf" );
+        ins2.setFactField( "age" );
+        ins2.setType( DataType.TYPE_NUMERIC_INTEGER );
+        dt.getActionCols().add( ins2 );
+
+        dt.setData( DataUtilities.makeDataLists( new Object[][]{
+                new Object[]{ 1l, "desc-row1", null, null },
+                new Object[]{ 2l, "desc-row2", "\"   \"", 35l },
+                new Object[]{ 3l, "desc-row3", "\"\"", null },
+                new Object[]{ 4l, "desc-row4", "\"\"", 35l },
+        } ) );
+
+        GuidedDTDRLPersistence p = GuidedDTDRLPersistence.getInstance();
+        String drl = p.marshal( dt );
+
+        final String expected = "//from row number: 1\n" +
+                "//desc-row1\n" +
+                "rule \"Row 1 extended-entry\"\n" +
+                "  dialect \"mvel\"\n" +
+                "  when\n" +
+                "  then\n" +
+                "end\n" +
+                "//from row number: 2\n" +
+                "//desc-row2\n" +
+                "rule \"Row 2 extended-entry\"\n" +
+                "  dialect \"mvel\"\n" +
+                "  when\n" +
+                "  then\n" +
+                "    Smurf $f = new Smurf();\n" +
+                "    $f.setName( \"   \" );\n" +
+                "    $f.setAge( 35 );\n" +
+                "    insert( $f );\n" +
+                "end\n" +
+                "//from row number: 3\n" +
+                "//desc-row3\n" +
+                "rule \"Row 3 extended-entry\"\n" +
+                "  dialect \"mvel\"\n" +
+                "  when\n" +
+                "  then\n" +
+                "    Smurf $f = new Smurf();\n" +
+                "    $f.setName( \"\" );\n" +
+                "    insert( $f );\n" +
+                "end\n" +
+                "//from row number: 4\n" +
+                "//desc-row4\n" +
+                "rule \"Row 4 extended-entry\"\n" +
+                "  dialect \"mvel\"\n" +
+                "  when\n" +
+                "  then\n" +
+                "    Smurf $f = new Smurf();\n" +
+                "    $f.setName( \"\" );\n" +
+                "    $f.setAge( 35 );\n" +
+                "    insert( $f );\n" +
+                "end";
+
+        assertEqualsIgnoreWhitespace( expected,
+                                      drl );
+    }
+
+    private void assertEqualsIgnoreWhitespace( final String expected,
+                                               final String actual ) {
+        final String cleanExpected = expected.replaceAll( "\\s+",
+                                                          "" );
+        final String cleanActual = actual.replaceAll( "\\s+",
+                                                      "" );
+
+        assertEquals( cleanExpected,
+                      cleanActual );
     }
 
 }

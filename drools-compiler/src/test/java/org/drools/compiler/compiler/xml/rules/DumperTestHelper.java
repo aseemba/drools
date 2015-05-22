@@ -4,8 +4,8 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.StringReader;
 
+import org.drools.compiler.builder.impl.KnowledgeBuilderConfigurationImpl;
 import org.drools.compiler.compiler.DrlParser;
-import org.drools.compiler.compiler.PackageBuilderConfiguration;
 import org.drools.compiler.compiler.xml.XmlDumper;
 import org.drools.compiler.compiler.xml.XmlPackageReader;
 import org.drools.compiler.lang.DrlDumper;
@@ -20,7 +20,7 @@ import static org.junit.Assert.*;
 public class DumperTestHelper {
     
     public static void XmlFile(String filename) throws Exception {
-        PackageBuilderConfiguration conf = new PackageBuilderConfiguration();
+        KnowledgeBuilderConfigurationImpl conf = new KnowledgeBuilderConfigurationImpl();
         
         XmlPackageReader xmlPackageReader = new XmlPackageReader( conf.getSemanticModules() );
         xmlPackageReader.getParser().setClassLoader( DumperTestHelper.class.getClassLoader() );
@@ -48,9 +48,17 @@ public class DumperTestHelper {
         String result1 = dumper.dump( pkgOriginal );
         final PackageDescr pkgDerivated = parser.parse( new StringReader( result1 ) );
         String result2 = dumper.dump( pkgDerivated );
+        System.out.println( result1 );
 
         assertEqualsIgnoreWhitespace( result1,
                                       result2 );
+    }
+
+    public static String dump(String filename) throws Exception {
+        DrlParser parser = new DrlParser(LanguageLevelOption.DRL6);
+        final PackageDescr pkgOriginal = parser.parse( new InputStreamReader( DumperTestHelper.class.getResourceAsStream( filename ) ) );
+        final DrlDumper dumper = new DrlDumper();
+        return dumper.dump( pkgOriginal );
     }
 
     public static void assertEqualsIgnoreWhitespace(final String expected,

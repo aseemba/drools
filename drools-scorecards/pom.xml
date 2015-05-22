@@ -6,8 +6,8 @@
   <modelVersion>4.0.0</modelVersion>
   <parent>
     <groupId>org.drools</groupId>
-    <artifactId>drools-multiproject</artifactId>
-    <version>6.1.0-SNAPSHOT</version>
+    <artifactId>drools</artifactId>
+    <version>6.3.0-SNAPSHOT</version>
   </parent>
 
   <artifactId>drools-scorecards</artifactId>
@@ -31,8 +31,10 @@
     <dependency>
       <groupId>org.drools</groupId>
       <artifactId>drools-pmml</artifactId>
-      <!-- TODO Remove once configured appropriately -->
-      <version>${drools.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.kie</groupId>
+      <artifactId>kie-internal</artifactId>
     </dependency>
 
     <!-- External dependencies -->
@@ -40,6 +42,15 @@
       <groupId>org.apache.poi</groupId>
       <artifactId>poi-ooxml</artifactId>
     </dependency>
+    <dependency>
+      <groupId>org.apache.poi</groupId>
+      <artifactId>poi</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+    </dependency>
+
   </dependencies>
 
 </project>

@@ -3,21 +3,21 @@ package org.drools.compiler.phreak;
 import org.drools.core.RuleBaseConfiguration;
 import org.drools.core.common.EmptyBetaConstraints;
 import org.drools.core.common.InternalWorkingMemory;
+import org.drools.core.definitions.InternalKnowledgePackage;
+import org.drools.core.definitions.impl.KnowledgePackageImpl;
+import org.drools.core.definitions.rule.impl.RuleImpl;
+import org.drools.core.impl.KnowledgeBaseImpl;
+import org.drools.core.impl.StatefulKnowledgeSessionImpl;
 import org.drools.core.phreak.PhreakJoinNode;
 import org.drools.core.reteoo.BetaMemory;
 import org.drools.core.reteoo.JoinNode;
 import org.drools.core.reteoo.LeftTupleSink;
 import org.drools.core.reteoo.NodeTypeEnums;
-import org.drools.core.reteoo.ReteooRuleBase;
 import org.drools.core.reteoo.SegmentMemory;
 import org.drools.core.reteoo.builder.BuildContext;
 import org.drools.core.rule.MVELDialectRuntimeData;
-import org.drools.core.rule.Rule;
-import org.junit.Ignore;
 import org.junit.Test;
 
-import static org.drools.compiler.phreak.A.a;
-import static org.drools.compiler.phreak.B.b;
 import static org.drools.compiler.phreak.Pair.t;
 
 public class SegmentPropagationTest {
@@ -55,16 +55,16 @@ public class SegmentPropagationTest {
         joinNode.addTupleSink( sinkNode0 );
         
         sinkNode1 = new JoinNode();
-        sinkNode1.setId( 2 );
+        sinkNode1.setId( 3 );
         sinkNode1.setConstraints( new EmptyBetaConstraints() );        
         joinNode.addTupleSink( sinkNode1 );   
         
         sinkNode2 = new JoinNode();
-        sinkNode2.setId( 3 );
+        sinkNode2.setId( 4 );
         sinkNode2.setConstraints( new EmptyBetaConstraints() );        
-        joinNode.addTupleSink( sinkNode2 );        
+        joinNode.addTupleSink( sinkNode2 );
 
-        wm = (InternalWorkingMemory) buildContext.getRuleBase().newStatefulSession( true );
+        wm = ((StatefulKnowledgeSessionImpl)buildContext.getKnowledgeBase().newStatefulKnowledgeSession());
         
         bm =(BetaMemory)  wm.getNodeMemory( joinNode );
         
@@ -154,17 +154,13 @@ public class SegmentPropagationTest {
                                          t(a1, b0) )
                                 .delete( )
                                 .update( )
-              .postStaged( smem1 ).insert( t(a0, b1),
-                                           t(a0, b2),
-                                           t(a1, b0),
+              .postStaged( smem1 ).insert( t(a1, b0),
                                            t(a1, b2),
                                            t(a0, b1),
                                            t(a0, b2) )
                                   .delete( )
                                   .update( )
-                .postStaged( smem2 ).insert( t(a0, b1),
-                                             t(a0, b2),
-                                             t(a1, b0),
+                .postStaged( smem2 ).insert( t(a1, b0),
                                              t(a1, b2),
                                              t(a0, b1),
                                              t(a0, b2) )
@@ -181,13 +177,9 @@ public class SegmentPropagationTest {
                                 .delete( t(a1, b2),
                                          t(a0, b2) )
                                 .update( )
-              .postStaged( smem1 ).insert( t(a0, b1),
-                                           t(a0, b2),
-                                           t(a1, b0),
+              .postStaged( smem1 ).insert( t(a1, b0),
                                            t(a0, b1) )
-              .postStaged( smem2 ).insert( t(a0, b1),
-                                           t(a0, b2),
-                                           t(a1, b0),
+              .postStaged( smem2 ).insert( t(a1, b0),
                                            t(a0, b1) )
               .run();
                  
@@ -211,14 +203,14 @@ public class SegmentPropagationTest {
     public BuildContext createContext() {
         
         RuleBaseConfiguration conf = new RuleBaseConfiguration();
-    
-        ReteooRuleBase rbase = new ReteooRuleBase( "ID",
+
+        KnowledgeBaseImpl rbase = new KnowledgeBaseImpl( "ID",
                                                    conf );
         BuildContext buildContext = new BuildContext( rbase,
                                                       rbase.getReteooBuilder().getIdGenerator() );
-    
-        Rule rule = new Rule( "rule1", "org.pkg1", null );
-        org.drools.core.rule.Package pkg = new org.drools.core.rule.Package( "org.pkg1" );
+
+        RuleImpl rule = new RuleImpl( "rule1", "org.pkg1", null );
+        InternalKnowledgePackage pkg = new KnowledgePackageImpl( "org.pkg1" );
         pkg.getDialectRuntimeRegistry().setDialectData( "mvel", new MVELDialectRuntimeData() );
         pkg.addRule( rule );
         buildContext.setRule( rule );

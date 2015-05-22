@@ -1,8 +1,8 @@
 package org.drools.compiler.reteoo.compiled;
 
+import org.drools.compiler.builder.impl.KnowledgeBuilderImpl;
 import org.drools.core.base.ClassObjectType;
 import org.drools.core.base.ValueType;
-import org.drools.compiler.compiler.PackageBuilder;
 import org.drools.compiler.compiler.PackageRegistry;
 import org.drools.compiler.lang.descr.PackageDescr;
 import org.drools.core.reteoo.ObjectTypeNode;
@@ -13,6 +13,7 @@ import org.drools.core.reteoo.compiled.HashedAlphasDeclaration;
 import org.drools.core.reteoo.compiled.ObjectTypeNodeParser;
 import org.drools.core.reteoo.compiled.SetNodeReferenceHandler;
 import org.drools.compiler.rule.builder.dialect.java.JavaDialect;
+import org.drools.core.util.IoUtils;
 
 import java.util.Collection;
 
@@ -144,38 +145,38 @@ public class ObjectTypeNodeCompiler {
      * Creates a {@link CompiledNetwork} for the specified {@link ObjectTypeNode}. The {@link PackageBuilder} is used
      * to compile the generated source and load the class.
      *
-     * @param pkgBuilder     builder used to compile and load class
+     * @param kBuilder     builder used to compile and load class
      * @param objectTypeNode OTN we are generating a compiled network for
      * @return CompiledNetwork
      */
-    public static CompiledNetwork compile(PackageBuilder pkgBuilder, ObjectTypeNode objectTypeNode) {
+    public static CompiledNetwork compile(KnowledgeBuilderImpl kBuilder, ObjectTypeNode objectTypeNode) {
         if (objectTypeNode == null) {
             throw new IllegalArgumentException("ObjectTypeNode cannot be null!");
         }
-        if (pkgBuilder == null) {
+        if (kBuilder == null) {
             throw new IllegalArgumentException("PackageBuilder cannot be null!");
         }
         ObjectTypeNodeCompiler compiler = new ObjectTypeNodeCompiler(objectTypeNode);
 
         String packageName = compiler.getPackageName();
 
-        PackageRegistry pkgReg = pkgBuilder.getPackageRegistry(packageName);
+        PackageRegistry pkgReg = kBuilder.getPackageRegistry(packageName);
         if (pkgReg == null) {
-            pkgBuilder.addPackage(new PackageDescr(packageName));
-            pkgReg = pkgBuilder.getPackageRegistry(packageName);
+            kBuilder.addPackage(new PackageDescr(packageName));
+            pkgReg = kBuilder.getPackageRegistry(packageName);
         }
 
         String source = compiler.generateSource();
         String generatedSourceName = compiler.getName();
 
         JavaDialect dialect = (JavaDialect) pkgReg.getDialectCompiletimeRegistry().getDialect("java");
-        dialect.addSrc(compiler.getBinaryName(), source.getBytes());
-        pkgBuilder.compileAll();
-        pkgBuilder.updateResults();
+        dialect.addSrc(compiler.getBinaryName(), source.getBytes(IoUtils.UTF8_CHARSET));
+        kBuilder.compileAll();
+        kBuilder.updateResults();
 
         CompiledNetwork network;
         try {
-            network = (CompiledNetwork) Class.forName(generatedSourceName, true, pkgBuilder.getRootClassLoader()).newInstance();
+            network = (CompiledNetwork) Class.forName(generatedSourceName, true, kBuilder.getRootClassLoader()).newInstance();
         } catch (ClassNotFoundException e) {
             throw new RuntimeException("This is a bug. Please contact the development team", e);
         } catch (IllegalAccessException e) {

@@ -5,8 +5,8 @@
   <modelVersion>4.0.0</modelVersion>
   <parent>
     <groupId>org.drools</groupId>
-    <artifactId>drools-multiproject</artifactId>
-    <version>6.1.0-SNAPSHOT</version>
+    <artifactId>drools</artifactId>
+    <version>6.3.0-SNAPSHOT</version>
   </parent>
 
   <artifactId>drools-persistence-jpa</artifactId>
@@ -36,8 +36,15 @@
           <instructions>
             <Bundle-SymbolicName>org.drools.persistence.jpa</Bundle-SymbolicName>
             <Import-Package>
+              javassist.util.proxy;resolution:=optional,
               javax.transaction;resolution:=optional,
               javax.naming;resolution:=optional,
+              org.drools.container.spring.beans.persistence;resolution:=optional,
+              org.drools.core.marshalling.impl;resolution:=optional,
+              org.jbpm.persistence;resolution:=optional,
+              org.hibernate.proxy;resolution:=optional,
+              org.kie.spring.persistence;resolution:=optional,
+              org.hibernate;resolution:=optional,
               *
             </Import-Package>
             <Export-Package>
@@ -71,6 +78,10 @@
     <dependency>
       <groupId>org.kie</groupId>
       <artifactId>kie-api</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.kie</groupId>
+      <artifactId>kie-internal</artifactId>
     </dependency>
     <dependency>
       <groupId>org.drools</groupId>
@@ -117,8 +128,8 @@
       <artifactId>javassist</artifactId>
     </dependency>
     <dependency>
-      <groupId>javax.transaction</groupId>
-      <artifactId>jta</artifactId>
+      <groupId>org.jboss.spec.javax.transaction</groupId>
+      <artifactId>jboss-transaction-api_1.1_spec</artifactId>
     </dependency>
 
     <!-- Hibernate -->
@@ -159,6 +170,11 @@
       <groupId>org.drools</groupId>
       <artifactId>drools-compiler</artifactId>
       <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.drools</groupId>
+      <artifactId>drools-reteoo</artifactId>
       <scope>test</scope>
     </dependency>
     <dependency>
@@ -206,14 +222,22 @@
   <profiles>
     <profile>
       <id>database</id>
-       
+      <dependencyManagement>
+          <dependencies>
+            <dependency>
+              <groupId>org.jbpm</groupId>
+              <artifactId>downloaded-jdbc-driver-jar</artifactId>
+              <version>1.0</version>
+            </dependency>
+          </dependencies>
+      </dependencyManagement>
+
       <dependencies>
         <!--  Add the downloaded jdbc driver jar for the database to the classpath.
               !: <groupId>, <artifactId> and <version> are just placeholders and DO NOT MATTER! -->
         <dependency>
            <groupId>org.jbpm</groupId>
            <artifactId>downloaded-jdbc-driver-jar</artifactId>
-           <version>1.0</version>
            <scope>system</scope>
            <systemPath>${maven.jdbc.driver.jar}</systemPath>
         </dependency>  

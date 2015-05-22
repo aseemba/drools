@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 
+import org.drools.core.QueryResultsImpl;
 import org.drools.core.base.ClassObjectType;
 import org.drools.core.base.DroolsQuery;
 import org.drools.core.command.runtime.BatchExecutionCommandImpl;
@@ -45,7 +46,6 @@ import org.drools.core.common.DefaultFactHandle;
 import org.drools.core.rule.Declaration;
 import org.drools.core.runtime.impl.ExecutionResultImpl;
 import org.drools.core.runtime.rule.impl.FlatQueryResults;
-import org.drools.core.runtime.rule.impl.NativeQueryResults;
 import org.drools.core.spi.ObjectType;
 import org.kie.api.command.Command;
 import org.kie.internal.command.CommandFactory;
@@ -65,6 +65,7 @@ import com.thoughtworks.xstream.io.HierarchicalStreamReader;
 import com.thoughtworks.xstream.io.HierarchicalStreamWriter;
 
 public class XStreamXML {
+    public static volatile boolean SORT_MAPS = false;
 
     public static XStream newXStreamMarshaller(XStream xstream) {
         XStreamHelper.setAliases( xstream );
@@ -808,7 +809,16 @@ public class XStreamXML {
                             HierarchicalStreamWriter writer,
                             MarshallingContext context) {
             ExecutionResults result = (ExecutionResults) object;
-            for ( String identifier : result.getIdentifiers() ) {
+
+            Collection<String> identifiers = result.getIdentifiers();
+            // this gets sorted, otherwise unit tests will not pass
+            if ( SORT_MAPS ) {
+                String[] array = identifiers.toArray( new String[identifiers.size()]);
+                Arrays.sort(array);
+                identifiers = Arrays.asList(array);
+            }
+
+            for ( String identifier : identifiers ) {
                 writer.startNode( "result" );
                 writer.addAttribute( "identifier",
                                      identifier );
@@ -828,7 +838,15 @@ public class XStreamXML {
                 writer.endNode();
             }
 
-            for ( String identifier : ((ExecutionResultImpl) result).getFactHandles().keySet() ) {
+            Collection<String> handles = ((ExecutionResultImpl) result).getFactHandles().keySet();
+            // this gets sorted, otherwise unit tests will not pass
+            if (SORT_MAPS) {
+                String[] array = handles.toArray( new String[handles.size()]);
+                Arrays.sort(array);
+                handles = Arrays.asList(array);
+            }
+
+            for ( String identifier : handles ) {
                 Object handle = result.getFactHandle( identifier );
                 if ( handle instanceof FactHandle ) {
                     writer.startNode( "fact-handle" );
@@ -916,10 +934,10 @@ public class XStreamXML {
             // write out identifiers
             List<String> originalIds = Arrays.asList( results.getIdentifiers() );
             List<String> actualIds = new ArrayList();
-            if ( results instanceof NativeQueryResults ) {
+            if ( results instanceof QueryResultsImpl) {
                 for ( String identifier : originalIds ) {
                     // we don't want to marshall the query parameters
-                    Declaration declr = ((NativeQueryResults) results).getDeclarations().get( identifier );
+                    Declaration declr = ((QueryResultsImpl) results).getDeclarations(0).get( identifier );
                     ObjectType objectType = declr.getPattern().getObjectType();
                     if ( objectType instanceof ClassObjectType ) {
                         if ( ((ClassObjectType) objectType).getClassType() == DroolsQuery.class ) {

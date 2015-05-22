@@ -16,20 +16,23 @@
 
 package org.drools.core.spi;
 
+import org.drools.core.WorkingMemory;
+import org.drools.core.common.InternalFactHandle;
+import org.drools.core.definitions.rule.impl.RuleImpl;
+import org.drools.core.factmodel.traits.Thing;
+import org.drools.core.factmodel.traits.TraitableBean;
+import org.drools.core.rule.Declaration;
+import org.drools.core.util.bitmask.BitMask;
+import org.kie.api.runtime.Channel;
+import org.kie.api.runtime.rule.EntryPoint;
+import org.kie.api.runtime.rule.FactHandle;
+import org.kie.api.runtime.rule.RuleContext;
+import org.kie.internal.runtime.beliefs.Mode;
+
 import java.io.Serializable;
 import java.util.Collection;
 import java.util.IdentityHashMap;
 import java.util.Map;
-
-import org.drools.core.FactHandle;
-import org.drools.core.WorkingMemory;
-import org.drools.core.factmodel.traits.Thing;
-import org.drools.core.factmodel.traits.TraitableBean;
-import org.drools.core.rule.Declaration;
-import org.drools.core.rule.Rule;
-import org.kie.api.runtime.Channel;
-import org.kie.api.runtime.rule.RuleContext;
-import org.kie.api.runtime.rule.EntryPoint;
 
 /**
  * KnowledgeHelper implementation types are injected into consequenses
@@ -56,11 +59,8 @@ public interface KnowledgeHelper
      * 
      * @param object -
      *            the object to be asserted
-     * @ -
-     *             Exceptions can be thrown by conditions which are wrapped and
-     *             returned as a FactException
      */
-    FactHandle insert(Object object) ;
+    InternalFactHandle insert(Object object) ;
     
     /**
      * Asserts an object specifying that it implement the onPropertyChange
@@ -70,31 +70,32 @@ public interface KnowledgeHelper
      *            the object to be asserted
      * @param dynamic -
      *            specifies the object implements onPropertyChangeListener
-     * @ -
-     *             Exceptions can be thrown by conditions which are wrapped and
-     *             returned as a FactException
      */
-    FactHandle insert(Object object,
+    InternalFactHandle insert(Object object,
                 boolean dynamic) ;
     
-    public void insertLogical(Object object) ;
+    public InternalFactHandle insertLogical(Object object) ;
     
-    public void insertLogical(Object object,
+    public InternalFactHandle insertLogical(Object object,
                               boolean dynamic) ;
+
+    public InternalFactHandle insertLogical(Object object, Mode belief) ;
+
+    public InternalFactHandle insertLogical(Object object, Mode... beliefs) ;
     
     public void cancelRemainingPreviousLogicalDependencies();
     
-    FactHandle getFactHandle(Object object);
+    InternalFactHandle getFactHandle(Object object);
     
-    FactHandle getFactHandle(FactHandle handle);
+    InternalFactHandle getFactHandle(InternalFactHandle handle);
     
     void update(FactHandle handle, Object newObject);
 
     void update(FactHandle newObject);
-    void update(FactHandle newObject, long mask, Class<?> modifiedClass);
+    void update(FactHandle newObject, BitMask mask, Class<?> modifiedClass);
     
     void update(Object newObject);
-    void update(Object newObject, long mask, Class<?> modifiedClass);
+    void update(Object newObject, BitMask mask, Class<?> modifiedClass);
 
     void modify( Object newObject ) ;
 
@@ -117,7 +118,7 @@ public interface KnowledgeHelper
     /**
      * @return - The rule name
      */
-    Rule getRule();
+    RuleImpl getRule();
 
     Tuple getTuple();
 
@@ -126,8 +127,6 @@ public interface KnowledgeHelper
     WorkingMemory getWorkingMemory();
     
     EntryPoint getEntryPoint( String id );
-    
-    Map<String, EntryPoint> getEntryPoints();
     
     Channel getChannel( String id );
     
@@ -139,15 +138,15 @@ public interface KnowledgeHelper
     
     void halt();
 
-    IdentityHashMap<Object, FactHandle> getIdentityMap();
-
-    void setIdentityMap(IdentityHashMap<Object, FactHandle> identityMap);
-    
     <T> T getContext(Class<T> contextClass);
 
     <T, K> T don( K core, Class<T> trait, boolean logical );
 
     <T, K> T don( Thing<K> core, Class<T> trait, boolean logical );
+
+    <T, K> T don( K core, Class<T> trait, Mode... modes );
+
+    <T, K> T don( Thing<K> core, Class<T> trait, Mode... modes );
 
     <T, K> T don( K core, Class<T> trait );
 
@@ -155,10 +154,15 @@ public interface KnowledgeHelper
 
     <T, K> T don( K core, Collection<Class<? extends Thing>> trait, boolean logical );
 
+    <T, K> T don( K core, Collection<Class<? extends Thing>> trait, Mode... modes );
+
     <T, K> T don( K core, Collection<Class<? extends Thing>> trait );
 
     <T, K> Thing<K> shed( Thing<K> thing, Class<T> trait );
 
     <T, K, X extends TraitableBean> Thing<K> shed( TraitableBean<K,X> core, Class<T> trait );
 
+    public InternalFactHandle bolster( Object object, Object value );
+
+    public InternalFactHandle bolster( Object object );
 }

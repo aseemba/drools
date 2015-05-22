@@ -7,7 +7,7 @@ import org.drools.compiler.kproject.models.KieModuleModelImpl;
 import org.drools.core.rule.TypeMetaInfo;
 import org.kie.api.builder.ReleaseId;
 import org.drools.compiler.kie.builder.impl.InternalKieModule;
-import org.sonatype.aether.artifact.Artifact;
+import org.eclipse.aether.artifact.Artifact;
 
 import java.io.ByteArrayInputStream;
 import java.io.File;
@@ -117,8 +117,7 @@ public class KieModuleMetaDataImpl implements KieModuleMetaData {
                 }
             }
 
-            classLoader = ProjectClassLoader.createProjectClassLoader(new URLClassLoader(urls));
-            classLoader.setDroolsClassLoader(getClass().getClassLoader());
+            classLoader = ProjectClassLoader.createProjectClassLoader(new URLClassLoader(urls, getClass().getClassLoader()));
 
             if (kieModule != null) {
                 Map<String, byte[]> classes = kieModule.getClassesMap(true);
@@ -164,7 +163,7 @@ public class KieModuleMetaDataImpl implements KieModuleMetaData {
                 ZipEntry entry = entries.nextElement();
                 String pathName = entry.getName();
                 if(pathName.endsWith("bpmn2")){
-                  processes.put(pathName, new String(readBytesFromZipEntry(jarFile, entry)));
+                  processes.put(pathName, new String(readBytesFromZipEntry(jarFile, entry), IoUtils.UTF8_CHARSET));
                 }
                 if (!indexClass(pathName)) {
                     if (pathName.endsWith(KieModuleModelImpl.KMODULE_INFO_JAR_PATH)) {
@@ -204,7 +203,7 @@ public class KieModuleMetaDataImpl implements KieModuleMetaData {
     }
 
     private void indexMetaInfo(byte[] bytes) {
-        KieModuleMetaInfo info = KieModuleMetaInfo.unmarshallMetaInfos(new String(bytes));
+        KieModuleMetaInfo info = KieModuleMetaInfo.unmarshallMetaInfos(new String(bytes, IoUtils.UTF8_CHARSET));
         typeMetaInfos.putAll(info.getTypeMetaInfos());
         rulesByPackage.putAll(info.getRulesByPackage());
     }

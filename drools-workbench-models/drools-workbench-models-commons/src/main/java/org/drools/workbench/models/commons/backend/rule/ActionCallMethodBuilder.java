@@ -1,13 +1,23 @@
 package org.drools.workbench.models.commons.backend.rule;
 
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
+import org.apache.commons.lang3.math.NumberUtils;
+import org.drools.core.util.DateUtils;
+import org.drools.workbench.models.datamodel.oracle.DataType;
 import org.drools.workbench.models.datamodel.oracle.MethodInfo;
 import org.drools.workbench.models.datamodel.oracle.PackageDataModelOracle;
 import org.drools.workbench.models.datamodel.rule.ActionCallMethod;
 import org.drools.workbench.models.datamodel.rule.ActionFieldFunction;
+import org.drools.workbench.models.datamodel.rule.FieldNatureType;
 import org.drools.workbench.models.datamodel.rule.RuleModel;
 
 import static org.drools.workbench.models.commons.backend.rule.RuleModelPersistenceHelper.*;
@@ -21,6 +31,7 @@ public class ActionCallMethodBuilder {
     private String methodName;
     private String variable;
     private String[] parameters;
+    private int index;
 
     public ActionCallMethodBuilder( RuleModel model,
                                     PackageDataModelOracle dmo,
@@ -32,10 +43,44 @@ public class ActionCallMethodBuilder {
         this.boundParams = boundParams;
     }
 
+    //ActionCallMethods do not support chained method invocations
+    public boolean supports( final String line ) {
+        final List<String> splits = new ArrayList<String>();
+        int depth = 0;
+        int textDepth = 0;
+        boolean escape = false;
+        StringBuffer split = new StringBuffer();
+        for ( char c : line.toCharArray() ) {
+            if ( depth == 0 && c == '.' ) {
+                splits.add( split.toString() );
+                split = new StringBuffer();
+                depth = 0;
+                textDepth = 0;
+                escape = false;
+                continue;
+            } else if ( c == '\\' ) {
+                escape = true;
+                split.append( c );
+                continue;
+            } else if ( textDepth == 0 && c == '"' ) {
+                textDepth++;
+            } else if ( !escape && textDepth > 0 && c == '"' ) {
+                textDepth--;
+            } else if ( textDepth == 0 && c == '(' ) {
+                depth++;
+            } else if ( textDepth == 0 && c == ')' ) {
+                depth--;
+            }
+            split.append( c );
+            escape = false;
+        }
+        splits.add( split.toString() );
+        return splits.size() == 2;
+    }
+
     public ActionCallMethod get( String variable,
                                  String methodName,
                                  String[] parameters ) {
-
         this.variable = variable;
         this.methodName = methodName;
         this.parameters = parameters;
@@ -43,7 +88,7 @@ public class ActionCallMethodBuilder {
         ActionCallMethod actionCallMethod = new ActionCallMethod();
         actionCallMethod.setMethodName( methodName );
         actionCallMethod.setVariable( variable );
-        actionCallMethod.setState( 1 );
+        actionCallMethod.setState( ActionCallMethod.TYPE_DEFINED );
 
         for ( ActionFieldFunction parameter : getActionFieldFunctions() ) {
             actionCallMethod.addFieldValue( parameter );
@@ -56,7 +101,7 @@ public class ActionCallMethodBuilder {
 
         List<ActionFieldFunction> actionFieldFunctions = new ArrayList<ActionFieldFunction>();
 
-        int index = 0;
+        this.index = 0;
         for ( String param : parameters ) {
             param = param.trim();
             if ( param.length() == 0 ) {
@@ -64,41 +109,39 @@ public class ActionCallMethodBuilder {
             }
 
             actionFieldFunctions.add( getActionFieldFunction( param,
-                                                              getDataType( param,
-                                                                           index ) ) );
+                                                              getDataType( param ) ) );
         }
         return actionFieldFunctions;
     }
 
-    private String getAdjustedParameter( String param,
-                                         String dataType ) {
-        String adjustedParam;
-        if ( boundParams.containsKey( param ) ) {
-            adjustedParam = param;
-        } else {
-            adjustedParam = adjustParam( dataType,
-                                         param,
-                                         boundParams,
-                                         isJavaDialect );
-        }
-        return adjustedParam;
-    }
-
     private ActionFieldFunction getActionFieldFunction( String param,
                                                         String dataType ) {
-        ActionFieldFunction actionFiled = new ActionFieldFunction( null,
-                                                                   getAdjustedParameter( param,
-                                                                                         dataType ),
+        final int fieldNature = inferFieldNature( dataType,
+                                                  param,
+                                                  boundParams,
+                                                  isJavaDialect );
+
+        //If the field is a formula don't adjust the param value
+        String paramValue = param;
+        switch ( fieldNature ) {
+            case FieldNatureType.TYPE_FORMULA:
+                break;
+            case FieldNatureType.TYPE_VARIABLE:
+                break;
+            default:
+                paramValue = adjustParam( dataType,
+                                          param,
+                                          boundParams,
+                                          isJavaDialect );
+        }
+        ActionFieldFunction actionField = new ActionFieldFunction( methodName,
+                                                                   paramValue,
                                                                    dataType );
-        actionFiled.setNature( inferFieldNature( boundParams,
-                                                 dataType,
-                                                 param ) );
-        actionFiled.setField( methodName );
-        return actionFiled;
+        actionField.setNature( fieldNature );
+        return actionField;
     }
 
-    private String getDataType( String param,
-                                int index ) {
+    private String getDataType( String param ) {
         String dataType;
 
         MethodInfo methodInfo = getMethodInfo();
@@ -161,12 +204,125 @@ public class ActionCallMethodBuilder {
             return false;
         } else {
             for ( int index = 0; index < methodParams.size(); index++ ) {
-                if ( !methodParams.get( index ).equals( boundParams.get( parameters[ index ] ) ) ) {
+                final String methodParamDataType = methodParams.get( index );
+                final String paramDataType = assertParamDataType( methodParamDataType,
+                                                                  parameters[ index ].trim() );
+                if ( !methodParamDataType.equals( paramDataType ) ) {
                     return false;
                 }
             }
             return true;
         }
+    }
+
+    private String assertParamDataType( final String methodParamDataType,
+                                        final String paramValue ) {
+        if ( boundParams.containsKey( paramValue ) ) {
+            final String boundParamDataType = boundParams.get( paramValue );
+            return boundParamDataType;
+        } else {
+            if ( DataType.TYPE_BOOLEAN.equals( methodParamDataType ) ) {
+                if ( Boolean.TRUE.equals( Boolean.parseBoolean( paramValue ) ) || Boolean.FALSE.equals( Boolean.parseBoolean( paramValue ) ) ) {
+                    return methodParamDataType;
+                }
+                return null;
+
+            } else if ( DataType.TYPE_DATE.equals( methodParamDataType ) ) {
+                try {
+                    new SimpleDateFormat( DateUtils.getDateFormatMask(), Locale.ENGLISH ).parse( adjustParam( methodParamDataType,
+                                                                                                              paramValue,
+                                                                                                              Collections.EMPTY_MAP,
+                                                                                                              isJavaDialect ) );
+                    return methodParamDataType;
+                } catch ( ParseException e ) {
+                    return null;
+                }
+
+            } else if ( DataType.TYPE_STRING.equals( methodParamDataType ) ) {
+                if ( paramValue.startsWith( "\"" ) ) {
+                    return methodParamDataType;
+                }
+
+            } else if ( DataType.TYPE_NUMERIC.equals( methodParamDataType ) ) {
+                if ( !NumberUtils.isNumber( paramValue ) ) {
+                    return methodParamDataType;
+                }
+
+            } else if ( DataType.TYPE_NUMERIC_BIGDECIMAL.equals( methodParamDataType ) ) {
+                try {
+                    new BigDecimal( adjustParam( methodParamDataType,
+                                                 paramValue,
+                                                 Collections.EMPTY_MAP,
+                                                 isJavaDialect ) );
+                    return methodParamDataType;
+                } catch ( NumberFormatException e ) {
+                    return null;
+                }
+
+            } else if ( DataType.TYPE_NUMERIC_BIGINTEGER.equals( methodParamDataType ) ) {
+                try {
+                    new BigInteger( adjustParam( methodParamDataType,
+                                                 paramValue,
+                                                 Collections.EMPTY_MAP,
+                                                 isJavaDialect ) );
+                    return methodParamDataType;
+                } catch ( NumberFormatException e ) {
+                    return null;
+                }
+
+            } else if ( DataType.TYPE_NUMERIC_BYTE.equals( methodParamDataType ) ) {
+                try {
+                    new Byte( paramValue );
+                    return methodParamDataType;
+                } catch ( NumberFormatException e ) {
+                    return null;
+                }
+
+            } else if ( DataType.TYPE_NUMERIC_DOUBLE.equals( methodParamDataType ) ) {
+                try {
+                    new Double( paramValue );
+                    return methodParamDataType;
+                } catch ( NumberFormatException e ) {
+                    return null;
+                }
+
+            } else if ( DataType.TYPE_NUMERIC_FLOAT.equals( methodParamDataType ) ) {
+                try {
+                    new Float( paramValue );
+                    return methodParamDataType;
+                } catch ( NumberFormatException e ) {
+                    return null;
+                }
+
+            } else if ( DataType.TYPE_NUMERIC_INTEGER.equals( methodParamDataType ) ) {
+                try {
+                    new Integer( paramValue );
+                    return methodParamDataType;
+                } catch ( NumberFormatException e ) {
+                    return null;
+                }
+
+            } else if ( DataType.TYPE_NUMERIC_LONG.equals( methodParamDataType ) ) {
+                try {
+                    new Long( paramValue );
+                    return methodParamDataType;
+                } catch ( NumberFormatException e ) {
+                    return null;
+                }
+
+            } else if ( DataType.TYPE_NUMERIC_SHORT.equals( methodParamDataType ) ) {
+                try {
+                    new Short( paramValue );
+                    return methodParamDataType;
+                } catch ( NumberFormatException e ) {
+                    return null;
+                }
+
+            }
+
+            return null;
+        }
+
     }
 
 }

@@ -2,18 +2,13 @@ package org.drools.reteoo.integrationtests;
 
 import org.drools.compiler.Cheese;
 import org.drools.compiler.Cheesery;
-import org.drools.core.command.runtime.rule.InsertElementsCommand;
-import org.drools.reteoo.integrationtests.CommonTestMethodBase;
 import org.drools.compiler.Order;
 import org.drools.compiler.OrderItem;
 import org.drools.compiler.OuterClass;
 import org.drools.compiler.Person;
-import org.drools.compiler.compiler.PackageBuilder;
 import org.drools.compiler.integrationtests.LinkingTest;
 import org.drools.compiler.integrationtests.SerializationHelper;
-import org.drools.core.RuleBase;
-import org.drools.core.RuleBaseFactory;
-import org.drools.core.StatelessSession;
+import org.drools.core.command.runtime.rule.InsertElementsCommand;
 import org.drools.core.reteoo.JoinNode;
 import org.drools.core.reteoo.LeftTupleSink;
 import org.drools.core.reteoo.ObjectSink;
@@ -36,7 +31,6 @@ import org.kie.api.runtime.rule.Variable;
 import org.kie.internal.KnowledgeBase;
 import org.kie.internal.KnowledgeBaseFactory;
 import org.kie.internal.builder.KnowledgeBuilder;
-import org.kie.internal.builder.KnowledgeBuilderError;
 import org.kie.internal.builder.KnowledgeBuilderFactory;
 import org.kie.internal.io.ResourceFactory;
 import org.kie.internal.runtime.StatefulKnowledgeSession;
@@ -1908,7 +1902,7 @@ public class AccumulateTest extends CommonTestMethodBase {
                 "when\n" +
                 "    $h : Holder( $l : list )\n" +
                 "    $n : Long() from accumulate (\n" +
-                "                    $b : String( ) from $l\n" +
+                "                    $b : String( ) from $l;\n" +
                 "                    count($b))\n" +
                 "then\n" +
                 "    System.out.println($n);\n" +
@@ -2086,7 +2080,7 @@ public class AccumulateTest extends CommonTestMethodBase {
                 "query getResults( String $mId, List $holders )\n" +
                 "  accumulate(  \n" +
                 "    $holder  : MessageHolder( id == $mId, $ans : msg ),\n" +
-                "    $holders : collectList( $holder )\n" +
+                "    $holders := collectList( $holder )\n" +
                 "  ) \n" +
                 "end\n" +
                 "\n" +

@@ -16,10 +16,15 @@
 
 package org.drools.core.common;
 
-import org.drools.core.FactException;
-import org.drools.core.FactHandle;
-import org.drools.core.rule.Rule;
+import org.drools.core.definitions.rule.impl.RuleImpl;
 import org.drools.core.spi.Activation;
+import org.drools.core.util.bitmask.BitMask;
+import org.kie.api.runtime.rule.FactHandle;
+import org.drools.core.factmodel.traits.Thing;
+import org.drools.core.factmodel.traits.TraitableBean;
+import org.kie.internal.runtime.beliefs.Mode;
+
+import java.util.Collection;
 
 public interface InternalWorkingMemoryActions
         extends
@@ -27,22 +32,26 @@ public interface InternalWorkingMemoryActions
         InternalWorkingMemoryEntryPoint {
     public void update(FactHandle handle,
                        Object object,
-                       long mask,
+                       BitMask mask,
                        Class<?> modifiedClass,
-                       Activation activation) throws FactException;
+                       Activation activation);
 
     public void delete(FactHandle handle,
-                        Rule rule,
-                        Activation activation) throws FactException;
+                       RuleImpl rule,
+                        Activation activation);
 
     FactHandle insert(Object object,
                                  Object value,
                                  boolean dynamic,
                                  boolean logical,
-                                 Rule rule,
-                                 Activation activation) throws FactException;
+                                 RuleImpl rule,
+                                 Activation activation);
 
-    public FactHandle insertLogical(Object object,
-                                               boolean dynamic) throws FactException;
+    void updateTraits( InternalFactHandle h, BitMask mask, Class<?> modifiedClass, Activation activation );
 
+    <T, K, X extends TraitableBean> Thing<K> shed( Activation activation, TraitableBean<K,X> core, Class<T> trait );
+
+    <T, K> T don( Activation activation, K core, Collection<Class<? extends Thing>> traits, boolean b, Mode[] modes );
+
+    <T, K> T don( Activation activation, K core, Class<T> trait, boolean b, Mode[] modes );
 }

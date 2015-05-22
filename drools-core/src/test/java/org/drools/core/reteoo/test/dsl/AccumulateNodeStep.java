@@ -16,12 +16,6 @@
 
 package org.drools.core.reteoo.test.dsl;
 
-import java.beans.IntrospectionException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
-
 import org.antlr.tool.Rule;
 import org.drools.core.base.ClassObjectType;
 import org.drools.core.base.EvaluatorWrapper;
@@ -33,7 +27,6 @@ import org.drools.core.common.BetaConstraints;
 import org.drools.core.common.DefaultBetaConstraints;
 import org.drools.core.common.DoubleBetaConstraints;
 import org.drools.core.common.EmptyBetaConstraints;
-import org.drools.core.common.InternalRuleBase;
 import org.drools.core.common.QuadroupleBetaConstraints;
 import org.drools.core.common.SingleBetaConstraints;
 import org.drools.core.common.TripleBetaConstraints;
@@ -48,11 +41,18 @@ import org.drools.core.rule.Accumulate;
 import org.drools.core.rule.Declaration;
 import org.drools.core.rule.MVELDialectRuntimeData;
 import org.drools.core.rule.Pattern;
+import org.drools.core.rule.SingleAccumulate;
 import org.drools.core.spi.Accumulator;
 import org.drools.core.spi.AlphaNodeFieldConstraint;
 import org.drools.core.spi.BetaNodeFieldConstraint;
 import org.drools.core.spi.KnowledgeHelper;
 import org.kie.api.runtime.rule.AccumulateFunction;
+
+import java.beans.IntrospectionException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
 
 public class AccumulateNodeStep
     implements
@@ -161,29 +161,29 @@ public class AccumulateNodeStep
                     break;
                 case 1:
                     betaSourceConstraints = new SingleBetaConstraints( list.get(0),
-                                                           buildContext.getRuleBase().getConfiguration() );                    
+                                                           buildContext.getKnowledgeBase().getConfiguration() );
                   break;
                 case 2:
                     betaSourceConstraints = new DoubleBetaConstraints( list.toArray( new BetaNodeFieldConstraint[2] ),
-                                                             buildContext.getRuleBase().getConfiguration() );                    
+                                                             buildContext.getKnowledgeBase().getConfiguration() );
                     break;                    
                 case 3:
                     betaSourceConstraints = new TripleBetaConstraints( list.toArray( new BetaNodeFieldConstraint[2] ),
-                                                             buildContext.getRuleBase().getConfiguration() );                    
+                                                             buildContext.getKnowledgeBase().getConfiguration() );
                     break;                    
                 case 4:
                     betaSourceConstraints = new QuadroupleBetaConstraints( list.toArray( new BetaNodeFieldConstraint[2] ),
-                                                                 buildContext.getRuleBase().getConfiguration() );                    
+                                                                 buildContext.getKnowledgeBase().getConfiguration() );
                     break;                                        
                 default:
                     betaSourceConstraints = new DefaultBetaConstraints( list.toArray( new BetaNodeFieldConstraint[2] ),
-                                                              buildContext.getRuleBase().getConfiguration() );                    
+                                                              buildContext.getKnowledgeBase().getConfiguration() );
                     break;                                        
                         
             }            
 
-            MVELDialectRuntimeData data = (MVELDialectRuntimeData) buildContext.getRuleBase().getPackage( buildContext.getRule().getPackageName() ).getDialectRuntimeRegistry().getDialectData( "mvel" );
-            data.onAdd( null, ((InternalRuleBase) buildContext.getRuleBase()).getRootClassLoader() );
+            MVELDialectRuntimeData data = (MVELDialectRuntimeData) buildContext.getKnowledgeBase().getPackage( buildContext.getRule().getPackageName() ).getDialectRuntimeRegistry().getDialectData( "mvel" );
+            data.onAdd( null, buildContext.getKnowledgeBase().getRootClassLoader() );
             //MvelD data = (MVELDialectRuntimeData) buildContext.getRuleBase().getPackage( buildContext.getRule().getName() ).getDialectRuntimeRegistry().getDialectData( "mvel" );
             
             NodeTestCase testCase = (NodeTestCase) context.get( "TestCase" );
@@ -224,10 +224,9 @@ public class AccumulateNodeStep
                                                                            accFunction );
             ((MVELCompileable) accumulator).compile( data );
 
-            Accumulate accumulate = new Accumulate( sourcePattern,
-                                                    new Declaration[]{}, // required declaration
-                                                    new Accumulator[]{accumulator},
-                                                    false );
+            Accumulate accumulate = new SingleAccumulate( sourcePattern,
+                                                          new Declaration[]{}, // required declaration
+                                                          accumulator );
             AccumulateNode accNode = new AccumulateNode( buildContext.getNextId(),
                                                          leftTupleSource,
                                                          rightObjectSource,

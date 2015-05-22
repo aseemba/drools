@@ -17,10 +17,7 @@
 
 import javax.persistence.EntityManager;
 import javax.persistence.EntityManagerFactory;
-import javax.persistence.FlushModeType;
 
-import org.drools.persistence.PersistenceContext;
-import org.drools.persistence.PersistenceContextManager;
 import org.drools.persistence.TransactionManager;
 import org.kie.api.runtime.Environment;
 import org.kie.api.runtime.EnvironmentName;
@@ -78,8 +75,9 @@ public abstract class AbstractPersistenceContextManager {
                 this.appScopedEntityManager = this.emf.createEntityManager();
 
                 this.env.set( EnvironmentName.APP_SCOPED_ENTITY_MANAGER, this.appScopedEntityManager );
-                // TODO since app scoped persistence context is taken before tx is started it cannot be put as a resource
-                //this.txm.putResource(EnvironmentName.APP_SCOPED_ENTITY_MANAGER, this.appScopedEntityManager );
+                if (txm.getStatus() == TransactionManager.STATUS_ACTIVE) {
+                    this.txm.putResource(EnvironmentName.APP_SCOPED_ENTITY_MANAGER, this.appScopedEntityManager );
+                }
             } else {
                 internalAppScopedEntityManagerFlag = false;
             }
@@ -99,7 +97,6 @@ public abstract class AbstractPersistenceContextManager {
             if ( cmdScopedEntityManager == null) {
                 internalCmdScopedEntityManagerFlag = true;
                 cmdScopedEntityManager = this.emf.createEntityManager(); // no need to call joinTransaction as it will do so if one already exists
-                cmdScopedEntityManager.setFlushMode(FlushModeType.COMMIT);
                 this.env.set( EnvironmentName.CMD_SCOPED_ENTITY_MANAGER, cmdScopedEntityManager );
                 this.txm.putResource(EnvironmentName.CMD_SCOPED_ENTITY_MANAGER, cmdScopedEntityManager );
 

@@ -18,7 +18,6 @@ package org.drools.core.reteoo;
 
 import org.drools.core.base.ClassObjectType;
 import org.drools.core.common.BaseNode;
-import org.drools.core.common.InternalFactHandle;
 import org.drools.core.common.InternalWorkingMemory;
 import org.drools.core.common.RuleBasePartitionId;
 import org.drools.core.reteoo.builder.BuildContext;
@@ -26,6 +25,9 @@ import org.drools.core.rule.Pattern;
 import org.drools.core.spi.ClassWireable;
 import org.drools.core.spi.ObjectType;
 import org.drools.core.spi.PropagationContext;
+import org.drools.core.util.bitmask.AllSetBitMask;
+import org.drools.core.util.bitmask.BitMask;
+import org.drools.core.util.bitmask.EmptyBitMask;
 
 import java.io.Externalizable;
 import java.io.IOException;
@@ -33,10 +35,7 @@ import java.io.ObjectInput;
 import java.io.ObjectOutput;
 import java.util.List;
 
-import static org.drools.core.reteoo.PropertySpecificUtil.calculateNegativeMask;
-import static org.drools.core.reteoo.PropertySpecificUtil.calculatePositiveMask;
-import static org.drools.core.reteoo.PropertySpecificUtil.getSettableProperties;
-import static org.drools.core.reteoo.PropertySpecificUtil.isPropertyReactive;
+import static org.drools.core.reteoo.PropertySpecificUtil.*;
 
 /**
  * A source of <code>ReteTuple</code> s for a <code>TupleSink</code>.
@@ -52,15 +51,15 @@ public abstract class LeftTupleSource extends BaseNode
         implements
         Externalizable {
 
-    private long                      leftDeclaredMask;
-    private long                      leftInferredMask;
-    private long                      leftNegativeMask;
+    private BitMask                   leftDeclaredMask = EmptyBitMask.get();
+    private BitMask                   leftInferredMask = EmptyBitMask.get();
+    private BitMask                   leftNegativeMask = EmptyBitMask.get();
 
 
     /** The left input <code>TupleSource</code>. */
     protected LeftTupleSource         leftInput;
 
-    
+
     // ------------------------------------------------------------
     // Instance members
     // ------------------------------------------------------------
@@ -68,7 +67,6 @@ public abstract class LeftTupleSource extends BaseNode
     /** The destination for <code>Tuples</code>. */
     protected LeftTupleSinkPropagator sink;
 
-    
     private transient ObjectTypeNode.Id leftInputOtnId;
 
     // ------------------------------------------------------------
@@ -83,10 +81,10 @@ public abstract class LeftTupleSource extends BaseNode
      *
      * @param id
      */
-    protected LeftTupleSource(final int id,
-                              final RuleBasePartitionId partitionId,
-                              final boolean partitionsEnabled) {
-        super( id, partitionId, partitionsEnabled );
+    protected LeftTupleSource(int id, BuildContext context) {
+        super(id,
+              context != null ? context.getPartitionId() : RuleBasePartitionId.MAIN_PARTITION,
+              context != null && context.getKnowledgeBase().getConfiguration().isMultithreadEvaluation());
         this.sink = EmptyLeftTupleSinkAdapter.getInstance();
     }
 
@@ -97,29 +95,29 @@ public abstract class LeftTupleSource extends BaseNode
                                             ClassNotFoundException {
         super.readExternal( in );
         sink = (LeftTupleSinkPropagator) in.readObject();
-        leftInput = (LeftTupleSource) in.readObject();        
-        leftDeclaredMask = in.readLong();
-        leftInferredMask = in.readLong();
-        leftNegativeMask = in.readLong();
+        leftInput = (LeftTupleSource) in.readObject();
+        leftDeclaredMask = (BitMask) in.readObject();
+        leftInferredMask = (BitMask) in.readObject();
+        leftNegativeMask = (BitMask) in.readObject();
     }
 
     public void writeExternal(ObjectOutput out) throws IOException {
         super.writeExternal( out );
         out.writeObject( sink );
-        out.writeObject( leftInput );        
-        out.writeLong( leftDeclaredMask );
-        out.writeLong( leftInferredMask );
-        out.writeLong( leftNegativeMask );
+        out.writeObject( leftInput );
+        out.writeObject(leftDeclaredMask);
+        out.writeObject(leftInferredMask);
+        out.writeObject(leftNegativeMask);
     }
 
     public abstract short getType();
-    
+
     public abstract LeftTuple createPeer(LeftTuple original);
-    
+
     public void addTupleSink(final LeftTupleSink tupleSink) {
         addTupleSink(tupleSink, null);
     }
-    
+
     public LeftTupleSource getLeftTupleSource() {
         return leftInput;
     }
@@ -202,13 +200,13 @@ public abstract class LeftTupleSource extends BaseNode
                                     LeftTupleSource leftInput) {
         if ( context == null || context.getLastBuiltPatterns() == null ) {
             // only happens during unit tests
-            leftDeclaredMask = -1L;
+            leftDeclaredMask = AllSetBitMask.get();
             return;
         }
 
         if ( leftInput.getType() != NodeTypeEnums.LeftInputAdapterNode) {
             // BetaNode's not after LIANode are not relevant for left mask property specific, so don't block anything.
-            leftDeclaredMask = -1L;
+            leftDeclaredMask = AllSetBitMask.get();
             return;
         }
 
@@ -220,7 +218,7 @@ public abstract class LeftTupleSource extends BaseNode
 
         if ( !(objectType instanceof ClassObjectType) ) {
             // Only ClassObjectType can use property specific
-            leftDeclaredMask = -1L;
+            leftDeclaredMask = AllSetBitMask.get();
             return;
         }
 
@@ -229,14 +227,14 @@ public abstract class LeftTupleSource extends BaseNode
             // TODO: at the moment if pattern is null (e.g. for eval node) we cannot calculate the mask, so we leave it to 0
             if ( pattern != null ) {
                 List<String> leftListenedProperties = pattern.getListenedProperties();
-                List<String> settableProperties = getSettableProperties( context.getRuleBase(), objectClass );
+                List<String> settableProperties = getSettableProperties( context.getKnowledgeBase(), objectClass );
                 leftDeclaredMask = calculatePositiveMask( leftListenedProperties, settableProperties );
                 leftNegativeMask = calculateNegativeMask( leftListenedProperties, settableProperties );
                 setLeftListenedProperties(leftListenedProperties);
             }
         } else {
             // if property specific is not on, then accept all modification propagations
-            leftDeclaredMask = -1L;
+            leftDeclaredMask = AllSetBitMask.get();
         }
     }
 
@@ -250,29 +248,29 @@ public abstract class LeftTupleSource extends BaseNode
         } else {
             leftInferredMask = leftDeclaredMask;
         }
-        leftInferredMask &= (-1L - leftNegativeMask);
+        leftInferredMask = leftInferredMask.resetAll(leftNegativeMask);
     }
 
     private LeftTupleSource unwrapLeftInput(LeftTupleSource leftInput) {
-        if (leftInput.getType() == NodeTypeEnums.FromNode) {
-            return ((FromNode)leftInput).getLeftTupleSource();
+        if (leftInput.getType() == NodeTypeEnums.FromNode || leftInput.getType() == NodeTypeEnums.ReactiveFromNode) {
+            return ((LeftTupleSink)leftInput).getLeftTupleSource();
         }
         return leftInput;
     }
 
-    public long getLeftDeclaredMask() {
+    public BitMask getLeftDeclaredMask() {
         return leftDeclaredMask;
     }
 
-    public long getLeftInferredMask() {
+    public BitMask getLeftInferredMask() {
         return leftInferredMask;
     }
 
-    protected void setLeftInferredMask(long leftInferredMask) {
+    protected void setLeftInferredMask(BitMask leftInferredMask) {
         this.leftInferredMask = leftInferredMask;
     }
 
-    public long getLeftNegativeMask() {
+    public BitMask getLeftNegativeMask() {
         return leftNegativeMask;
     }
 

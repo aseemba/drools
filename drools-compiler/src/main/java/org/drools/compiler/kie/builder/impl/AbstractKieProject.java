@@ -10,7 +10,9 @@ import org.slf4j.LoggerFactory;
 
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 import static org.drools.compiler.kie.builder.impl.AbstractKieModule.buildKnowledgePackages;
 
@@ -26,6 +28,8 @@ public abstract class AbstractKieProject implements KieProject {
 
     private KieSessionModel                      defaultStatelessKieSession = null;
 
+    private Map<KieBaseModel, Set<String>>       includesInKieBase          = new HashMap<KieBaseModel, Set<String>>();
+
     protected final Map<String, KieSessionModel> kSessionModels             = new HashMap<String, KieSessionModel>();
 
     public ResultsImpl verify() {
@@ -34,9 +38,21 @@ public abstract class AbstractKieProject implements KieProject {
         return messages;
     }
 
+    public ResultsImpl verify(String... kBaseNames) {
+        ResultsImpl messages = new ResultsImpl();
+        verify(kBaseNames, messages);
+        return messages;
+    }
+
     public void verify(ResultsImpl messages) {
         for ( KieBaseModel model : kBaseModels.values() ) {
             buildKnowledgePackages((KieBaseModelImpl) model, this, messages);
+        }
+    }
+
+    public void verify(String[] kBaseNames, ResultsImpl messages) {
+        for ( String modelName : kBaseNames ) {
+            buildKnowledgePackages( (KieBaseModelImpl) kBaseModels.get( modelName ), this, messages);
         }
     }
 
@@ -54,6 +70,10 @@ public abstract class AbstractKieProject implements KieProject {
 
     public KieBaseModel getKieBaseModel(String kBaseName) {
         return kBaseModels.get( kBaseName );
+    }
+
+    public Collection<String> getKieBaseNames() {
+        return kBaseModels.keySet();
     }
 
     public KieSessionModel getKieSessionModel(String kSessionName) {
@@ -85,14 +105,14 @@ public abstract class AbstractKieProject implements KieProject {
                                 defaultKieSession = kieSessionModel;
                             } else {
                                 defaultKieSession = null;
-                                log.warn("Found more than one defualt KieSession: disabling all. KieSessions will be accessible only by name");
+                                log.warn("Found more than one default KieSession: disabling all. KieSessions will be accessible only by name");
                             }
                         } else {
                             if (defaultStatelessKieSession == null) {
                                 defaultStatelessKieSession = kieSessionModel;
                             } else {
                                 defaultStatelessKieSession = null;
-                                log.warn("Found more than one defualt StatelessKieSession: disabling all. StatelessKieSessions will be accessible only by name");
+                                log.warn("Found more than one default StatelessKieSession: disabling all. StatelessKieSessions will be accessible only by name");
                             }
                         }
                     }
@@ -107,8 +127,38 @@ public abstract class AbstractKieProject implements KieProject {
     protected void cleanIndex() {
         kBaseModels.clear();
         kSessionModels.clear();
+        includesInKieBase.clear();
         defaultKieBase = null;
         defaultKieSession = null;
         defaultStatelessKieSession = null;
+    }
+
+    public Set<String> getTransitiveIncludes(String kBaseName) {
+        return getTransitiveIncludes(getKieBaseModel(kBaseName));
+    }
+
+    public Set<String> getTransitiveIncludes(KieBaseModel kBaseModel) {
+        Set<String> includes = includesInKieBase.get(kBaseModel);
+        if (includes == null) {
+            includes = new HashSet<String>();
+            getTransitiveIncludes(kBaseModel, includes);
+            includesInKieBase.put(kBaseModel, includes);
+        }
+        return includes;
+    }
+
+    private void getTransitiveIncludes(KieBaseModel kBaseModel, Set<String> includes) {
+        if (kBaseModel == null) {
+            return;
+        }
+        Set<String> incs = ((KieBaseModelImpl)kBaseModel).getIncludes();
+        if (incs != null && !incs.isEmpty()) {
+            for (String inc : incs) {
+                if (!includes.contains(inc)) {
+                    includes.add(inc);
+                    getTransitiveIncludes(getKieBaseModel(inc), includes);
+                }
+            }
+        }
     }
 }

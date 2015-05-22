@@ -20,6 +20,7 @@ import javax.xml.bind.annotation.XmlAccessType;
 import javax.xml.bind.annotation.XmlAccessorType;
 import javax.xml.bind.annotation.XmlAttribute;
 import javax.xml.bind.annotation.XmlElement;
+import javax.xml.bind.annotation.XmlRootElement;
 import javax.xml.bind.annotation.adapters.XmlJavaTypeAdapter;
 
 import org.drools.core.command.IdentifiableResult;
@@ -30,6 +31,7 @@ import org.drools.core.xml.jaxb.util.JaxbUnknownAdapter;
 import org.kie.internal.command.Context;
 import org.kie.api.runtime.KieSession;
 
+@XmlRootElement
 @XmlAccessorType(XmlAccessType.NONE)
 public class SetGlobalCommand
     implements
@@ -58,7 +60,7 @@ public class SetGlobalCommand
         KieSession ksession = ((KnowledgeCommandContext) context).getKieSession();
 
         if ( this.outIdentifier != null ) {
-            ((StatefulKnowledgeSessionImpl) ksession).session.getExecutionResult().getResults().put( this.outIdentifier ,
+            ((StatefulKnowledgeSessionImpl) ksession).getExecutionResult().getResults().put( this.outIdentifier ,
                                                                                                      object );
         }
 

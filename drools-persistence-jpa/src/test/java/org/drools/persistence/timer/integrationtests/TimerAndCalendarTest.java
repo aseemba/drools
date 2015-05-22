@@ -1,17 +1,5 @@
 package org.drools.persistence.timer.integrationtests;
 
-import static org.drools.persistence.util.PersistenceUtil.*;
-
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.concurrent.TimeUnit;
-
-import javax.persistence.EntityManagerFactory;
-
 import org.drools.core.ClockType;
 import org.drools.core.time.SessionPseudoClock;
 import org.junit.After;
@@ -38,12 +26,21 @@ import org.kie.internal.builder.KnowledgeBuilder;
 import org.kie.internal.builder.KnowledgeBuilderError;
 import org.kie.internal.builder.KnowledgeBuilderErrors;
 import org.kie.internal.builder.KnowledgeBuilderFactory;
+import org.kie.internal.builder.conf.RuleEngineOption;
 import org.kie.internal.definition.KnowledgePackage;
 import org.kie.internal.io.ResourceFactory;
 import org.kie.internal.persistence.jpa.JPAKnowledgeService;
 import org.kie.internal.runtime.StatefulKnowledgeSession;
 
-import bitronix.tm.resource.jdbc.PoolingDataSource;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+
+import static org.drools.persistence.util.PersistenceUtil.*;
 
 @RunWith(Parameterized.class)
 public class TimerAndCalendarTest {
@@ -274,6 +271,80 @@ public class TimerAndCalendarTest {
                                             kbase );
     }
 
+    @Test
+    public void testTimerWithRemovingRule() throws Exception {
+        // DROOLS-576
+        // Only reproducible with RETEOO
+        KieBaseConfiguration kconf = KnowledgeBaseFactory.newKnowledgeBaseConfiguration();
+        kconf.setOption( RuleEngineOption.RETEOO );
+        KnowledgeBase kbase1  = KnowledgeBaseFactory.newKnowledgeBase(kconf);
+
+        String str1 = "package org.test; " +
+                "import java.util.*; " +
+
+                "global java.util.List list; " +
+
+                "rule R1\n" +
+                "    timer ( int: 5s )\n" +
+                "when\n" +
+                "    $s : String( )\n" +
+                "then\n" +
+                "    list.add( $s );\n" +
+                "end\n";
+
+        Resource resource1 = ResourceFactory.newByteArrayResource(str1.getBytes());
+        Collection<KnowledgePackage> kpackages1 = buildKnowledgePackage( resource1,
+                                                                ResourceType.DRL );
+        kbase1.addKnowledgePackages( kpackages1 );
+
+        StatefulKnowledgeSession ksession1 = JPAKnowledgeService.newStatefulKnowledgeSession(kbase1, null,
+                createEnvironment(context));
+        long ksessionId = ksession1.getIdentifier();
+
+        ArrayList<String> list = new ArrayList<String>();
+        ksession1.setGlobal( "list", list );
+
+        ksession1.insert("hello");
+        ksession1.fireAllRules();
+
+        ksession1.dispose(); // dispose before firing
+
+        Assert.assertEquals(0, list.size());
+
+        Thread.sleep(5000);
+
+        // A new kbase without the timer's activated rule
+        KnowledgeBase kbase2  = KnowledgeBaseFactory.newKnowledgeBase(kconf);
+
+        String str2 = "package org.test; " +
+                "import java.util.*; " +
+
+                "global java.util.List list; " +
+
+                "rule R2\n" +
+                "when\n" +
+                "    $s : Integer( )\n" +
+                "then\n" +
+                "    list.add( $s );\n" +
+                "end\n";
+
+        Resource resource2 = ResourceFactory.newByteArrayResource(str2.getBytes());
+        Collection<KnowledgePackage> kpackages2 = buildKnowledgePackage( resource2,
+                                                                        ResourceType.DRL );
+        kbase2.addKnowledgePackages( kpackages2 );
+
+        StatefulKnowledgeSession ksession2 = JPAKnowledgeService.loadStatefulKnowledgeSession(ksessionId, kbase2, null,
+                createEnvironment(context));
+
+        ksession2.setGlobal( "list", list );
+
+        ksession2.fireAllRules();
+
+        ksession2.dispose();
+
+        Assert.assertEquals(0, list.size());
+    }
+
     private StatefulKnowledgeSession createSession(KnowledgeBase kbase) {
         final KieSessionConfiguration conf = KnowledgeBaseFactory.newKnowledgeSessionConfiguration();
         conf.setOption( ClockTypeOption.get( ClockType.PSEUDO_CLOCK.getId() ) );
@@ -289,7 +360,7 @@ public class TimerAndCalendarTest {
 
     private StatefulKnowledgeSession disposeAndReloadSession(StatefulKnowledgeSession ksession,
                                                              KnowledgeBase kbase) {
-        int ksessionId = ksession.getId();
+        long ksessionId = ksession.getIdentifier();
         ksession.dispose();
 
         final KieSessionConfiguration conf = KnowledgeBaseFactory.newKnowledgeSessionConfiguration();

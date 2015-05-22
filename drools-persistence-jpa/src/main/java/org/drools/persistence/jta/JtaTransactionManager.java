@@ -22,6 +22,7 @@ import javax.naming.InitialContext;
 import javax.naming.NamingException;
 import javax.transaction.Status;
 import javax.transaction.SystemException;
+import javax.transaction.TransactionSynchronizationRegistry;
 import javax.transaction.UserTransaction;
 
 import org.drools.persistence.TransactionManager;
@@ -136,7 +137,8 @@ public class JtaTransactionManager
             try {
                 return InitialContext.doLookup(System.getProperty("jbpm.ut.jndi.lookup", "java:jboss/UserTransaction"));
             } catch (Exception e1) {
-                throw new IllegalStateException("Unable to find transaction: " + ex.getMessage(), ex);
+                logger.warn("Unable to find transaction: {}. Might be running in CMT environment" + ex.getMessage());
+                return null;
             }
 
         }
@@ -189,15 +191,40 @@ public class JtaTransactionManager
         return null;
     }
 
+    protected UserTransaction getUt() {
+        if (this.ut == null) {
+            this.ut = findUserTransaction();
+        }
+
+        return ut;
+    }
+
     public boolean begin() {
         if ( getStatus() == TransactionManager.STATUS_NO_TRANSACTION ) {
             try {
-                this.ut.begin();
+                getUt().begin();
                 return true;
             } catch ( Exception e ) {
-                logger.warn( "Unable to begin transaction", e);
-                throw new RuntimeException( "Unable to begin transaction",
-                                            e );
+                // special WAS handling for cached UserTrnsactions
+                if (e.getClass().getName().equals("javax.ejb.EJBException")) {
+                    // reinitialize all fields
+                    this.ut = findUserTransaction();
+                    this.tm = findTransactionManager(this.ut);
+                    this.tsr = findTransactionSynchronizationRegistry(this.ut, this.tm);
+
+
+                    try {
+                        this.ut.begin();
+                        return true;
+                    } catch (Exception ex) {
+                        logger.warn( "Unable to begin transaction", e);
+                        throw new RuntimeException( "Unable to begin transaction",  e );
+                    }
+                } else {
+
+                    logger.warn( "Unable to begin transaction", e);
+                    throw new RuntimeException( "Unable to begin transaction", e );
+                }
             }
         } 
         return false;
@@ -225,7 +252,7 @@ public class JtaTransactionManager
             		this.ut.rollback();
         		}
         	} else {
-        		this.ut.setRollbackOnly();
+        		getUt().setRollbackOnly();
         	}
         } catch ( Exception e ) {
             logger.warn( "Unable to rollback transaction", e);
@@ -238,7 +265,13 @@ public class JtaTransactionManager
     public int getStatus() {
         int s;
         try {
-            s = this.ut.getStatus();
+            // use transaction sync registry if available as it is safe way for both BMT and CMT
+            if (this.tsr != null) {
+                s = ((TransactionSynchronizationRegistry) this.tsr).getTransactionStatus();
+            } else {
+                // if no transaction sync registry available fallback to user transaction
+                s = this.ut.getStatus();
+            }
         } catch ( SystemException e ) {
             throw new RuntimeException( "Unable to get status for transaction",
                                         e );

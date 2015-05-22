@@ -16,8 +16,36 @@
 
 package org.drools.compiler.rule.builder.dialect.java;
 
-import static org.drools.compiler.rule.builder.dialect.java.JavaRuleBuilderHelper.createVariableContext;
-import static org.drools.compiler.rule.builder.dialect.java.JavaRuleBuilderHelper.generateTemplates;
+import org.drools.compiler.compiler.AnalysisResult;
+import org.drools.compiler.compiler.BoundIdentifiers;
+import org.drools.compiler.compiler.DescrBuildError;
+import org.drools.compiler.lang.descr.AccumulateDescr;
+import org.drools.compiler.lang.descr.AccumulateDescr.AccumulateFunctionCallDescr;
+import org.drools.compiler.lang.descr.AndDescr;
+import org.drools.compiler.lang.descr.BaseDescr;
+import org.drools.compiler.rule.builder.AccumulateBuilder;
+import org.drools.compiler.rule.builder.RuleBuildContext;
+import org.drools.compiler.rule.builder.RuleConditionBuilder;
+import org.drools.compiler.rule.builder.dialect.java.parser.JavaLocalDeclarationDescr;
+import org.drools.compiler.rule.builder.util.PackageBuilderUtil;
+import org.drools.core.base.accumulators.JavaAccumulatorFunctionExecutor;
+import org.drools.core.base.extractors.ArrayElementReader;
+import org.drools.core.base.extractors.SelfReferenceClassFieldReader;
+import org.drools.core.reteoo.RuleTerminalNode;
+import org.drools.core.rule.Accumulate;
+import org.drools.core.rule.Declaration;
+import org.drools.core.rule.MultiAccumulate;
+import org.drools.core.rule.MutableTypeConstraint;
+import org.drools.core.rule.Pattern;
+import org.drools.core.rule.RuleConditionElement;
+import org.drools.core.rule.SingleAccumulate;
+import org.drools.core.rule.constraint.MvelConstraint;
+import org.drools.core.spi.Accumulator;
+import org.drools.core.spi.Constraint;
+import org.drools.core.spi.DeclarationScopeResolver;
+import org.drools.core.spi.InternalReadAccessor;
+import org.drools.core.util.index.IndexUtil;
+import org.kie.api.runtime.rule.AccumulateFunction;
 
 import java.util.Arrays;
 import java.util.Comparator;
@@ -29,30 +57,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 
-import org.drools.core.base.accumulators.JavaAccumulatorFunctionExecutor;
-import org.drools.core.base.extractors.ArrayElementReader;
-import org.drools.core.base.extractors.SelfReferenceClassFieldReader;
-import org.drools.compiler.compiler.AnalysisResult;
-import org.drools.compiler.compiler.BoundIdentifiers;
-import org.drools.compiler.compiler.DescrBuildError;
-import org.drools.compiler.lang.descr.AccumulateDescr;
-import org.drools.compiler.lang.descr.AccumulateDescr.AccumulateFunctionCallDescr;
-import org.drools.compiler.lang.descr.AndDescr;
-import org.drools.compiler.lang.descr.BaseDescr;
-import org.drools.compiler.rule.builder.AccumulateBuilder;
-import org.drools.compiler.rule.builder.util.PackageBuilderUtil;
-import org.drools.core.reteoo.RuleTerminalNode;
-import org.drools.core.rule.Accumulate;
-import org.drools.core.rule.Declaration;
-import org.drools.core.rule.Pattern;
-import org.drools.core.rule.RuleConditionElement;
-import org.drools.compiler.rule.builder.RuleBuildContext;
-import org.drools.compiler.rule.builder.RuleConditionBuilder;
-import org.drools.compiler.rule.builder.dialect.java.parser.JavaLocalDeclarationDescr;
-import org.drools.core.spi.Accumulator;
-import org.drools.core.spi.DeclarationScopeResolver;
-import org.drools.core.spi.InternalReadAccessor;
-import org.kie.api.runtime.rule.AccumulateFunction;
+import static org.drools.compiler.rule.builder.dialect.java.JavaRuleBuilderHelper.createVariableContext;
+import static org.drools.compiler.rule.builder.dialect.java.JavaRuleBuilderHelper.generateTemplates;
 
 /**
  * A builder for the java dialect accumulate version
@@ -90,7 +96,7 @@ public class JavaAccumulateBuilder
             return null;
         }
 
-        final boolean readLocalsFromTuple = PackageBuilderUtil.isReadLocalsFromTuple(accumDescr, source);
+        final boolean readLocalsFromTuple = PackageBuilderUtil.isReadLocalsFromTuple(context, accumDescr, source);
         
         Map<String, Declaration> declsInScope = context.getDeclarationResolver().getDeclarations( context.getRule() );
         Map<String, Class< ? >> declCls = DeclarationScopeResolver.getDeclarationClasses( declsInScope );
@@ -129,78 +135,121 @@ public class JavaAccumulateBuilder
         final Declaration[] sourceDeclArr = source.getOuterDeclarations().values().toArray( new Declaration[0] );
         Arrays.sort( sourceDeclArr, RuleTerminalNode.SortDeclarations.instance );
 
-        // the accumulator array
-        Accumulator[] accumulators = new Accumulator[funcCalls.size()];
-
         // set of required previous declarations
         Set<Declaration> requiredDecl = new HashSet<Declaration>();
 
-        // creating the custom array reader
-        InternalReadAccessor arrayReader = new SelfReferenceClassFieldReader( Object[].class,
-                                                                              "this" );
-
-        int index = 0;
         Pattern pattern = (Pattern) context.getBuildStack().peek();
-        for ( AccumulateFunctionCallDescr fc : funcCalls ) {
-            // find the corresponding function
-            AccumulateFunction function = context.getConfiguration().getAccumulateFunction( fc.getFunction() );
-            if( function == null ) {
-                // might have been imported in the package
-                function = context.getPackageBuilder().getPackage().getAccumulateFunctions().get(fc.getFunction());
+
+        if (accumDescr.isMultiFunction()) {
+            // the accumulator array
+            Accumulator[] accumulators = new Accumulator[funcCalls.size()];
+
+            // creating the custom array reader
+            InternalReadAccessor reader = new SelfReferenceClassFieldReader( Object[].class, "this" );
+
+            int index = 0;
+            for ( AccumulateFunctionCallDescr fc : funcCalls ) {
+                AccumulateFunction function = getAccumulateFunction(context, accumDescr, fc);
+                if (function == null) {
+                    return null;
+                }
+
+                bindReaderToDeclaration(context, accumDescr, pattern, fc, new ArrayElementReader(reader, index, function.getResultType()), function.getResultType(), index);
+                accumulators[index++] = buildAccumulator(context, accumDescr, declsInScope, declCls, readLocalsFromTuple, sourceDeclArr, requiredDecl, fc, function);
             }
-            if ( function == null ) {
-                context.addError( new DescrBuildError( accumDescr,
-                                                              context.getRuleDescr(),
-                                                              null,
-                                                              "Unknown accumulate function: '" + fc.getFunction() + "' on rule '" + context.getRuleDescr().getName() + "'. All accumulate functions must be registered before building a resource." ) );
+
+            return new MultiAccumulate( source,
+                                        requiredDecl.toArray(new Declaration[requiredDecl.size()]),
+                                        accumulators );
+        } else {
+            AccumulateFunctionCallDescr fc = accumDescr.getFunctions().get(0);
+            AccumulateFunction function = getAccumulateFunction(context, accumDescr, fc);
+            if (function == null) {
                 return null;
             }
 
-            // if there is a binding, create the binding
-            if ( fc.getBind() != null ) {
-                if ( pattern.getDeclaration( fc.getBind() ) != null ) {
-                    context.addError(new DescrBuildError(context.getParentDescr(),
-                            accumDescr,
-                            null,
-                            "Duplicate declaration for variable '" + fc.getBind() + "' in the rule '" + context.getRule().getName() + "'"));
-                } else {
-                    createResultBind( pattern,
-                                      index,
-                                      arrayReader,
-                                      fc,
-                                      function );
-                }
-            }
+            bindReaderToDeclaration(context, accumDescr, pattern, fc, new SelfReferenceClassFieldReader( function.getResultType(), "this" ), function.getResultType(), -1);
+            Accumulator accumulator = buildAccumulator(context, accumDescr, declsInScope, declCls, readLocalsFromTuple, sourceDeclArr, requiredDecl, fc, function);
 
-            // analyze the expression
-            final JavaAnalysisResult analysis = (JavaAnalysisResult) context.getDialect().analyzeBlock( context,
-                                                                                                        accumDescr,
-                                                                                                        fc.getParams().length > 0 ? fc.getParams()[0] : "\"\"",
-                                                                                                        new BoundIdentifiers( declCls,
-                                                                                                                              context.getPackageBuilder().getGlobals() ) );
-
-            final BoundIdentifiers usedIdentifiers = analysis.getBoundIdentifiers();
-
-            // create the array of used declarations
-            final Declaration[] previousDeclarations = collectRequiredDeclarations( declsInScope,
-                                                                                    requiredDecl,
-                                                                                    usedIdentifiers );
-
-            // generate the code template
-            accumulators[index++] = generateFunctionCallCodeTemplate( context,
-                                                                      accumDescr,
-                                                                      sourceDeclArr,
-                                                                      fc,
-                                                                      function,
-                                                                      usedIdentifiers,
-                                                                      previousDeclarations,
-                                                                      readLocalsFromTuple );
+            return new SingleAccumulate( source,
+                                         requiredDecl.toArray(new Declaration[requiredDecl.size()]),
+                                         accumulator );
         }
+    }
 
-        return new Accumulate(source,
-                requiredDecl.toArray(new Declaration[requiredDecl.size()]),
-                accumulators,
-                accumDescr.isMultiFunction());
+    private void bindReaderToDeclaration( RuleBuildContext context, AccumulateDescr accumDescr, Pattern pattern, AccumulateFunctionCallDescr fc, InternalReadAccessor readAccessor, Class<?> resultType, int index ) {
+        if ( fc.getBind() != null ) {
+            if ( context.getDeclarationResolver().isDuplicated( context.getRule(), fc.getBind(), resultType.getName() ) ) {
+                if ( ! fc.isUnification() ) {
+                    context.addError( new DescrBuildError( context.getParentDescr(),
+                                                           accumDescr,
+                                                           null,
+                                                           "Duplicate declaration for variable '" + fc.getBind() + "' in the rule '" + context.getRule().getName() + "'" ) );
+                } else {
+                    Declaration inner = context.getDeclarationResolver().getDeclaration( context.getRule(), fc.getBind() );
+                    Constraint c = new MvelConstraint( Arrays.asList( context.getPkg().getName() ),
+                                                       index >= 0
+                                                            ? "this[ " + index + " ] == " + fc.getBind()
+                                                            : "this == " + fc.getBind(),
+                                                       new Declaration[] { inner },
+                                                       null,
+                                                       IndexUtil.ConstraintType.EQUAL,
+                                                       context.getDeclarationResolver().getDeclaration( context.getRule(), fc.getBind() ),
+                                                       index >= 0
+                                                            ? new ArrayElementReader( readAccessor, index, resultType )
+                                                            : readAccessor,
+                                                       true);
+                    (( MutableTypeConstraint) c).setType( Constraint.ConstraintType.BETA );
+                    pattern.addConstraint( c );
+                    index++;
+                }
+            } else {
+                Declaration declr = pattern.addDeclaration( fc.getBind() );
+                declr.setReadAccessor( readAccessor );
+            }
+        }
+    }
+
+    private AccumulateFunction getAccumulateFunction(RuleBuildContext context, AccumulateDescr accumDescr, AccumulateFunctionCallDescr fc) {
+        // find the corresponding function
+        AccumulateFunction function = context.getConfiguration().getAccumulateFunction( fc.getFunction() );
+        if( function == null ) {
+            // might have been imported in the package
+            function = context.getKnowledgeBuilder().getPackage().getAccumulateFunctions().get(fc.getFunction());
+        }
+        if ( function == null ) {
+            context.addError( new DescrBuildError( accumDescr,
+                                                   context.getRuleDescr(),
+                                                   null,
+                                                   "Unknown accumulate function: '" + fc.getFunction() + "' on rule '" + context.getRuleDescr().getName() + "'. All accumulate functions must be registered before building a resource." ) );
+        }
+        return function;
+    }
+
+    private Accumulator buildAccumulator(RuleBuildContext context, AccumulateDescr accumDescr, Map<String, Declaration> declsInScope, Map<String, Class<?>> declCls, boolean readLocalsFromTuple, Declaration[] sourceDeclArr, Set<Declaration> requiredDecl, AccumulateFunctionCallDescr fc, AccumulateFunction function) {
+        // analyze the expression
+        final JavaAnalysisResult analysis = (JavaAnalysisResult) context.getDialect().analyzeBlock( context,
+                                                                                                    accumDescr,
+                                                                                                    fc.getParams().length > 0 ? fc.getParams()[0] : "\"\"",
+                                                                                                    new BoundIdentifiers( declCls,
+                                                                                                                          context.getKnowledgeBuilder().getGlobals() ) );
+
+        final BoundIdentifiers usedIdentifiers = analysis.getBoundIdentifiers();
+
+        // create the array of used declarations
+        final Declaration[] previousDeclarations = collectRequiredDeclarations( declsInScope,
+                                                                                requiredDecl,
+                                                                                usedIdentifiers );
+
+        // generate the code template
+        return generateFunctionCallCodeTemplate( context,
+                                                                  accumDescr,
+                                                                  sourceDeclArr,
+                                                                  fc,
+                                                                  function,
+                                                                  usedIdentifiers,
+                                                                  previousDeclarations,
+                                                                  readLocalsFromTuple );
     }
 
     private Declaration[] collectRequiredDeclarations( Map<String, Declaration> declsInScope,
@@ -226,7 +275,7 @@ public class JavaAccumulateBuilder
                                                                               final boolean readLocalsFromTuple ) {
         final String className = "accumulateExpression" + context.getNextId();
         final Map<String, Object> map = createVariableContext( className,
-                                                               fc.getParams().length > 0 ? fc.getParams()[0] : "\"\"",
+                                                               fc.getParams().length > 0 ? fc.getParams()[ 0 ] : "\"\"",
                                                                context,
                                                                previousDeclarations,
                                                                sourceDeclArr,
@@ -247,23 +296,6 @@ public class JavaAccumulateBuilder
         return accumulator;
     }
 
-    private void createResultBind( final Pattern pattern,
-                                   int index,
-                                   InternalReadAccessor arrayReader,
-                                   AccumulateFunctionCallDescr fc,
-                                   AccumulateFunction function ) {
-        // bind function result on the result pattern
-        Declaration declr = pattern.addDeclaration( fc.getBind() );
-
-        Class< ? > type = function.getResultType();
-
-        // this bit is different, notice its the ArrayElementReader that we wire up to, not the declaration.
-        ArrayElementReader reader = new ArrayElementReader( arrayReader,
-                                                            index,
-                                                            type );
-        declr.setReadAccessor( reader );
-    }
-
     private Accumulate buildInlineAccumulate( final RuleBuildContext context,
                                               final AccumulateDescr accumDescr,
                                               final RuleConditionElement source,
@@ -275,7 +307,7 @@ public class JavaAccumulateBuilder
         accumDescr.setClassName( className );
 
         BoundIdentifiers available = new BoundIdentifiers( declCls,
-                                                           context.getPackageBuilder().getGlobals() );
+                                                           context.getKnowledgeBuilder().getGlobals() );
 
         final JavaAnalysisResult initCodeAnalysis = (JavaAnalysisResult) context.getDialect().analyzeBlock( context,
                                                                                                             accumDescr,
@@ -371,14 +403,14 @@ public class JavaAccumulateBuilder
         map.put( "hashCode",
                 actionCode.hashCode());
 
-        Accumulate accumulate = new Accumulate(source, declarations);
+        SingleAccumulate accumulate = new SingleAccumulate(source, declarations);
 
         generateTemplates("accumulateInnerClass",
                 "accumulateInvoker",
                 context,
                 className,
                 map,
-                accumulate.new Wirer(0),
+                accumulate.new Wirer(),
                 accumDescr);
         return accumulate;
     }

@@ -31,30 +31,21 @@ public class ResourceFactoryServiceImpl
     implements
         ResourceFactoryService {
 
-    private ResourceChangeNotifier notifier;
-    private ResourceChangeScanner  scanner;
-    private Object                 lock     = new Object();
-
     public ResourceChangeNotifier getResourceChangeNotifierService() {
-        synchronized ( this.lock ) {
-            if ( this.notifier == null ) {
-                this.notifier = new ResourceChangeNotifierImpl( );
-            }
-            return this.notifier;
-        }
+        throw new UnsupportedOperationException();
     }
 
     public ResourceChangeScanner getResourceChangeScannerService() {
-        synchronized ( this.lock ) {
-            if ( scanner == null ) {
-                this.scanner = new ResourceChangeScannerImpl( );
-            }
-            return this.scanner;
-        }
+        throw new UnsupportedOperationException();
     }
 
     public Resource newByteArrayResource(byte[] bytes) {
         return new ByteArrayResource( bytes );
+    }
+
+    public Resource newByteArrayResource(byte[] bytes,
+                                         String encoding) {
+        return new ByteArrayResource( bytes, encoding );
     }
 
     public Resource newClassPathResource(String path) {
@@ -99,8 +90,18 @@ public class ResourceFactoryServiceImpl
         return new FileSystemResource( file );
     }
 
+    public Resource newFileSystemResource(File file,
+                                          String encoding) {
+        return new FileSystemResource( file, encoding );
+    }
+
     public Resource newFileSystemResource(String fileName) {
         return new FileSystemResource( fileName );
+    }
+
+    public Resource newFileSystemResource(String fileName,
+                                          String encoding) {
+        return new FileSystemResource( fileName, encoding );
     }
 
     public Resource newInputStreamResource(InputStream stream) {
@@ -127,8 +128,18 @@ public class ResourceFactoryServiceImpl
         return new UrlResource( url );
     }
 
+    public Resource newUrlResource(URL url,
+                                   String encoding) {
+        return new UrlResource( url, encoding );
+    }
+
     public Resource newUrlResource(String path) {
         return new UrlResource( path );
+    }
+
+    public Resource newUrlResource(String path,
+                                   String encoding) {
+        return new UrlResource( path, encoding );
     }
 
     public Resource newDescrResource( KieDescr descr ) {

@@ -16,30 +16,31 @@
 
 package org.drools.core.common;
 
-import java.io.Serializable;
-import java.util.Collection;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-
 import org.drools.core.base.ClassObjectType;
 import org.drools.core.facttemplates.Fact;
+import org.drools.core.impl.InternalKnowledgeBase;
 import org.drools.core.reteoo.ClassObjectTypeConf;
 import org.drools.core.reteoo.FactTemplateTypeConf;
 import org.drools.core.reteoo.ObjectTypeConf;
 import org.drools.core.rule.EntryPointId;
 import org.drools.core.spi.Activation;
 
+import java.io.Serializable;
+import java.util.Collection;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+
 public class ObjectTypeConfigurationRegistry implements Serializable {
     private static final long serialVersionUID = 510l;
     
-    private InternalRuleBase ruleBase;
+    private InternalKnowledgeBase kBase;
     private ConcurrentMap<Object, ObjectTypeConf> typeConfMap;
     
 
     
-    public ObjectTypeConfigurationRegistry(InternalRuleBase ruleBase ) {
+    public ObjectTypeConfigurationRegistry(InternalKnowledgeBase kBase ) {
         super();
-        this.ruleBase = ruleBase;
+        this.kBase = kBase;
         this.typeConfMap = new ConcurrentHashMap<Object, ObjectTypeConf>();
     }
 
@@ -66,11 +67,11 @@ public class ObjectTypeConfigurationRegistry implements Serializable {
             if ( object instanceof Fact ) {;
                 objectTypeConf = new FactTemplateTypeConf( entrypoint,
                                                            ((Fact) object).getFactTemplate(),
-                                                           this.ruleBase );
+                                                           this.kBase );
             } else {
                 objectTypeConf = new ClassObjectTypeConf( entrypoint,
                                                           (Class<?>) key,
-                                                          this.ruleBase );
+                                                          this.kBase );
             }
         }
         ObjectTypeConf existing = this.typeConfMap.putIfAbsent( key, objectTypeConf );
@@ -81,7 +82,10 @@ public class ObjectTypeConfigurationRegistry implements Serializable {
         return objectTypeConf;
     }
 
-    
+    public ObjectTypeConf getObjectTypeConfByClass(Class<?> cls) {
+        return typeConfMap.get(cls);
+    }
+
     public Collection<ObjectTypeConf> values() {
         return this.typeConfMap.values();
     }

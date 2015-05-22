@@ -16,23 +16,21 @@
 
 package org.drools.compiler.rule.builder;
 
-import java.util.Stack;
-
+import org.drools.compiler.builder.impl.KnowledgeBuilderImpl;
 import org.drools.compiler.compiler.Dialect;
 import org.drools.compiler.compiler.DialectCompiletimeRegistry;
-import org.drools.compiler.compiler.PackageBuilder;
-import org.drools.compiler.lang.descr.AnnotationDescr;
 import org.drools.compiler.lang.descr.QueryDescr;
 import org.drools.compiler.lang.descr.RuleDescr;
 import org.drools.core.beliefsystem.abductive.Abductive;
+import org.drools.core.definitions.InternalKnowledgePackage;
+import org.drools.core.definitions.rule.impl.RuleImpl;
 import org.drools.core.rule.AbductiveQuery;
-import org.drools.core.rule.Declaration;
-import org.drools.core.rule.Package;
 import org.drools.core.rule.Pattern;
-import org.drools.core.rule.Query;
-import org.drools.core.rule.Rule;
+import org.drools.core.rule.QueryImpl;
 import org.drools.core.rule.RuleConditionElement;
 import org.drools.core.spi.DeclarationScopeResolver;
+
+import java.util.Stack;
 
 /**
  * A context for the current build
@@ -40,7 +38,7 @@ import org.drools.core.spi.DeclarationScopeResolver;
 public class RuleBuildContext extends PackageBuildContext {
 
     // current rule
-    private Rule rule;
+    private RuleImpl rule;
 
     // a stack for the rule building used
     // for declarations resolution
@@ -64,33 +62,33 @@ public class RuleBuildContext extends PackageBuildContext {
     /**
      * Default constructor
      */
-    public RuleBuildContext(final PackageBuilder pkgBuilder,
+    public RuleBuildContext(final KnowledgeBuilderImpl kBuilder,
                             final RuleDescr ruleDescr,
                             final DialectCompiletimeRegistry dialectCompiletimeRegistry,
-                            final Package pkg,
+                            final InternalKnowledgePackage pkg,
                             final Dialect defaultDialect) {
         this.buildStack = new Stack<RuleConditionElement>();
 
-        this.declarationResolver = new DeclarationScopeResolver(pkgBuilder.getGlobals(),
+        this.declarationResolver = new DeclarationScopeResolver(kBuilder.getGlobals(),
                                                                 this.buildStack);
         this.declarationResolver.setPackage(pkg);
         this.ruleDescr = ruleDescr;
 
         if ( ruleDescr instanceof QueryDescr ) {
-            AnnotationDescr abductive = ruleDescr.getAnnotation( Abductive.class.getSimpleName() );
+            Abductive abductive = ruleDescr.getTypedAnnotation( Abductive.class );
             if ( abductive == null ) {
-                this.rule = new Query( ruleDescr.getName() );
+                this.rule = new QueryImpl( ruleDescr.getName() );
             } else {
-                this.rule = new AbductiveQuery( ruleDescr.getName(), abductive.getValue( "mode" ) );
+                this.rule = new AbductiveQuery( ruleDescr.getName(), abductive.mode() );
             }
         } else {
-            this.rule = new Rule(ruleDescr.getName());
+            this.rule = new RuleImpl(ruleDescr.getName());
         }
         this.rule.setPackage(pkg.getName());
         this.rule.setDialect(ruleDescr.getDialect());
         this.rule.setLoadOrder( ruleDescr.getLoadOrder() );
 
-        init(pkgBuilder, pkg, ruleDescr, dialectCompiletimeRegistry, defaultDialect, this.rule);
+        init(kBuilder, pkg, ruleDescr, dialectCompiletimeRegistry, defaultDialect, this.rule);
 
         if (this.rule.getDialect() == null) {
             this.rule.setDialect(getDialect().getId());
@@ -101,7 +99,7 @@ public class RuleBuildContext extends PackageBuildContext {
             dialect.init( ruleDescr );
         }
 
-        compilerFactory = pkgBuilder.getPackageBuilderConfiguration().getComponentFactory();
+        compilerFactory = kBuilder.getBuilderConfiguration().getComponentFactory();
 
     }
 
@@ -109,7 +107,7 @@ public class RuleBuildContext extends PackageBuildContext {
      * Returns the current Rule being built
      * @return
      */
-    public Rule getRule() {
+    public RuleImpl getRule() {
         return this.rule;
     }
 

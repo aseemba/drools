@@ -16,10 +16,12 @@
 
 package org.drools.core.common;
 
-import org.drools.core.FactHandle;
+import org.drools.core.base.TraitHelper;
+import org.drools.core.factmodel.traits.TraitFactory;
 import org.drools.core.factmodel.traits.TraitProxy;
-import org.drools.core.factmodel.traits.TraitTypeEnum;
 import org.drools.core.factmodel.traits.TraitableBean;
+import org.kie.api.runtime.rule.FactHandle;
+import org.drools.core.factmodel.traits.TraitTypeEnum;
 import org.drools.core.util.AbstractBaseLinkedListNode;
 import org.drools.core.util.StringUtils;
 import org.drools.core.reteoo.LeftTuple;
@@ -32,6 +34,7 @@ import javax.xml.bind.annotation.XmlAccessorType;
 import javax.xml.bind.annotation.XmlAttribute;
 import javax.xml.bind.annotation.XmlRootElement;
 import java.util.Arrays;
+import java.util.BitSet;
 
 /**
  * Implementation of <code>FactHandle</code>.
@@ -66,6 +69,12 @@ public class DefaultFactHandle extends AbstractBaseLinkedListNode<DefaultFactHan
     private boolean                 disconnected;
 
     private TraitTypeEnum           traitType;
+
+    private boolean                 valid = true;
+
+    private boolean                 negated;
+
+    private String                  objectClassName;
 
     // ----------------------------------------------------------------------
     // Constructors
@@ -114,8 +123,7 @@ public class DefaultFactHandle extends AbstractBaseLinkedListNode<DefaultFactHan
         this.id = id;
         this.entryPoint = wmEntryPoint;
         this.recency = recency;
-        this.object = object;
-        this.objectHashCode = ( object != null ) ? object.hashCode() : 0;
+        setObject( object );
         this.identityHashCode = identityHashCode;
         this.traitType = isTraitOrTraitable ? determineTraitType() : TraitTypeEnum.NON_TRAIT;
     }
@@ -128,10 +136,10 @@ public class DefaultFactHandle extends AbstractBaseLinkedListNode<DefaultFactHan
             Object object) {
         this.id = id;
         this.entryPoint = ( wmEntryPointId == null ) ? null : new DisconnectedWorkingMemoryEntryPoint( wmEntryPointId );
+        this.recency = recency;
+        setObject( object );
         this.identityHashCode = identityHashCode;
         this.objectHashCode = objectHashCode;
-        this.recency = recency;
-        this.object = object;
         this.disconnected = true;
         this.traitType = TraitTypeEnum.NON_TRAIT;
     }
@@ -169,6 +177,27 @@ public class DefaultFactHandle extends AbstractBaseLinkedListNode<DefaultFactHan
                                                      : new DisconnectedWorkingMemoryEntryPoint(
                                                                                                 this.entryPoint.getEntryPointId() );
         this.disconnected = true;
+    }
+
+    public boolean isNegated() {
+        return negated;
+    }
+
+    public void setNegated(boolean negated) {
+        this.negated = negated;
+    }
+
+    @Override
+    public <K> K as( Class<K> klass ) throws ClassCastException {
+        if ( klass.isAssignableFrom( object.getClass() ) ) {
+            return (K) object;
+        } else if ( this.isTraitOrTraitable() ) {
+            K k = TraitHelper.extractTrait( this, klass );
+            if ( k != null ) {
+                return  k;
+            }
+        }
+        throw new ClassCastException( "The Handle's Object can't be cast to " + klass );
     }
 
     public boolean isDisconnected() {
@@ -214,7 +243,9 @@ public class DefaultFactHandle extends AbstractBaseLinkedListNode<DefaultFactHan
                ":" +
                ( ( this.entryPoint != null ) ? this.entryPoint.getEntryPointId() : "null" ) +
                ":" +
-               this.traitType.name();
+               this.traitType.name() +
+               ":" +
+               this.objectClassName;
     }
 
     @XmlAttribute(name = "external-form")
@@ -246,25 +277,40 @@ public class DefaultFactHandle extends AbstractBaseLinkedListNode<DefaultFactHan
     }
 
     public void invalidate() {
-        //this.id = -1;
-        //this.object = null;
-        //this.entryPoint = null;
+        valid = false;
     }
 
     public boolean isValid() {
-        return ( this.id != -1 );
+        return valid;
     }
 
     public Object getObject() {
         return this.object;
     }
 
+    public String getObjectClassName() {
+        return this.objectClassName;
+    }
+
     public void setObject( final Object object ) {
         this.object = object;
-        this.objectHashCode = ( object != null ) ? object.hashCode() : 0;
-        this.identityHashCode = determineIdentityHashCode( object );
+        if (object != null) {
+            this.objectClassName = object.getClass().getName();
+            this.objectHashCode = object.hashCode();
+        } else {
+            this.objectHashCode = 0;
+        }
+
         if ( isTraitOrTraitable() ) {
-            this.traitType = determineTraitType();
+            TraitTypeEnum newType = determineTraitType();
+            if ( ! ( this.traitType == TraitTypeEnum.LEGACY_TRAITABLE && newType != TraitTypeEnum.LEGACY_TRAITABLE ) ) {
+                this.identityHashCode = determineIdentityHashCode( object );
+            } else {
+                // we are replacing a non-traitable object with its proxy, so we need to preserve the identity hashcode
+            }
+            this.traitType = newType;
+        } else {
+            this.identityHashCode = determineIdentityHashCode( object );
         }
     }
 
@@ -543,6 +589,7 @@ public class DefaultFactHandle extends AbstractBaseLinkedListNode<DefaultFactHan
         clone.identityHashCode = this.identityHashCode;
         clone.disconnected = this.disconnected;
         clone.traitType = this.traitType;
+        clone.negated = this.negated;
         return clone;
     }
 
@@ -555,6 +602,7 @@ public class DefaultFactHandle extends AbstractBaseLinkedListNode<DefaultFactHan
         clone.identityHashCode = this.identityHashCode;
         clone.traitType = this.traitType;
         clone.disconnected = this.disconnected;
+        clone.negated = this.negated;
     }
     
     public DefaultFactHandle clone() {
@@ -570,6 +618,7 @@ public class DefaultFactHandle extends AbstractBaseLinkedListNode<DefaultFactHan
         clone.identityHashCode = System.identityHashCode( clone.object );
         clone.disconnected = this.disconnected;
 		clone.traitType = this.traitType;
+        clone.negated = this.negated;
         return clone;
     }
 
@@ -606,35 +655,34 @@ public class DefaultFactHandle extends AbstractBaseLinkedListNode<DefaultFactHan
         this.id = Integer.parseInt( elements[1] );
         this.identityHashCode = Integer.parseInt( elements[2] );
         this.objectHashCode = Integer.parseInt( elements[3] );
-        this.recency = Long.parseLong( elements[4] );
+        this.recency = Long.parseLong(elements[4] );
         this.entryPoint = ( StringUtils.isEmpty( elements[5] ) || "null".equals( elements[5].trim() ) ) ? null
                                                                                                        : new DisconnectedWorkingMemoryEntryPoint(
-                                                                                                                                                  elements[5].trim() );
+                elements[5].trim() );
         this.disconnected = true;
         this.traitType = elements.length > 6 ? TraitTypeEnum.valueOf( elements[6] ) : TraitTypeEnum.NON_TRAIT;
+        this.objectClassName = elements.length > 7 ? elements[7] : null;
     }
 
 
     private TraitTypeEnum determineTraitType() {
         if ( isTraitOrTraitable() ) {
-            if ( object instanceof TraitProxy ) {
-                return TraitTypeEnum.TRAIT;
-            } else if ( object instanceof TraitableBean ) {
-                return TraitTypeEnum.TRAITABLE;
-            } else {
-                return TraitTypeEnum.LEGACY_TRAITABLE;
-            }
+            return TraitFactory.determineTraitType( object );
         } else {
             return TraitTypeEnum.NON_TRAIT;
         }
     }
 
     public boolean isTraitable() {
-        return traitType == TraitTypeEnum.TRAITABLE;
+        return traitType == TraitTypeEnum.TRAITABLE || traitType == TraitTypeEnum.WRAPPED_TRAITABLE;
     }
 
     public boolean isTraiting() {
         return traitType == TraitTypeEnum.TRAIT.TRAIT;
+    }
+
+    public TraitTypeEnum getTraitType() {
+        return traitType;
     }
 
 }

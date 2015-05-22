@@ -16,19 +16,22 @@
 
 package org.drools.reteoo.common;
 
-import org.drools.core.FactHandle;
 import org.drools.core.base.ClassObjectType;
 import org.drools.core.common.InternalFactHandle;
 import org.drools.core.common.InternalWorkingMemory;
 import org.drools.core.common.WorkingMemoryAction;
+import org.drools.core.definitions.InternalKnowledgePackage;
+import org.drools.core.definitions.rule.impl.RuleImpl;
 import org.drools.core.marshalling.impl.MarshallerReaderContext;
 import org.drools.core.reteoo.LeftTuple;
+import org.drools.core.reteoo.PropertySpecificUtil;
 import org.drools.core.reteoo.TerminalNode;
-import org.drools.core.rule.*;
-import org.drools.core.rule.Package;
+import org.drools.core.rule.EntryPointId;
+import org.drools.core.rule.TypeDeclaration;
 import org.drools.core.spi.ObjectType;
 import org.drools.core.spi.PropagationContext;
-import org.drools.core.util.BitMaskUtil;
+import org.drools.core.util.bitmask.BitMask;
+import org.kie.api.runtime.rule.FactHandle;
 
 import java.io.IOException;
 import java.io.ObjectInput;
@@ -36,6 +39,8 @@ import java.io.ObjectOutput;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
+
+import static org.drools.core.reteoo.PropertySpecificUtil.*;
 
 public class RetePropagationContext
         implements
@@ -45,7 +50,7 @@ public class RetePropagationContext
 
     private int                             type;
 
-    private Rule                            rule;
+    private RuleImpl                        rule;
 
     private TerminalNode                    terminalNodeOrigin;
 
@@ -63,9 +68,9 @@ public class RetePropagationContext
     
     private LinkedList<WorkingMemoryAction> queue2; // for evaluations and fixers
 
-    private long                            modificationMask = Long.MAX_VALUE;
+    private BitMask                         modificationMask = allSetButTraitBitMask();
 
-    private long                            originalMask = Long.MAX_VALUE;
+    private BitMask                         originalMask = allSetButTraitBitMask();
 
     private Class<?>                        modifiedClass;
 
@@ -81,7 +86,7 @@ public class RetePropagationContext
 
     public RetePropagationContext(final long number,
                                   final int type,
-                                  final Rule rule,
+                                  final RuleImpl rule,
                                   final LeftTuple leftTuple,
                                   final InternalFactHandle factHandle) {
         this( number,
@@ -90,7 +95,7 @@ public class RetePropagationContext
               leftTuple,
               factHandle,
               EntryPointId.DEFAULT,
-              Long.MAX_VALUE,
+              allSetButTraitBitMask(),
               Object.class,
               null );
         this.originOffset = -1;
@@ -98,7 +103,7 @@ public class RetePropagationContext
 
     public RetePropagationContext(final long number,
                                   final int type,
-                                  final Rule rule,
+                                  final RuleImpl rule,
                                   final LeftTuple leftTuple,
                                   final InternalFactHandle factHandle,
                                   final EntryPointId entryPoint) {
@@ -108,20 +113,20 @@ public class RetePropagationContext
               leftTuple,
               factHandle,
               entryPoint,
-              Long.MAX_VALUE,
+              allSetButTraitBitMask(),
               Object.class,
               null );
     }
 
     public RetePropagationContext(final long number,
                                   final int type,
-                                  final Rule rule,
+                                  final RuleImpl rule,
                                   final LeftTuple leftTuple,
                                   final InternalFactHandle factHandle,
                                   final int activeActivations,
                                   final int dormantActivations,
                                   final EntryPointId entryPoint,
-                                  final long modificationMask) {
+                                  final BitMask modificationMask) {
         this( number,
               type,
               rule,
@@ -135,7 +140,7 @@ public class RetePropagationContext
 
     public RetePropagationContext(final long number,
                                   final int type,
-                                  final Rule rule,
+                                  final RuleImpl rule,
                                   final LeftTuple leftTuple,
                                   final InternalFactHandle factHandle,
                                   final EntryPointId entryPoint,
@@ -146,18 +151,18 @@ public class RetePropagationContext
               leftTuple,
               factHandle,
               entryPoint,
-              Long.MAX_VALUE,
+              allSetButTraitBitMask(),
               Object.class,
               readerContext );
     }
 
     public RetePropagationContext(final long number,
                                   final int type,
-                                  final Rule rule,
+                                  final RuleImpl rule,
                                   final LeftTuple leftTuple,
                                   final InternalFactHandle factHandle,
                                   final EntryPointId entryPoint,
-                                  final long modificationMask,
+                                  final BitMask modificationMask,
                                   final Class<?> modifiedClass,
                                   final MarshallerReaderContext readerContext) {
         this.type = type;
@@ -178,11 +183,11 @@ public class RetePropagationContext
                                             ClassNotFoundException {
         this.type = in.readInt();
         this.propagationNumber = in.readLong();
-        this.rule = (Rule) in.readObject();
+        this.rule = (RuleImpl) in.readObject();
         this.leftTuple = (LeftTuple) in.readObject();
         this.entryPoint = (EntryPointId) in.readObject();
         this.originOffset = in.readInt();
-        this.modificationMask = in.readLong();
+        this.modificationMask = (BitMask) in.readObject();
     }
 
     public void writeExternal(ObjectOutput out) throws IOException {
@@ -192,7 +197,7 @@ public class RetePropagationContext
         out.writeObject( this.leftTuple );
         out.writeObject( this.entryPoint );
         out.writeInt( this.originOffset );
-        out.writeLong(this.modificationMask);
+        out.writeObject(this.modificationMask);
     }
 
     public long getPropagationNumber() {
@@ -208,7 +213,7 @@ public class RetePropagationContext
      *
      * @see org.kie.reteoo.PropagationContext#getRuleOrigin()
      */
-    public Rule getRuleOrigin() {
+    public RuleImpl getRuleOrigin() {
         return this.rule;
     }
 
@@ -346,52 +351,56 @@ public class RetePropagationContext
         }
     }
 
-    public long getModificationMask() {
+    public BitMask getModificationMask() {
         return modificationMask;
     }
 
-    public void setModificationMask( long modificationMask ) {
+    public void setModificationMask( BitMask modificationMask ) {
         this.modificationMask = modificationMask;
     }
 
     public PropagationContext adaptModificationMaskForObjectType(ObjectType type, InternalWorkingMemory workingMemory) {
-        if (originalMask == Long.MAX_VALUE || originalMask <= 0 || !(type instanceof ClassObjectType)) {
+        if (isAllSetPropertyReactiveMask(originalMask) || originalMask.isSet(PropertySpecificUtil.TRAITABLE_BIT) || !(type instanceof ClassObjectType)) {
             return this;
         }
         ClassObjectType classObjectType = (ClassObjectType)type;
-        Long cachedMask = classObjectType.getTransformedMask(modifiedClass, originalMask);
+        BitMask cachedMask = classObjectType.getTransformedMask(modifiedClass, originalMask);
 
         if (cachedMask != null) {
             return this;
         }
 
         modificationMask = originalMask;
-        long typeBit = modificationMask & Long.MIN_VALUE;
-        modificationMask &= Long.MAX_VALUE;
+        boolean typeBit = modificationMask.isSet(PropertySpecificUtil.TRAITABLE_BIT);
+        modificationMask = modificationMask.reset(PropertySpecificUtil.TRAITABLE_BIT);
 
 
         Class<?> classType = classObjectType.getClassType();
         String pkgName = classType.getPackage().getName();
 
         if (classType == modifiedClass || "java.lang".equals(pkgName) || !(classType.isInterface() || modifiedClass.isInterface())) {
-            modificationMask |= typeBit;
+            if (typeBit) {
+                modificationMask = modificationMask.set(PropertySpecificUtil.TRAITABLE_BIT);
+            }
             return this;
         }
 
-        modificationMask = 0L;
         List<String> typeClassProps = getSettableProperties(workingMemory, classType, pkgName);
         List<String> modifiedClassProps = getSettableProperties( workingMemory, modifiedClass );
+        modificationMask = getEmptyPropertyReactiveMask(typeClassProps.size());
 
         for (int i = 0; i < modifiedClassProps.size(); i++) {
-            if (BitMaskUtil.isPositionSet(originalMask, i)) {
+            if (isPropertySetOnMask(originalMask, i)) {
                 int posInType = typeClassProps.indexOf(modifiedClassProps.get(i));
                 if (posInType >= 0) {
-                    modificationMask = BitMaskUtil.set(modificationMask, posInType);
+                    modificationMask = setPropertyOnMask(modificationMask, posInType);
                 }
             }
         }
 
-        modificationMask |= typeBit;
+        if (typeBit) {
+            modificationMask = modificationMask.set(PropertySpecificUtil.TRAITABLE_BIT);
+        }
 
         classObjectType.storeTransformedMask(modifiedClass, originalMask, modificationMask);
 
@@ -406,7 +415,7 @@ public class RetePropagationContext
         if ( pkgName.equals( "java.lang" ) || pkgName.equals( "java.util" ) ) {
             return Collections.EMPTY_LIST;
         }
-        Package pkg = workingMemory.getRuleBase().getPackage( pkgName );
+        InternalKnowledgePackage pkg = workingMemory.getKnowledgeBase().getPackage( pkgName );
         TypeDeclaration tdecl =  pkg != null ? pkg.getTypeDeclaration( classType ) : null;
         return tdecl != null ? tdecl.getSettableProperties() : Collections.EMPTY_LIST;
     }

@@ -16,25 +16,24 @@
 
 package org.drools.core.rule;
 
-import java.io.Externalizable;
-import java.io.IOException;
-import java.io.ObjectInput;
-import java.io.ObjectOutput;
-import java.io.Serializable;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-
 import org.drools.core.base.ClassObjectType;
 import org.drools.core.factmodel.ClassDefinition;
 import org.drools.core.facttemplates.FactTemplate;
 import org.drools.core.facttemplates.FactTemplateObjectType;
-import org.drools.core.spi.AcceptsReadAccessor;
 import org.drools.core.spi.InternalReadAccessor;
 import org.drools.core.spi.ObjectType;
 import org.drools.core.util.ClassUtils;
-import org.kie.internal.definition.KnowledgeDefinition;
+import org.kie.api.definition.type.Role;
 import org.kie.api.io.Resource;
+import org.kie.internal.definition.KnowledgeDefinition;
+
+import java.io.Externalizable;
+import java.io.IOException;
+import java.io.ObjectInput;
+import java.io.ObjectOutput;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * The type declaration class stores all type's metadata
@@ -43,7 +42,8 @@ import org.kie.api.io.Resource;
 public class TypeDeclaration
     implements
     KnowledgeDefinition,
-    Externalizable {
+    Externalizable,
+    Comparable<TypeDeclaration> {
 
     public static final int ROLE_BIT                    = 1;
     public static final int TYPESAFE_BIT                = 2;
@@ -51,68 +51,17 @@ public class TypeDeclaration
     public static final int KIND_BIT                    = 8;
     public static final int NATURE_BIT                  = 16;
 
-
-    public static final String ATTR_CLASS               = "class";
-    public static final String ATTR_TYPESAFE            = "typesafe";
-    public static final String ATTR_DURATION            = "duration";
-    public static final String ATTR_TIMESTAMP           = "timestamp";
-    public static final String ATTR_EXPIRE              = "expires";
-    public static final String ATTR_KEY                 = "key";
-    public static final String ATTR_FIELD_POSITION      = "position";
-    public static final String ATTR_PROP_CHANGE_SUPPORT = "propertyChangeSupport";
-    public static final String ATTR_PROP_SPECIFIC       = "propertyReactive";
-    public static final String ATTR_NOT_PROP_SPECIFIC   = "classReactive";
-
     public int setMask                                  = 0;
 
-    public static enum Kind {
-        CLASS, TRAIT, ENUM;
-
-        public static final String ID = "kind";
-
-        public static Kind parseKind( String kind ) {
-            if ( "class".equalsIgnoreCase( kind ) ) {
-                return CLASS;
-            } else if ( "trait".equalsIgnoreCase( kind ) ) {
-                return TRAIT;
-            }else if ( "enum".equalsIgnoreCase( kind ) ) {
-                return ENUM;
-            }
-            return null;
-        }
+    public enum Kind {
+        CLASS, TRAIT, ENUM
     }
 
-    public static enum Role {
-        FACT, EVENT;
-
-        public static final String ID = "role";
-
-        public static Role parseRole(String role) {
-            if ( "event".equalsIgnoreCase( role ) ) {
-                return EVENT;
-            } else if ( "fact".equalsIgnoreCase( role ) ) {
-                return FACT;
-            }
-            return null;
-        }
+    public enum Format {
+        POJO, TEMPLATE
     }
 
-    public static enum Format {
-        POJO, TEMPLATE;
-
-        public static final String ID = "format";
-
-        public static Format parseFormat(String format) {
-            if ( "pojo".equalsIgnoreCase( format ) ) {
-                return POJO;
-            } else if ( "template".equalsIgnoreCase( format ) ) {
-                return TEMPLATE;
-            }
-            return null;
-        }
-    }
-
-    public static enum Nature {
+    public enum Nature {
         /**
          * A DECLARATION is a Type Declaration that does not contain any
          * field definition and that is just used to add meta-data to an
@@ -140,7 +89,7 @@ public class TypeDeclaration
     }
 
     private String                 typeName;
-    private Role                   role;
+    private Role.Type              role;
     private Format                 format;
     private Kind                   kind;
     private Nature                 nature;
@@ -164,11 +113,12 @@ public class TypeDeclaration
     private transient ObjectType   objectType;
     private long                   expirationOffset = -1;
 
+    private int                    order;
     private List<TypeDeclaration>  redeclarations;
 
     public TypeDeclaration() {
 
-        role = Role.FACT;
+        role = Role.Type.FACT;
         format = Format.POJO;
         kind = Kind.CLASS;
         nature = Nature.DECLARATION;
@@ -182,12 +132,13 @@ public class TypeDeclaration
         this(typeClass.getSimpleName());
         setTypeClass(typeClass);
         javaBased = true;
+        setTypeClassDef( new ClassDefinition( typeClass ) );
     }
 
     public TypeDeclaration( String typeName ) {
         this.typeName = typeName;
 
-        role = Role.FACT;
+        role = Role.Type.FACT;
         format = Format.POJO;
         kind = Kind.CLASS;
         nature = Nature.DECLARATION;
@@ -204,7 +155,7 @@ public class TypeDeclaration
     public void readExternal( ObjectInput in ) throws IOException,
                                                       ClassNotFoundException {
         this.typeName = (String) in.readObject();
-        this.role = (Role) in.readObject();
+        this.role = (Role.Type) in.readObject();
         this.format = (Format) in.readObject();
         this.kind = (Kind) in.readObject();
         this.nature = (Nature) in.readObject();
@@ -258,14 +209,14 @@ public class TypeDeclaration
     /**
      * @return the category
      */
-    public Role getRole() {
+    public Role.Type getRole() {
         return role;
     }
 
     /**
      * @param role the category to set
      */
-    public void setRole(Role role) {
+    public void setRole(Role.Type role) {
         this.setMask = this.setMask | ROLE_BIT;
         this.role = role;
     }
@@ -381,18 +332,11 @@ public class TypeDeclaration
 
     /**
      * Returns true if the given parameter matches this type declaration
-     *
-     * @param clazz
-     * @return
      */
     public boolean matches(Object clazz) {
-        boolean matches = false;
-        if ( clazz instanceof FactTemplate ) {
-            matches = this.typeTemplate.equals( clazz );
-        } else {
-            matches = this.typeClass.isAssignableFrom( (Class< ? >) clazz );
-        }
-        return matches;
+        return clazz instanceof FactTemplate ?
+               this.typeTemplate.equals( clazz ) :
+               this.typeClass.isAssignableFrom( (Class< ? >) clazz );
     }
 
     /**
@@ -449,28 +393,6 @@ public class TypeDeclaration
 
     public void setTimestampExtractor(InternalReadAccessor timestampExtractor) {
         this.timestampExtractor = timestampExtractor;
-    }
-
-    public class DurationAccessorSetter
-        implements
-        AcceptsReadAccessor,
-        Serializable {
-        private static final long serialVersionUID = 510l;
-
-        public void setReadAccessor(InternalReadAccessor readAccessor) {
-            setDurationExtractor( readAccessor );
-        }
-    }
-
-    public class TimestampAccessorSetter
-        implements
-        AcceptsReadAccessor,
-        Serializable {
-        private static final long serialVersionUID = 510l;
-
-        public void setReadAccessor(InternalReadAccessor readAccessor) {
-            setTimestampExtractor( readAccessor );
-        }
     }
 
     public Resource getResource() {
@@ -598,4 +520,18 @@ public class TypeDeclaration
     public String getId() {
         return getTypeName();
     }
+
+    public int getOrder() {
+        return order;
+    }
+
+    public void setOrder( int order ) {
+        this.order = order;
+    }
+
+    @Override
+    public int compareTo( TypeDeclaration o ) {
+        return this.order - o.order;
+    }
+
 }

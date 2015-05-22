@@ -16,20 +16,12 @@
 
 package org.drools.core.base.dataproviders;
 
-import java.io.Externalizable;
-import java.io.IOException;
-import java.io.ObjectInput;
-import java.io.ObjectOutput;
-import java.io.Serializable;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Iterator;
-
 import org.drools.core.WorkingMemory;
 import org.drools.core.base.mvel.MVELCompilationUnit;
 import org.drools.core.base.mvel.MVELCompileable;
 import org.drools.core.common.InternalFactHandle;
 import org.drools.core.common.InternalWorkingMemory;
+import org.drools.core.definitions.rule.impl.RuleImpl;
 import org.drools.core.reteoo.LeftTuple;
 import org.drools.core.rule.Declaration;
 import org.drools.core.rule.MVELDialectRuntimeData;
@@ -39,6 +31,17 @@ import org.drools.core.spi.Tuple;
 import org.drools.core.util.ArrayIterator;
 import org.drools.core.util.MVELSafeHelper;
 import org.mvel2.integration.VariableResolverFactory;
+
+import java.io.Externalizable;
+import java.io.IOException;
+import java.io.ObjectInput;
+import java.io.ObjectOutput;
+import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.List;
 
 public class MVELDataProvider
     implements
@@ -52,6 +55,8 @@ public class MVELDataProvider
     private String                  id;
 
     private Serializable            expr;
+
+    private List<MVELDataProvider>  clones;
 
     public MVELDataProvider() {
 
@@ -67,24 +72,30 @@ public class MVELDataProvider
                                             ClassNotFoundException {
         id = in.readUTF();
         unit = (MVELCompilationUnit) in.readObject();
-        //        expr    = (Serializable)in.readObject();
-        //        prototype   = (DroolsMVELFactory)in.readObject();
+        clones = (List<MVELDataProvider>) in.readObject();
     }
 
     public void writeExternal(ObjectOutput out) throws IOException {
         out.writeUTF( id );
-        out.writeObject( unit );
-        //        out.writeObject(expr);
-        //        out.writeObject(prototype);
+        out.writeObject(unit);
+        out.writeObject( clones );
     }
 
     @SuppressWarnings("unchecked")
     public void compile(MVELDialectRuntimeData runtimeData) {
         expr = unit.getCompiledExpression( runtimeData );
-        
+        if (clones != null) {
+            for (MVELDataProvider clone : clones) {
+                clone.expr = clone.unit.getCompiledExpression(runtimeData);
+            }
+        }
 //        @TODO URGENT DO NOT FORGET!!!!
 //        Map previousDeclarations = this.unit.getFactory().getPreviousDeclarations();
 //        this.requiredDeclarations = (Declaration[]) previousDeclarations.values().toArray( new Declaration[previousDeclarations.size()] );
+    }
+
+    public void compile(MVELDialectRuntimeData runtimeData, RuleImpl rule) {
+        expr = unit.getCompiledExpression( runtimeData, rule.toRuleNameAndPathString() );
     }
 
     public Declaration[] getRequiredDeclarations() {
@@ -125,9 +136,12 @@ public class MVELDataProvider
     }
 
     public DataProvider clone() {
-        // not sure this is safe, but at this point we don't have a classloader
-        // reference to compile a new copy of the data provider. My require
-        // refactory later.
-        return this;
+        MVELDataProvider clone = new MVELDataProvider(unit.clone(), id);
+        clone.expr = expr;
+        if (clones == null) {
+            clones = new ArrayList<MVELDataProvider>();
+        }
+        clones.add(clone);
+        return clone;
     }
 }

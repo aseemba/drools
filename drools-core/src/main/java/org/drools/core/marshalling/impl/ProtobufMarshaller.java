@@ -16,16 +16,8 @@
 
 package org.drools.core.marshalling.impl;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.util.HashMap;
-import java.util.Map;
-
 import org.drools.core.RuleBaseConfiguration;
 import org.drools.core.SessionConfiguration;
-import org.drools.core.common.AbstractWorkingMemory;
-import org.drools.core.common.InternalRuleBase;
 import org.drools.core.common.InternalWorkingMemory;
 import org.drools.core.common.Scheduler.ActivationTimerInputMarshaller;
 import org.drools.core.impl.InternalKnowledgeBase;
@@ -33,9 +25,7 @@ import org.drools.core.impl.KnowledgeBaseImpl;
 import org.drools.core.impl.StatefulKnowledgeSessionImpl;
 import org.drools.core.phreak.PhreakTimerNode.TimerNodeTimerInputMarshaller;
 import org.drools.core.reteoo.ObjectTypeNode.ExpireJobContextTimerInputMarshaller;
-import org.drools.core.reteoo.ReteooRuleBase;
 import org.drools.core.rule.SlidingTimeWindow.BehaviorJobContextTimerInputMarshaller;
-import org.drools.core.spi.GlobalResolver;
 import org.kie.api.KieBase;
 import org.kie.api.marshalling.Marshaller;
 import org.kie.api.marshalling.MarshallingConfiguration;
@@ -46,6 +36,12 @@ import org.kie.api.runtime.KieSessionConfiguration;
 import org.kie.api.time.SessionClock;
 import org.kie.internal.KnowledgeBaseFactory;
 import org.kie.internal.runtime.StatefulKnowledgeSession;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * A Marshaller implementation that uses ProtoBuf as the marshalling
@@ -66,12 +62,10 @@ public class ProtobufMarshaller
         TIMER_READERS.put( ProtobufMessages.Timers.TimerType.TIMER_NODE_VALUE, new TimerNodeTimerInputMarshaller() );
     }
     
-    KieBase                       kbase;
-    GlobalResolver                      globalResolver;
-    RuleBaseConfiguration ruleBaseConfig;
+    KieBase                             kbase;
+    RuleBaseConfiguration               ruleBaseConfig;
     MarshallingConfiguration            marshallingConfig;
     ObjectMarshallingStrategyStore      strategyStore;
-    ;
 
     public ProtobufMarshaller(KieBase kbase,
                               MarshallingConfiguration marshallingConfig) {
@@ -86,9 +80,6 @@ public class ProtobufMarshaller
         return unmarshall( stream, null, null );
     }
 
-    /* (non-Javadoc)
-     * @see org.kie.api.marshalling.Marshaller#read(java.io.InputStream, org.kie.common.InternalRuleBase, int, org.kie.api.concurrent.ExecutorService)
-     */
     public StatefulKnowledgeSession unmarshall(final InputStream stream,
                                                KieSessionConfiguration config,
                                                Environment environment) throws IOException,
@@ -102,26 +93,26 @@ public class ProtobufMarshaller
         }
 
         MarshallerReaderContext context = new MarshallerReaderContext( stream,
-                                                                       (InternalRuleBase) ((KnowledgeBaseImpl) kbase).ruleBase,
-                                                                       RuleBaseNodes.getNodeMap( (InternalRuleBase) ((KnowledgeBaseImpl) kbase).ruleBase ),
+                                                                       (KnowledgeBaseImpl) kbase,
+                                                                       RuleBaseNodes.getNodeMap( (KnowledgeBaseImpl) kbase ),
                                                                        this.strategyStore,
                                                                        TIMER_READERS,
                                                                        this.marshallingConfig.isMarshallProcessInstances(),
                                                                        this.marshallingConfig.isMarshallWorkItems(),
                                                                        environment );
 
-        int id = ((ReteooRuleBase) ((KnowledgeBaseImpl) this.kbase).ruleBase).nextWorkingMemoryCounter();
-        RuleBaseConfiguration conf = ((ReteooRuleBase) ((KnowledgeBaseImpl) this.kbase).ruleBase).getConfiguration();
+        int id = ((KnowledgeBaseImpl) this.kbase).nextWorkingMemoryCounter();
+        RuleBaseConfiguration conf = ((KnowledgeBaseImpl) this.kbase).getConfiguration();
 
-        AbstractWorkingMemory session = ProtobufInputMarshaller.readSession( context,
+        StatefulKnowledgeSessionImpl session = ProtobufInputMarshaller.readSession( context,
                                                                              id,
                                                                              environment,
                                                                              (SessionConfiguration) config );
         context.close();
         if ( ((SessionConfiguration) config).isKeepReference() ) {
-            ((ReteooRuleBase) ((KnowledgeBaseImpl) this.kbase).ruleBase).addStatefulSession( session );
+            ((KnowledgeBaseImpl) this.kbase).addStatefulSession(session);
         }
-        return (StatefulKnowledgeSession) session.getKnowledgeRuntime();
+        return session;
 
     }
 
@@ -129,18 +120,17 @@ public class ProtobufMarshaller
                            final KieSession ksession) throws IOException,
                                                                    ClassNotFoundException {
         MarshallerReaderContext context = new MarshallerReaderContext( stream,
-                                                                       (InternalRuleBase) ((KnowledgeBaseImpl) kbase).ruleBase,
-                                                                       RuleBaseNodes.getNodeMap( (InternalRuleBase) ((KnowledgeBaseImpl) kbase).ruleBase ),
+                                                                       (KnowledgeBaseImpl) kbase,
+                                                                       RuleBaseNodes.getNodeMap( (KnowledgeBaseImpl) kbase ),
                                                                        this.strategyStore,
                                                                        TIMER_READERS,
                                                                        this.marshallingConfig.isMarshallProcessInstances(),
                                                                        marshallingConfig.isMarshallWorkItems(),
                                                                        ksession.getEnvironment() );
 
-        ProtobufInputMarshaller.readSession( (AbstractWorkingMemory) ((StatefulKnowledgeSessionImpl) ksession).session,
-                                             context );
+        ProtobufInputMarshaller.readSession((StatefulKnowledgeSessionImpl) ksession,
+                                            context);
         context.close();
-
     }
 
     public void marshall(final OutputStream stream,
@@ -148,16 +138,14 @@ public class ProtobufMarshaller
         marshall( stream, ksession, ksession.<SessionClock> getSessionClock().getCurrentTime() );
     }
 
-    /* (non-Javadoc)
-     * @see org.kie.api.marshalling.Marshaller#write(java.io.OutputStream, org.kie.common.InternalRuleBase, org.kie.StatefulSession)
-     */
     public void marshall(final OutputStream stream,
                          final KieSession ksession,
                          final long clockTime) throws IOException {
+        ((InternalWorkingMemory) ksession).flushNonMarshallablePropagations();
         MarshallerWriteContext context = new MarshallerWriteContext( stream,
-                                                                     (InternalRuleBase) ((InternalKnowledgeBase) kbase).getRuleBase(),
-                                                                     (InternalWorkingMemory) ((StatefulKnowledgeSessionImpl) ksession).session,
-                                                                     RuleBaseNodes.getNodeMap( (InternalRuleBase) ((InternalKnowledgeBase) kbase).getRuleBase() ),
+                                                                     (InternalKnowledgeBase) kbase,
+                                                                     (InternalWorkingMemory) ksession,
+                                                                     RuleBaseNodes.getNodeMap( (InternalKnowledgeBase) kbase ),
                                                                      this.strategyStore,
                                                                      this.marshallingConfig.isMarshallProcessInstances(),
                                                                      this.marshallingConfig.isMarshallWorkItems(),

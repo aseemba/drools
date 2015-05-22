@@ -1,5 +1,15 @@
 package org.drools.compiler.compiler.io.memory;
 
+import org.drools.compiler.commons.jci.readers.ResourceReader;
+import org.drools.compiler.commons.jci.stores.ResourceStore;
+import org.drools.compiler.compiler.io.File;
+import org.drools.compiler.compiler.io.FileSystem;
+import org.drools.compiler.compiler.io.Folder;
+import org.drools.compiler.compiler.io.Path;
+import org.drools.compiler.compiler.io.Resource;
+import org.drools.core.util.IoUtils;
+import org.drools.core.util.StringUtils;
+
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.FileOutputStream;
@@ -21,16 +31,6 @@ import java.util.jar.JarInputStream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
-
-import org.drools.compiler.commons.jci.readers.ResourceReader;
-import org.drools.compiler.commons.jci.stores.ResourceStore;
-import org.drools.compiler.compiler.io.File;
-import org.drools.compiler.compiler.io.FileSystem;
-import org.drools.compiler.compiler.io.Folder;
-import org.drools.compiler.compiler.io.Path;
-import org.drools.compiler.compiler.io.Resource;
-import org.drools.core.util.FileManager;
-import org.drools.core.util.StringUtils;
 
 public class MemoryFileSystem
     implements
@@ -147,7 +147,7 @@ public class MemoryFileSystem
     }
 
     public boolean existsFile(String path) {
-        return fileContents.containsKey( path );
+        return fileContents.containsKey( MemoryFolder.trimLeadingAndTrailing( path ) );
     }
 
     public void createFolder(MemoryFolder folder) {                
@@ -314,7 +314,7 @@ public class MemoryFileSystem
                 printFs( (Folder) rs,
                          out );
             } else {
-                out.println( new String( getFileContents( (MemoryFile) rs ) ) );
+                out.println( new String( getFileContents( (MemoryFile) rs ), IoUtils.UTF8_CHARSET ) );
             }
         }
     }
@@ -415,7 +415,7 @@ public class MemoryFileSystem
                 byte[] bytes = getFileContents( (MemoryFile) rs );
 
                 try {
-                    FileManager.write( new java.io.File( file1, ((File) rs).getName()), bytes);
+                    IoUtils.write(new java.io.File(file1, ((File) rs).getName()), bytes);
                 } catch ( IOException e ) {
                     throw new RuntimeException("Unable to write project to file system\n", e);
                 }
@@ -426,14 +426,16 @@ public class MemoryFileSystem
     private void writeJarEntries(Folder f,
                                  ZipOutputStream out) throws IOException {
         for ( Resource rs : f.getMembers() ) {
+            String rname = rs.getPath().toPortableString();
             if ( rs instanceof Folder ) {
-                ZipEntry entry = new ZipEntry( rs.getPath().toPortableString() );
+                rname = rname.endsWith("/") ? rname : rname + "/"; // a folder name must end with / according to ZIP spec
+                ZipEntry entry = new ZipEntry( rname );
                 out.putNextEntry( entry );
 
                 writeJarEntries( (Folder) rs,
                                  out );
             } else {
-                ZipEntry entry = new ZipEntry( rs.getPath().toPortableString() );
+                ZipEntry entry = new ZipEntry( rname );
                 out.putNextEntry( entry );
 
                 byte[] contents = getFileContents( (MemoryFile) rs );
@@ -508,7 +510,8 @@ public class MemoryFileSystem
     public String findPomProperties() {
         for( Entry<String, byte[]> content : fileContents.entrySet() ) {
             if ( content.getKey().endsWith( "pom.properties" ) && content.getKey().startsWith( "META-INF/maven/" ) ) {
-                return StringUtils.readFileAsString( new InputStreamReader( new ByteArrayInputStream( content.getValue() ) ) );
+                ByteArrayInputStream byteArrayIs =  new ByteArrayInputStream( content.getValue() );
+                return StringUtils.readFileAsString( new InputStreamReader( byteArrayIs, IoUtils.UTF8_CHARSET ) );
             }
         }
         return null;

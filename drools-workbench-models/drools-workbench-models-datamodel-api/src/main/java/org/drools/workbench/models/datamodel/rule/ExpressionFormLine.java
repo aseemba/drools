@@ -18,7 +18,9 @@ package org.drools.workbench.models.datamodel.rule;
 
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
+
+import org.drools.workbench.models.datamodel.rule.visitors.CopyExpressionVisitor;
+import org.drools.workbench.models.datamodel.rule.visitors.ToStringExpressionVisitor;
 
 public class ExpressionFormLine
         implements
@@ -27,15 +29,17 @@ public class ExpressionFormLine
 
     private String binding = null;
     private LinkedList<ExpressionPart> parts = new LinkedList<ExpressionPart>();
+    private int index = Integer.MAX_VALUE;
 
     public ExpressionFormLine() {
     }
 
-    public ExpressionFormLine( ExpressionPart part ) {
-        appendPart( part );
+    public ExpressionFormLine( final int index ) {
+        this.index = index;
     }
 
     public ExpressionFormLine( ExpressionFormLine other ) {
+        this.index = other.getIndex();
         CopyExpressionVisitor copier = new CopyExpressionVisitor();
         if ( other.getParts().size() == 0 ) {
             return;
@@ -45,13 +49,17 @@ public class ExpressionFormLine
         }
     }
 
-    public String getText( boolean renderBindVariable ) {
-        return new ToStringVisitor().buildString( renderBindVariable ? getBinding() : null,
-                                                  getRootExpression() );
+    public ExpressionFormLine( ExpressionPart part ) {
+        appendPart( part );
     }
 
-    public String getText() {
-        return getText( false );
+    public String getText( final ToStringExpressionVisitor visitor ) {
+        visitor.visit( getRootExpression() );
+        return visitor.getText();
+    }
+
+    public int getIndex() {
+        return this.index;
     }
 
     public void appendPart( ExpressionPart part ) {
@@ -119,7 +127,7 @@ public class ExpressionFormLine
     }
 
     public boolean isBound() {
-        return binding != null;
+        return !( binding == null || binding.isEmpty() );
     }
 
     public String getBinding() {
@@ -134,119 +142,38 @@ public class ExpressionFormLine
         return this.parts;
     }
 
-    public static class ToStringVisitor
-            implements
-            ExpressionVisitor {
-
-        private StringBuilder str;
-        private boolean first;
-
-        public ToStringVisitor() {
-
+    @Override
+    public boolean equals( Object o ) {
+        if ( this == o ) {
+            return true;
+        }
+        if ( o == null || getClass() != o.getClass() ) {
+            return false;
         }
 
-        public String buildString( String bindVariable,
-                                   ExpressionPart exp ) {
-            if ( exp == null ) {
-                return "";
-            }
-            str = new StringBuilder();
-            first = true;
-            exp.accept( this );
-            return ( bindVariable == null ? "" : bindVariable + ": " ) + str.toString();
+        ExpressionFormLine that = (ExpressionFormLine) o;
+
+        if ( index != that.index ) {
+            return false;
+        }
+        if ( binding != null ? !binding.equals( that.binding ) : that.binding != null ) {
+            return false;
+        }
+        if ( parts != null ? !parts.equals( that.parts ) : that.parts != null ) {
+            return false;
         }
 
-        public void visit( ExpressionPart part ) {
-            throw new IllegalStateException( "can't generate text for: " + part.getClass().getName() );
-        }
+        return true;
+    }
 
-        public void visit( ExpressionField part ) {
-            if ( !first ) {
-                str.append( '.' );
-            }
-            str.append( part.getName() );
-            moveNext( part );
-        }
-
-        public void visit( ExpressionMethod part ) {
-            if ( !first ) {
-                str.append( '.' );
-            }
-            str.append( part.getName() )
-                    .append( '(' )
-                    .append( paramsToString( part.getParams() ) )
-                    .append( ')' );
-            moveNext( part );
-        }
-
-        public void visit( ExpressionVariable part ) {
-            if ( !first ) {
-                str.append( '.' );
-            }
-            str.append( part.getName() );
-            moveNext( part );
-        }
-
-        public void visit( ExpressionUnboundFact part ) {
-            moveNext( part,
-                      false );
-        }
-
-        public void visit( ExpressionGlobalVariable part ) {
-            if ( !first ) {
-                str.append( '.' );
-            }
-            str.append( part.getName() );
-            moveNext( part );
-        }
-
-        public void visit( ExpressionCollection part ) {
-            if ( !first ) {
-                str.append( '.' );
-            }
-            str.append( part.getName() );
-            moveNext( part );
-        }
-
-        public void visit( ExpressionCollectionIndex part ) {
-            str.append( '[' ).append( paramsToString( part.getParams() ) ).append( ']' );
-            moveNext( part );
-        }
-
-        public void visit( ExpressionText part ) {
-            if ( !first ) {
-                str.append( '.' );
-            }
-            str.append( part.getName() );
-            moveNext( part );
-        }
-
-        private String paramsToString( Map<String, ExpressionFormLine> params ) {
-            if ( params.isEmpty() ) {
-                return "";
-            }
-            ToStringVisitor stringVisitor = new ToStringVisitor();
-            StringBuilder strParams = new StringBuilder();
-            for ( ExpressionFormLine param : params.values() ) {
-                strParams.append( ", " ).append( stringVisitor.buildString( param.getBinding(),
-                                                                            param.getRootExpression() ) );
-            }
-            return strParams.substring( 2 );
-        }
-
-        private void moveNext( ExpressionPart exp ) {
-            moveNext( exp,
-                      true );
-        }
-
-        private void moveNext( ExpressionPart exp,
-                               boolean resetFirst ) {
-            if ( exp.getNext() != null ) {
-                if ( resetFirst ) {
-                    first = false;
-                }
-                exp.getNext().accept( this );
-            }
-        }
+    @Override
+    public int hashCode() {
+        int result = binding != null ? binding.hashCode() : 0;
+        result = ~~result;
+        result = 31 * result + ( parts != null ? parts.hashCode() : 0 );
+        result = ~~result;
+        result = 31 * result + index;
+        result = ~~result;
+        return result;
     }
 }

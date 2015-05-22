@@ -5,7 +5,7 @@ import org.apache.maven.artifact.versioning.DefaultArtifactVersion;
 import org.apache.maven.model.Dependency;
 import org.drools.compiler.kproject.ReleaseIdImpl;
 import org.kie.api.builder.ReleaseId;
-import org.sonatype.aether.artifact.Artifact;
+import org.eclipse.aether.artifact.Artifact;
 
 public class DependencyDescriptor {
     private final String groupId;
@@ -69,6 +69,10 @@ public class DependencyDescriptor {
         return version;
     }
 
+    public ReleaseId getReleaseIdWithoutVersion() {
+        return new ReleaseIdImpl(groupId, artifactId, "0");
+    }
+
     public ReleaseId getReleaseId() {
         return new ReleaseIdImpl(groupId, artifactId, version);
     }
@@ -93,6 +97,10 @@ public class DependencyDescriptor {
     public static boolean isRangedVersion(String version) {
         return version.indexOf('(') >= 0 || version.indexOf(')') >= 0 ||
                version.indexOf('[') >= 0 || version.indexOf(']') >= 0;
+    }
+
+    public boolean isSameArtifact(ReleaseId releaseId) {
+        return groupId.equals(releaseId.getGroupId()) && artifactId.equals(releaseId.getArtifactId());
     }
 
     public boolean isSnapshot() {

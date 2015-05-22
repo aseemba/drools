@@ -44,7 +44,6 @@ public class AccumulateDescr extends PatternSourceDescr
     private String[]                          declarations;
     private String                            className;
     private List<AccumulateFunctionCallDescr> functions        = null;
-    private boolean                           multiFunction;
 
     @SuppressWarnings("unchecked")
     public void readExternal( ObjectInput in ) throws IOException,
@@ -158,10 +157,12 @@ public class AccumulateDescr extends PatternSourceDescr
     }
 
     public void addFunction( String function,
-                             String bind, 
+                             String bind,
+                             boolean unify,
                              String[] params ) {
         addFunction( new AccumulateFunctionCallDescr( function,
-                                                      bind, 
+                                                      bind,
+                                                      unify,
                                                       params ) );
     }
 
@@ -170,16 +171,10 @@ public class AccumulateDescr extends PatternSourceDescr
             functions = new ArrayList<AccumulateDescr.AccumulateFunctionCallDescr>();
         }
         this.functions.add( function );
-        if( functions.size() > 1 ) {
-            this.setMultiFunction( true );
-        }
     }
 
     public boolean removeFunction( AccumulateFunctionCallDescr function ) {
-        if ( functions != null ) {
-            return functions.remove( function );
-        }
-        return false;
+        return functions != null && functions.remove(function);
     }
 
     public boolean isExternalFunction() {
@@ -191,7 +186,8 @@ public class AccumulateDescr extends PatternSourceDescr
             if( this.input instanceof PatternDescr ) {
                 return (PatternDescr) this.input;
             } else {
-                return (PatternDescr) ((AndDescr)this.input).getDescrs().get( 0 );
+                BaseDescr firstDescr = ((AndDescr)this.input).getDescrs().get( 0 );
+                return firstDescr instanceof PatternDescr ? (PatternDescr) firstDescr : null;
             }
         }
         return null;
@@ -222,12 +218,8 @@ public class AccumulateDescr extends PatternSourceDescr
         return this.input != null;
     }
 
-    public void setMultiFunction( boolean multiFunction ) {
-        this.multiFunction = multiFunction;
-    }
-
     public boolean isMultiFunction() {
-        return multiFunction;
+        return functions != null && functions.size() > 1;
     }
 
     public static class AccumulateFunctionCallDescr
@@ -237,13 +229,16 @@ public class AccumulateDescr extends PatternSourceDescr
 
         private final String      function;
         private final String      bind;
+        private final boolean     unification;
         private final String[]    params;
 
         public AccumulateFunctionCallDescr(String function,
                                            String bind,
+                                           boolean unify,
                                            String[] params) {
             this.function = function;
             this.bind = bind;
+            this.unification = unify;
             this.params = params;
         }
 
@@ -257,6 +252,10 @@ public class AccumulateDescr extends PatternSourceDescr
 
         public String[] getParams() {
             return params;
+        }
+
+        public boolean isUnification() {
+            return unification;
         }
 
         @Override
@@ -278,12 +277,15 @@ public class AccumulateDescr extends PatternSourceDescr
             if ( function == null ) {
                 if ( other.function != null ) return false;
             } else if ( !function.equals( other.function ) ) return false;
+
+
             if ( bind == null ) {
                 if ( other.bind != null ) return false;
-            } else if ( !bind.equals( other.bind ) ) return false;
-            if ( !Arrays.equals( params,
-                                 other.params ) ) return false;
-            return true;
+            } else if ( !bind.equals( other.bind ) ) {
+                return false;
+            }
+
+            return Arrays.equals( params, other.params );
         }
     }
 

@@ -29,6 +29,8 @@ public class TypeDeclarationDescr
 
     private List<QualifiedName>          superTypes;
 
+    private boolean                      trait;
+
     public TypeDeclarationDescr() {
         this( null );
     }
@@ -47,12 +49,14 @@ public class TypeDeclarationDescr
                                               ClassNotFoundException {
         super.readExternal( in );
         this.superTypes = (List<QualifiedName>) in.readObject();
+        this.trait = in.readBoolean();
     }
     
     @Override
     public void writeExternal( ObjectOutput out ) throws IOException {
         super.writeExternal(out);
         out.writeObject( superTypes );
+        out.writeBoolean(trait);
     }
 
     public String toString() {
@@ -79,7 +83,9 @@ public class TypeDeclarationDescr
         if ( superTypes == null ) {
             superTypes = new ArrayList<QualifiedName>();
         }
-        this.superTypes.add( type );
+        if ( ! this.superTypes.contains( type ) ) {
+            this.superTypes.add( type );
+        }
     }
 
     public int compareTo(TypeDeclarationDescr descr) {
@@ -106,5 +112,13 @@ public class TypeDeclarationDescr
             }
         }
         return 0;
+    }
+
+    public boolean isTrait() {
+        return trait;
+    }
+
+    public void setTrait(boolean trait) {
+        this.trait = trait;
     }
 }

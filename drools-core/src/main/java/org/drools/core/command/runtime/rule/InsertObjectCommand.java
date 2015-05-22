@@ -17,24 +17,25 @@
 package org.drools.core.command.runtime.rule;
 
 
-import javax.xml.bind.annotation.XmlAccessType;
-import javax.xml.bind.annotation.XmlAccessorType;
-import javax.xml.bind.annotation.XmlAttribute;
-import javax.xml.bind.annotation.XmlElement;
-import javax.xml.bind.annotation.adapters.XmlJavaTypeAdapter;
-
 import org.drools.core.command.IdentifiableResult;
 import org.drools.core.command.impl.GenericCommand;
 import org.drools.core.command.impl.KnowledgeCommandContext;
 import org.drools.core.common.DefaultFactHandle;
+import org.drools.core.common.InternalWorkingMemory;
 import org.drools.core.util.StringUtils;
-import org.drools.core.impl.StatefulKnowledgeSessionImpl;
-import org.drools.core.reteoo.ReteooWorkingMemoryInterface;
 import org.drools.core.xml.jaxb.util.JaxbUnknownAdapter;
-import org.kie.internal.command.Context;
 import org.kie.api.runtime.KieSession;
 import org.kie.api.runtime.rule.FactHandle;
+import org.kie.internal.command.Context;
 
+import javax.xml.bind.annotation.XmlAccessType;
+import javax.xml.bind.annotation.XmlAccessorType;
+import javax.xml.bind.annotation.XmlAttribute;
+import javax.xml.bind.annotation.XmlElement;
+import javax.xml.bind.annotation.XmlRootElement;
+import javax.xml.bind.annotation.adapters.XmlJavaTypeAdapter;
+
+@XmlRootElement(name="insert-object-command")
 @XmlAccessorType(XmlAccessType.NONE)
 public class InsertObjectCommand
     implements
@@ -85,8 +86,8 @@ public class InsertObjectCommand
         } else {
             factHandle = ksession.getEntryPoint( this.entryPoint ).insert( object );
         }
-        
-        ReteooWorkingMemoryInterface session = ((StatefulKnowledgeSessionImpl)ksession).session;
+
+        InternalWorkingMemory session = ((InternalWorkingMemory)ksession);
 
         if ( outIdentifier != null ) {
             if ( this.returnObject ) {
@@ -130,7 +131,9 @@ public class InsertObjectCommand
         this.returnObject = returnObject;
     }
     
-    
+    public boolean isDisconnected() {
+        return disconnected;
+    }
 
     public String getEntryPoint() {
         return entryPoint;

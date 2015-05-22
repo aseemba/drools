@@ -16,16 +16,15 @@
 
 package org.drools.core.base.field;
 
+import org.drools.core.common.InternalWorkingMemory;
+import org.drools.core.spi.FieldValue;
+
 import java.io.Externalizable;
 import java.io.IOException;
 import java.io.ObjectInput;
 import java.io.ObjectOutput;
 import java.math.BigDecimal;
 import java.math.BigInteger;
-
-import org.drools.core.common.InternalWorkingMemory;
-import org.drools.core.reteoo.ReteooRuleBase;
-import org.drools.core.spi.FieldValue;
 
 public class ClassFieldImpl implements FieldValue, Externalizable {
 
@@ -34,22 +33,25 @@ public class ClassFieldImpl implements FieldValue, Externalizable {
 
     public ClassFieldImpl( Class value ) {
         className = value.getName();
-        type = null;
+        type = value;
     }
 
     public ClassFieldImpl(String value) {
         className = value;
+        try {
+            type = Class.forName(className);
+        } catch (ClassNotFoundException e) { }
     }
 
-
     public void writeExternal(ObjectOutput out) throws IOException {
-        out.writeObject( type );
-        out.writeObject( className );
+        out.writeUTF( className );
     }
 
     public void readExternal(ObjectInput in) throws IOException, ClassNotFoundException {
-        type = (Class) in.readObject();
-        className = (String) in.readObject();
+        className = in.readUTF();
+        try {
+            type = Class.forName(className);
+        } catch (ClassNotFoundException e) { }
     }
 
     public Object getValue() {
@@ -58,7 +60,7 @@ public class ClassFieldImpl implements FieldValue, Externalizable {
 
     public Object resolve( InternalWorkingMemory workingMemory ) {
         try {
-            type = ((ReteooRuleBase) workingMemory.getRuleBase()).getRootClassLoader().loadClass( className );
+            type = workingMemory.getKnowledgeBase().getRootClassLoader().loadClass( className );
         } catch (Exception e) {
 
         }

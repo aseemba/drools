@@ -81,6 +81,10 @@ public class PatternDescr extends AnnotatedBaseDescr
         return query;
     }
 
+    public boolean isPassive() {
+        return query || source instanceof FromDescr;
+    }
+
     public List< ? extends BaseDescr> getDescrs() {
         return this.constraint.getDescrs();
     }
@@ -95,6 +99,35 @@ public class PatternDescr extends AnnotatedBaseDescr
 
     public ConditionalElementDescr getConstraint() {
         return this.constraint;
+    }
+
+    public List< ? extends BaseDescr> getPositionalConstraints() {
+        return this.doGetConstraints(ExprConstraintDescr.Type.POSITIONAL);
+    }
+
+    public List< ? extends BaseDescr> getSlottedConstraints() {
+        return this.doGetConstraints(ExprConstraintDescr.Type.NAMED);
+    }
+
+    private List< ? extends BaseDescr> doGetConstraints(ExprConstraintDescr.Type type) {
+        List<BaseDescr> returnList = new ArrayList<BaseDescr>();
+        for(BaseDescr descr : this.constraint.getDescrs()) {
+
+            // if it is a ExprConstraintDescr - check the type
+            if(descr instanceof ExprConstraintDescr) {
+                ExprConstraintDescr desc = (ExprConstraintDescr) descr;
+                if(desc.getType().equals(type)) {
+                    returnList.add(desc);
+                }
+            } else {
+                // otherwise, assume 'NAMED'
+                if(type.equals(ExprConstraintDescr.Type.NAMED)) {
+                    returnList.add(descr);
+                }
+            }
+        }
+
+        return returnList;
     }
 
     public boolean isInternalFact() {

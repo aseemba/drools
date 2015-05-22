@@ -16,27 +16,24 @@
 
 package org.drools.compiler.rule.builder;
 
-import java.text.ParseException;
-import java.util.Calendar;
-import java.util.Date;
-import java.util.List;
-import java.util.StringTokenizer;
-
 import org.drools.compiler.compiler.DroolsError;
+import org.drools.compiler.compiler.DroolsWarning;
 import org.drools.compiler.compiler.RuleBuildError;
+import org.drools.compiler.compiler.RuleBuildWarning;
 import org.drools.compiler.lang.DroolsSoftKeywords;
 import org.drools.compiler.lang.descr.AnnotationDescr;
 import org.drools.compiler.lang.descr.AttributeDescr;
 import org.drools.compiler.lang.descr.QueryDescr;
 import org.drools.compiler.lang.descr.RuleDescr;
 import org.drools.compiler.rule.builder.dialect.mvel.MVELObjectExpressionBuilder;
-import org.drools.core.RuntimeDroolsException;
 import org.drools.core.base.EnabledBoolean;
 import org.drools.core.base.SalienceInteger;
 import org.drools.core.base.mvel.MVELObjectExpression;
+import org.drools.core.definitions.rule.impl.RuleImpl;
+import org.drools.core.factmodel.AnnotationDefinition;
 import org.drools.core.rule.GroupElement;
 import org.drools.core.rule.Pattern;
-import org.drools.core.rule.Rule;
+import org.drools.core.spi.AgendaGroup;
 import org.drools.core.spi.Salience;
 import org.drools.core.time.TimeUtils;
 import org.drools.core.time.impl.CronExpression;
@@ -47,6 +44,18 @@ import org.drools.core.time.impl.Timer;
 import org.drools.core.util.DateUtils;
 import org.drools.core.util.MVELSafeHelper;
 import org.drools.core.util.StringUtils;
+import org.kie.api.definition.rule.ActivationListener;
+import org.kie.api.definition.rule.All;
+import org.kie.api.definition.rule.Direct;
+import org.kie.api.definition.rule.Propagation;
+
+import java.text.ParseException;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.StringTokenizer;
 
 /**
  * This builds the rule structure from an AST.
@@ -93,7 +102,7 @@ public class RuleBuilder {
 
             context.getRule().setLhs( ce );
         } else {
-            throw new RuntimeDroolsException( "BUG: builder not found for descriptor class " + ruleDescr.getLhs().getClass() );
+            throw new RuntimeException( "BUG: builder not found for descriptor class " + ruleDescr.getLhs().getClass() );
         }
 
         // build all the rule's attributes
@@ -106,7 +115,7 @@ public class RuleBuilder {
             // do not build the consequence if we have a query
 
             ConsequenceBuilder consequenceBuilder = context.getDialect().getConsequenceBuilder();
-            consequenceBuilder.build( context, Rule.DEFAULT_CONSEQUENCE_NAME );
+            consequenceBuilder.build( context, RuleImpl.DEFAULT_CONSEQUENCE_NAME );
             
             for ( String name : ruleDescr.getNamedConsequences().keySet() ) {
                 consequenceBuilder.build( context, name );
@@ -115,21 +124,37 @@ public class RuleBuilder {
     }
 
     public void buildMetaAttributes(final RuleBuildContext context ) {
-        Rule rule = context.getRule();
+        RuleImpl rule = context.getRule();
         for ( String metaAttr : context.getRuleDescr().getAnnotationNames() ) {
             AnnotationDescr ad = context.getRuleDescr().getAnnotation( metaAttr );
-            if ( ad.hasValue() ) {
-                if ( ad.getValues().size() == 1 ) {
-                    rule.addMetaAttribute( metaAttr,
-                                           resolveValue( ad.getSingleValue() ) );
+            try {
+                AnnotationDefinition annotationDefinition = AnnotationDefinition.build( context.getDialect().getTypeResolver().resolveType( ad.getFullyQualifiedName() ),
+                                                                                        ad.getValueMap(),
+                                                                                        context.getDialect().getTypeResolver() );
+                if ( annotationDefinition.getValues().size() == 1 && annotationDefinition.getValues().containsKey( AnnotationDescr.VALUE ) ) {
+                    rule.addMetaAttribute( metaAttr, annotationDefinition.getPropertyValue( AnnotationDescr.VALUE ) );
+                } else {
+                    Map<String,Object> map = new HashMap<String,Object>( annotationDefinition.getValues().size() );
+                    for ( String key : annotationDefinition.getValues().keySet() ) {
+                        map.put( key, annotationDefinition.getPropertyValue( key ) );
+                    }
+                    rule.addMetaAttribute( metaAttr, map );
+                }
+            } catch ( Exception e ) {
+                if ( ad.hasValue() ) {
+                    if ( ad.getValues().size() == 1 ) {
+                        rule.addMetaAttribute( metaAttr,
+                                               resolveValue( ad.getSingleValueAsString() ) );
+                    } else {
+                        rule.addMetaAttribute( metaAttr,
+                                               ad.getValueMap() );
+                    }
                 } else {
                     rule.addMetaAttribute( metaAttr,
-                                           ad.getValueMap() );
+                                           null );
                 }
-            } else {
-                rule.addMetaAttribute( metaAttr,
-                                       null );
             }
+
         }
     }
 
@@ -138,8 +163,7 @@ public class RuleBuilder {
         Object result = value;
         // try to resolve as an expression:
         try {
-            Object resolvedValue = MVELSafeHelper.getEvaluator().eval( value );
-            result = resolvedValue;
+            result = MVELSafeHelper.getEvaluator().eval( value );
         } catch ( Exception e ) {
             // do nothing
         }
@@ -147,7 +171,7 @@ public class RuleBuilder {
     }
 
     public void buildAttributes(final RuleBuildContext context) {
-        final Rule rule = context.getRule();
+        final RuleImpl rule = context.getRule();
         final RuleDescr ruleDescr = context.getRuleDescr();
         boolean enforceEager = false;
 
@@ -163,12 +187,29 @@ public class RuleBuilder {
             } else if ( name.equals( "agenda-group" ) ) {
                 if ( StringUtils.isEmpty(rule.getRuleFlowGroup())) {
                     rule.setAgendaGroup( attributeDescr.getValue() ); // don't override if RFG has already set this
+                } else {
+                    if ( rule.getRuleFlowGroup().equals( attributeDescr.getValue() ) ) {
+                        DroolsWarning warn = new RuleBuildWarning( rule, context.getParentDescr(), null,
+                                                                   "Both an agenda-group ( " + attributeDescr.getValue() +
+                                                                   " ) and a ruleflow-group ( " + rule.getRuleFlowGroup() +
+                                                                   " ) are defined for rule " + rule.getName() + ". Since version 6.x the " +
+                                                                   "two concepts have been unified, the ruleflow-group name will override the agenda-group. " );
+                        context.addWarning( warn );
+                    }
                 }
             } else if ( name.equals( "activation-group" ) ) {
                 rule.setActivationGroup( attributeDescr.getValue() );
             } else if ( name.equals( "ruleflow-group" ) ) {
                 rule.setRuleFlowGroup( attributeDescr.getValue() );
-                rule.setAgendaGroup( attributeDescr.getValue() ); // assign AG to the same name as AG, as they are aliased to AGs anyway
+                if ( ! rule.getAgendaGroup().equals( AgendaGroup.MAIN ) && ! rule.getAgendaGroup().equals( attributeDescr.getValue() ) ) {
+                    DroolsWarning warn = new RuleBuildWarning( rule, context.getParentDescr(), null,
+                                                               "Both an agenda-group ( " + attributeDescr.getValue() +
+                                                               " ) and a ruleflow-group ( " + rule.getRuleFlowGroup() +
+                                                               " ) are defined for rule " + rule.getName() + ". Since version 6.x the " +
+                                                               "two concepts have been unified, the ruleflow-group name will override the agenda-group. " );
+                    context.addWarning( warn );
+                }
+                rule.setAgendaGroup( attributeDescr.getValue() ); // assign AG to the same name as RFG, as they are aliased to AGs anyway
             } else if ( name.equals( "lock-on-active" ) ) {
                 boolean lockOnActive = getBooleanValue( attributeDescr, true );
                 rule.setLockOnActive( lockOnActive );
@@ -181,7 +222,7 @@ public class RuleBuilder {
             } else if ( name.equals( "date-effective" ) ) {
                 try {
                     Date date = DateUtils.parseDate( attributeDescr.getValue(),
-                                                     context.getPackageBuilder().getDateFormats()  );
+                                                     context.getKnowledgeBuilder().getDateFormats()  );
                     final Calendar cal = Calendar.getInstance();
                     cal.setTime( date );
                     rule.setDateEffective( cal );
@@ -193,7 +234,7 @@ public class RuleBuilder {
             } else if ( name.equals( "date-expires" ) ) {
                 try {
                     Date date = DateUtils.parseDate( attributeDescr.getValue(),
-                                                     context.getPackageBuilder().getDateFormats()  );
+                                                     context.getKnowledgeBuilder().getDateFormats()  );
                     final Calendar cal = Calendar.getInstance();
                     cal.setTime( date );
                     rule.setDateExpires( cal );
@@ -208,32 +249,46 @@ public class RuleBuilder {
         buildSalience( context );
 
         buildEnabled( context );
-        
-        AnnotationDescr ann = ruleDescr.getAnnotation( "activationListener" );
-        if ( ann != null && !StringUtils.isEmpty( ann.getSingleValue() ) ) {
-            rule.setActivationListener( MVELSafeHelper.getEvaluator().evalToString( ann.getSingleValue() ) );
-        }
 
-        ann = ruleDescr.getAnnotation( "Eager" );
-        if ( enforceEager || ( ann != null && trueOrDefault( ann.getSingleValue() ) ) ) {
-            rule.setEager( true );
-        }
-
-        ann = ruleDescr.getAnnotation( "Direct" );
-        if ( ann != null && trueOrDefault( ann.getSingleValue() ) ) {
-            rule.setActivationListener( "direct" );
-        }
-
-        //        buildDuration( context );
+        parseAnnotation(context, rule, ruleDescr, enforceEager);
     }
 
-    private boolean trueOrDefault( String singleValue ) {
-        return StringUtils.isEmpty( singleValue ) || "true".equals( singleValue );
+    private void parseAnnotation(RuleBuildContext context, RuleImpl rule, RuleDescr ruleDescr, boolean enforceEager) {
+        try {
+            ActivationListener activationListener = ruleDescr.getTypedAnnotation(ActivationListener.class);
+            if (activationListener != null) {
+                rule.setActivationListener(MVELSafeHelper.getEvaluator().evalToString(activationListener.value()));
+            }
+
+            if (enforceEager) {
+                rule.setEager(true);
+            } else {
+                Propagation propagation = ruleDescr.getTypedAnnotation(Propagation.class);
+                if (propagation != null) {
+                    if (propagation.value() == Propagation.Type.IMMEDIATE) {
+                        rule.setDataDriven(true);
+                    } else if (propagation.value() == Propagation.Type.EAGER) {
+                        rule.setEager(true);
+                    }
+                }
+            }
+
+            Direct direct = ruleDescr.getTypedAnnotation(Direct.class);
+            if (direct != null && direct.value()) {
+                rule.setActivationListener("direct");
+            }
+
+            rule.setAllMatches(ruleDescr.hasAnnotation(All.class));
+        } catch (Exception e) {
+            DroolsError err = new RuleBuildError( rule, context.getParentDescr(), null,
+                                                  e.getMessage() );
+            context.addError( err  );
+        }
     }
 
     private boolean getBooleanValue(final AttributeDescr attributeDescr,
                                     final boolean defaultValue) {
-        return (attributeDescr.getValue() == null || "".equals( attributeDescr.getValue().trim() )) ? defaultValue : Boolean.valueOf( attributeDescr.getValue() ).booleanValue();
+        return (attributeDescr.getValue() == null || "".equals( attributeDescr.getValue().trim() )) ? defaultValue : Boolean.valueOf(attributeDescr.getValue());
     }
 
     //    private void buildDuration(final RuleBuildContext context) {
@@ -279,7 +334,7 @@ public class RuleBuilder {
         }
     }
     
-    private void buildCalendars(Rule rule, String calendarsString, RuleBuildContext context) {
+    private void buildCalendars(RuleImpl rule, String calendarsString, RuleBuildContext context) {
         Object val = null;
         try {
             val = MVELSafeHelper.getEvaluator().eval( calendarsString );
@@ -303,7 +358,7 @@ public class RuleBuilder {
         }
     }
     
-    private void buildTimer(Rule rule, String timerString, RuleBuildContext context) {
+    private void buildTimer(RuleImpl rule, String timerString, RuleBuildContext context) {
         if( timerString.indexOf( '(' ) >=0 ) {
             timerString = timerString.substring( timerString.indexOf( '(' )+1, timerString.lastIndexOf( ')' ) ).trim();
         }
@@ -329,7 +384,7 @@ public class RuleBuilder {
         
         String body = timerString.substring( colonPos + 1, semicolonPos > 0 ? semicolonPos : timerString.length() ).trim();
         
-        Timer timer = null;
+        Timer timer;
         if ( "cron".equals( protocol ) ) {
             try {
                 timer = new CronTimer( createMVELExpr(startDate, context), createMVELExpr(endDate, context), repeatLimit, new CronExpression( body ) );
@@ -380,12 +435,9 @@ public class RuleBuilder {
             }
 
             MVELObjectExpression times = MVELObjectExpressionBuilder.build( tok.nextToken().trim(), context );
-            MVELObjectExpression period = null;
-            if ( tok.hasMoreTokens() ) {
-                period = MVELObjectExpressionBuilder.build( tok.nextToken().trim(), context );
-            } else {
-                period = MVELObjectExpressionBuilder.build( "0", context );
-            }
+            MVELObjectExpression period = tok.hasMoreTokens() ?
+                                          MVELObjectExpressionBuilder.build( tok.nextToken().trim(), context ) :
+                                          MVELObjectExpressionBuilder.build( "0", context );
 
             timer = new ExpressionIntervalTimer( createMVELExpr(startDate, context), createMVELExpr(endDate, context), repeatLimit, times, period );
         } else {
@@ -413,7 +465,7 @@ public class RuleBuilder {
             return null;
         }
         try {
-            DateUtils.parseDate( expr, context.getPackageBuilder().getDateFormats() );
+            DateUtils.parseDate( expr, context.getKnowledgeBuilder().getDateFormats() );
             expr = "\"" + expr + "\""; // if expr is a valid date wrap in quotes
         } catch (Exception e) { }
         return MVELObjectExpressionBuilder.build( expr, context );

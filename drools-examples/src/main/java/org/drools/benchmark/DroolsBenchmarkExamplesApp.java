@@ -16,25 +16,19 @@
 
 package org.drools.benchmark;
 
-import java.awt.Container;
-import java.awt.GridLayout;
-import java.awt.event.ActionEvent;
-import javax.swing.AbstractAction;
-import javax.swing.JButton;
-import javax.swing.JFrame;
-import javax.swing.JLabel;
-import javax.swing.JPanel;
-
 import org.drools.benchmark.manners.MannersBenchmark;
 import org.drools.benchmark.waltz.WaltzBenchmark;
 import org.drools.benchmark.waltzdb.WaltzDbBenchmark;
-import org.drools.tutorials.banking.BankingExample1;
-import org.drools.tutorials.banking.BankingExample2;
-import org.drools.tutorials.banking.BankingExample3;
-import org.drools.tutorials.banking.BankingExample4;
-import org.drools.tutorials.banking.BankingExample5;
-import org.drools.tutorials.banking.BankingExample6;
 
+import javax.swing.*;
+import java.awt.*;
+import java.awt.event.ActionEvent;
+
+/**
+ * Warning: Manners benchmark is working (producing the correct result), but it performs a
+ * breadth first search instead of a depth first one as it could be expected to do.
+ * At the moment it is not possible to specify the type of tree search in drools.
+ */
 public class DroolsBenchmarkExamplesApp extends JFrame {
 
     public static void main(String[] args) {

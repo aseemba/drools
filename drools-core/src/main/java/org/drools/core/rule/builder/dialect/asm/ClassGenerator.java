@@ -919,13 +919,25 @@ public class ClassGenerator {
             throw new RuntimeException("Not Implemented");
         }
 
-        public Class resolveType(String className) throws ClassNotFoundException {
-            Class primitiveClassName = primitiveClassMap.get(className);
+        public void addImplicitImport(String importEntry) {
+            throw new RuntimeException("Not Implemented");
+        }
+
+        public Class<?> resolveType(String className) throws ClassNotFoundException {
+            Class<?> primitiveClassName = primitiveClassMap.get(className);
             return primitiveClassName != null ? primitiveClassName : Class.forName(className, true, classLoader);
+        }
+
+        public Class<?> resolveType(String className, ClassFilter classFilter) throws ClassNotFoundException {
+            throw new RuntimeException("Not Implemented");
         }
 
         public String getFullTypeName(String shortName) throws ClassNotFoundException {
             throw new RuntimeException("Not Implemented");
+        }
+
+        public ClassLoader getClassLoader() {
+            return classLoader;
         }
     }
 

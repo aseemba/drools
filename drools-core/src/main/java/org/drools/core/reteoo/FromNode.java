@@ -17,17 +17,13 @@
 package org.drools.core.reteoo;
 
 import org.drools.core.RuleBaseConfiguration;
-import org.drools.core.base.ClassObjectType;
 import org.drools.core.common.BetaConstraints;
 import org.drools.core.common.EmptyBetaConstraints;
 import org.drools.core.common.InternalFactHandle;
-import org.drools.core.common.InternalRuleBase;
 import org.drools.core.common.InternalWorkingMemory;
 import org.drools.core.common.Memory;
 import org.drools.core.common.MemoryFactory;
 import org.drools.core.common.UpdateContext;
-import org.drools.core.util.AbstractBaseLinkedListNode;
-import org.drools.core.util.index.LeftTupleList;
 import org.drools.core.marshalling.impl.PersisterHelper;
 import org.drools.core.marshalling.impl.ProtobufInputMarshaller;
 import org.drools.core.marshalling.impl.ProtobufInputMarshaller.TupleKey;
@@ -39,6 +35,8 @@ import org.drools.core.rule.From;
 import org.drools.core.spi.AlphaNodeFieldConstraint;
 import org.drools.core.spi.DataProvider;
 import org.drools.core.spi.PropagationContext;
+import org.drools.core.util.AbstractBaseLinkedListNode;
+import org.drools.core.util.index.LeftTupleList;
 
 import java.io.IOException;
 import java.io.ObjectInput;
@@ -78,16 +76,14 @@ public class FromNode extends LeftTupleSource
                     final boolean tupleMemoryEnabled,
                     final BuildContext context,
                     final From from) {
-        super( id,
-               context.getPartitionId(),
-               context.getRuleBase().getConfiguration().isMultithreadEvaluation() );
+        super(id, context);
         this.dataProvider = dataProvider;
         setLeftTupleSource(tupleSource);
         this.alphaConstraints = constraints;
         this.betaConstraints = (binder == null) ? EmptyBetaConstraints.getInstance() : binder;
         this.tupleMemoryEnabled = tupleMemoryEnabled;
         this.from = from;
-        resultClass = ((ClassObjectType)this.from.getResultPattern().getObjectType()).getClassType();
+        resultClass = this.from.getResultClass();
 
         initMasks(context, tupleSource);
     }
@@ -100,7 +96,7 @@ public class FromNode extends LeftTupleSource
         betaConstraints = (BetaConstraints) in.readObject();
         tupleMemoryEnabled = in.readBoolean();
         from = (From) in.readObject();
-        resultClass = ((ClassObjectType)this.from.getResultPattern().getObjectType()).getClassType();
+        resultClass = from.getResultClass();
     }
 
     public void writeExternal(ObjectOutput out) throws IOException {
@@ -142,7 +138,7 @@ public class FromNode extends LeftTupleSource
         ProtobufMessages.FactHandle _handle = null;
         if ( objectTypeConf == null ) {
             // use default entry point and object class. Notice that at this point object is assignable to resultClass
-            objectTypeConf = new ClassObjectTypeConf( workingMemory.getEntryPoint(), resultClass, (InternalRuleBase) workingMemory.getRuleBase() );
+            objectTypeConf = new ClassObjectTypeConf( workingMemory.getEntryPoint(), resultClass, workingMemory.getKnowledgeBase() );
         }
         if( context.getReaderContext() != null ) {
             Map<ProtobufInputMarshaller.TupleKey, List<FactHandle>> map = (Map<ProtobufInputMarshaller.TupleKey, List<ProtobufMessages.FactHandle>>) context.getReaderContext().nodeMemories.get( getId() );
@@ -173,8 +169,7 @@ public class FromNode extends LeftTupleSource
                                                                          null );
         }
 
-        RightTuple rightTuple = newRightTuple( handle, null );
-        return rightTuple;
+        return newRightTuple( handle, null );
     }
 
 
@@ -208,7 +203,7 @@ public class FromNode extends LeftTupleSource
                                           this.betaConstraints.createContext(),
                                           NodeTypeEnums.FromNode );
         return new FromMemory( beta,
-                               this.dataProvider.createContext(),
+                               this.dataProvider,
                                this.alphaConstraints );
     }
    
@@ -275,15 +270,18 @@ public class FromNode extends LeftTupleSource
         Memory {
         private static final long serialVersionUID = 510l;
 
+        private DataProvider      dataProvider;
+
         public BetaMemory         betaMemory;
         public Object             providerContext;
         public ContextEntry[]     alphaContexts;
 
         public FromMemory(BetaMemory betaMemory,
-                          Object providerContext,
+                          DataProvider dataProvider,
                           AlphaNodeFieldConstraint[] constraints) {
             this.betaMemory = betaMemory;
-            this.providerContext = providerContext;
+            this.dataProvider = dataProvider;
+            this.providerContext = dataProvider.createContext();
             this.alphaContexts = new ContextEntry[constraints.length];
             for ( int i = 0; i < constraints.length; i++ ) {
                 this.alphaContexts[i] = constraints[i].createContextEntry();
@@ -309,7 +307,11 @@ public class FromNode extends LeftTupleSource
         public void setBetaMemory(BetaMemory betaMemory) {
             this.betaMemory = betaMemory;
         }
-                
+
+        public void reset() {
+            this.betaMemory.reset();
+            this.providerContext = dataProvider.createContext();
+        }
     }
     
     public LeftTuple createLeftTuple(InternalFactHandle factHandle,

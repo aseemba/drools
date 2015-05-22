@@ -62,6 +62,7 @@ import java.util.List;
 import java.util.regex.Pattern;
 
 import static org.drools.core.util.ClassUtils.convertToPrimitiveType;
+import static org.mvel2.asm.Opcodes.*;
 
 public class ConditionAnalyzer {
 
@@ -897,39 +898,60 @@ public class ConditionAnalyzer {
             this(method, null);
         }
 
-        public MethodInvocation(Method method, String conditionClass) {
-            this.method = getMethodFromSuperclass(method, conditionClass);
+        public MethodInvocation(Method method, String conditionClassName) {
+            this.method = getMethodFromSuperclass(method, conditionClassName);
         }
 
-        private Method getMethodFromSuperclass(Method method, String conditionClass) {
+        private Method getMethodFromSuperclass(Method method, String conditionClassName) {
             if (method == null || Modifier.isStatic(method.getModifiers())) {
                 return method;
             }
             Class<?> declaringClass = method.getDeclaringClass();
+            Class<?> conditionClass = conditionClassName != null ? getConditionClass(declaringClass, conditionClassName) : null;
+            if (conditionClass != null) {
+                try {
+                    return conditionClass.getMethod(method.getName(), method.getParameterTypes());
+                } catch (Exception e) { }
+            }
+
+            return getMethodForUnknownConditionClass(method, declaringClass);
+        }
+
+        private Method getMethodForUnknownConditionClass(Method method, Class<?> declaringClass) {
             Class<?> declaringSuperclass = declaringClass.getSuperclass();
             if (declaringSuperclass != null) {
                 try {
-                    return getMethodFromSuperclass(declaringSuperclass.getMethod(method.getName(), method.getParameterTypes()), conditionClass);
+                    return getMethodForUnknownConditionClass(declaringSuperclass.getMethod(method.getName(), method.getParameterTypes()), declaringSuperclass);
                 } catch (Exception e) { }
             }
-            Method iMethod = getMethodFromInterface(declaringClass, method, conditionClass);
+            Method iMethod = getMethodFromInterface(declaringClass, method);
             return iMethod == null ? method : iMethod;
         }
 
-        private Method getMethodFromInterface(Class<?> clazz, Method method, String conditionClass) {
-            if (conditionClass == null || !clazz.getName().equals(conditionClass)) {
-                for (Class<?> interfaze : clazz.getInterfaces()) {
-                    Method iMethod = getMethodFromInterface(interfaze, method, conditionClass);
-                    if (iMethod != null) {
-                        return iMethod;
-                    }
+        private Method getMethodFromInterface(Class<?> clazz, Method method) {
+            for (Class<?> interfaze : clazz.getInterfaces()) {
+                Method iMethod = getMethodFromInterface(interfaze, method);
+                if (iMethod != null) {
+                    return iMethod;
                 }
-                return null;
             }
             try {
                 return clazz.getMethod(method.getName(), method.getParameterTypes());
             } catch (Exception e) { }
             return null;
+        }
+
+        private Class<?> getConditionClass(Class<?> declaringClass, String conditionClassName) {
+            if (declaringClass.getName().equals(conditionClassName)) {
+                return declaringClass;
+            }
+            for (Class<?> interfaze : declaringClass.getInterfaces()) {
+                if (interfaze.getName().equals(conditionClassName)) {
+                    return interfaze;
+                }
+            }
+            Class<?> declaringSuperclass = declaringClass.getSuperclass();
+            return declaringSuperclass != null ? getConditionClass(declaringSuperclass, conditionClassName) : null;
         }
 
         public Method getMethod() {
@@ -1127,13 +1149,22 @@ public class ConditionAnalyzer {
     }
 
     public enum AritmeticOperator {
-        ADD("+"), SUB("-"), MUL("*"), DIV("/"), MOD("%"), POW("^"),
-        BW_AND("&"), BW_OR("|"), BW_XOR("^"), BW_SHIFT_RIGHT(">>"), BW_SHIFT_LEFT("<<"), BW_USHIFT_RIGHT(">>>"), BW_USHIFT_LEFT("<<<");
+        ADD("+", false, IADD, LADD), SUB("-", false, ISUB, LSUB),
+        MUL("*", false, IMUL, LMUL), DIV("/", false, IDIV, LDIV), MOD("%", false, IREM, LREM),
+        BW_AND("&", true, IAND, LAND), BW_OR("|", true, IOR, LOR), BW_XOR("^", true, IXOR, LXOR), BW_NOT("!", true, INEG, LNEG),
+        BW_SHIFT_RIGHT(">>", true, ISHR, LSHR), BW_SHIFT_LEFT("<<", true, ISHL, LSHL),
+        BW_USHIFT_RIGHT(">>>", true, IUSHR, LUSHR), BW_USHIFT_LEFT("<<<", true, -1, -1);
 
-        private String symbol;
+        private final String symbol;
+        private final boolean bitwise;
+        private final int intOp;
+        private final int longOp;
 
-        AritmeticOperator(String symbol) {
+        AritmeticOperator(String symbol, boolean bitwise, int intOp, int longOp) {
             this.symbol = symbol;
+            this.bitwise = bitwise;
+            this.intOp = intOp;
+            this.longOp = longOp;
         }
 
         public String toString() {
@@ -1141,7 +1172,15 @@ public class ConditionAnalyzer {
         }
 
         public boolean isBitwiseOperation() {
-            return this == BW_AND || this == BW_OR || this == BW_SHIFT_RIGHT || this == BW_SHIFT_LEFT || this == BW_USHIFT_RIGHT || this == BW_USHIFT_LEFT;
+            return bitwise;
+        }
+
+        public int getIntOp() {
+            return intOp;
+        }
+
+        public int getLongOp() {
+            return longOp;
         }
 
         public static AritmeticOperator fromMvelOpCode(int opCode) {
@@ -1153,6 +1192,8 @@ public class ConditionAnalyzer {
                 case Operator.MOD: return MOD;
                 case Operator.BW_AND: return BW_AND;
                 case Operator.BW_OR: return BW_OR;
+                case Operator.BW_XOR: return BW_XOR;
+                case Operator.BW_NOT: return BW_NOT;
                 case Operator.BW_SHIFT_RIGHT: return BW_SHIFT_RIGHT;
                 case Operator.BW_SHIFT_LEFT: return BW_SHIFT_LEFT;
                 case Operator.BW_USHIFT_RIGHT: return BW_USHIFT_RIGHT;

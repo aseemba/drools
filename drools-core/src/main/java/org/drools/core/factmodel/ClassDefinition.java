@@ -16,11 +16,16 @@
 
 package org.drools.core.factmodel;
 
+import org.kie.api.definition.type.Annotation;
+import org.kie.api.definition.type.FactField;
+import org.kie.api.definition.type.FactType;
+
 import java.io.IOException;
 import java.io.ObjectInput;
 import java.io.ObjectOutput;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -28,11 +33,6 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Arrays;
-
-import org.kie.api.definition.type.Annotation;
-import org.kie.api.definition.type.FactField;
-import org.kie.api.definition.type.FactType;
 
 /**
  * Declares a class to be dynamically created
@@ -82,6 +82,20 @@ public class ClassDefinition
                             String[] interfaces ) {
         this.setClassName( className );
         this.setSuperClass( superClass );
+        this.setInterfaces( interfaces );
+    }
+
+    public ClassDefinition( Class<?> cls ) {
+        this.definedClass = cls;
+        this.setClassName( cls.getCanonicalName() );
+        if (cls.getSuperclass() != null) {
+            this.setSuperClass( cls.getSuperclass().getCanonicalName() );
+        }
+        String[] interfaces = new String[cls.getInterfaces().length];
+        int i = 0;
+        for (Class<?> interfaze : cls.getInterfaces()) {
+            interfaces[i++] = interfaze.getCanonicalName();
+        }
         this.setInterfaces( interfaces );
     }
 
@@ -181,13 +195,14 @@ public class ClassDefinition
      * @return    the index-th field
      */
     public FieldDefinition getField(int index) {
-        if (index >= fields.size() || index < 0)
-            throw new IndexOutOfBoundsException("Error trying to access field at position " + index);
+        if (index >= fields.size() || index < 0) {
+            return null;
+        }
         Iterator<FieldDefinition> iter = fields.values().iterator();
-        for (int j = 0; j < index ; j++)
+        for (int j = 0; j < index ; j++) {
             iter.next();
+        }
         return iter.next();
-
     }
 
 
@@ -246,14 +261,17 @@ public class ClassDefinition
 
     public Object get(Object bean,
                       String field) {
-        return this.getField( field ).getFieldAccessor().getValue( bean );
+        FieldDefinition fieldDefinition = getField( field );
+        return fieldDefinition != null ? fieldDefinition.getFieldAccessor().getValue( bean ) : null;
     }
 
     public void set(Object bean,
                     String field,
                     Object value) {
-        this.getField( field ).getFieldAccessor().setValue( bean,
-                                                            value );
+        FieldDefinition fieldDefinition = getField( field );
+        if (fieldDefinition != null) {
+            fieldDefinition.getFieldAccessor().setValue( bean, value );
+        }
     }
 
     public Map<String, Object> getAsMap(Object bean) {

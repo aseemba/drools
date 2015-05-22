@@ -1,7 +1,6 @@
 package org.drools.compiler.kie.builder.impl;
 
 import org.drools.compiler.builder.impl.KnowledgeBuilderImpl;
-import org.drools.compiler.compiler.PackageBuilder;
 import org.drools.core.io.impl.BaseResource;
 import org.kie.api.KieServices;
 import org.kie.internal.builder.CompositeKnowledgeBuilder;
@@ -104,7 +103,7 @@ public class KieBuilderSetImpl implements KieBuilderSet {
             CompositeKnowledgeBuilder ckbuilder = kBuilder.batch();
 
             boolean modified = false;
-            PackageBuilder pkgBuilder = ((KnowledgeBuilderImpl)kBuilder).getPackageBuilder();
+            KnowledgeBuilderImpl pkgBuilder = ((KnowledgeBuilderImpl)kBuilder);
             Set<String> wrongResources = resourcesWithErrors.get(kBaseModel.getName());
             for ( String resourceName : wrongResources ) {
                 modified = pkgBuilder.removeObjectsGeneratedFromResource(new DummyResource(resourceName)) || modified;
@@ -157,10 +156,9 @@ public class KieBuilderSetImpl implements KieBuilderSet {
                                  KieBaseModel kieBaseModel,
                                  InternalKieModule kieModule,
                                  String resourceName ) {
-        if ( !resourceName.endsWith(".properties") && filterFileInKBase(kieModule, kieBaseModel, resourceName) ) {
-            return kieModule.addResourceToCompiler(ckbuilder, resourceName);
-        }
-        return false;
+        return !resourceName.endsWith(".properties") &&
+               filterFileInKBase(kieModule, kieBaseModel, resourceName) &&
+               kieModule.addResourceToCompiler(ckbuilder, resourceName);
     }
 
     public static class DummyResource extends BaseResource {
@@ -170,42 +168,47 @@ public class KieBuilderSetImpl implements KieBuilderSet {
 
         @Override
         public URL getURL() throws IOException {
-            throw new UnsupportedOperationException("KieBuilderSetImpl.DummyResource.getURL -> TODO");
+            throw new UnsupportedOperationException();
         }
 
         @Override
         public boolean hasURL() {
-            throw new UnsupportedOperationException("KieBuilderSetImpl.DummyResource.hasURL -> TODO");
+            throw new UnsupportedOperationException();
         }
 
         @Override
         public boolean isDirectory() {
-            throw new UnsupportedOperationException("KieBuilderSetImpl.DummyResource.isDirectory -> TODO");
+            throw new UnsupportedOperationException();
         }
 
         @Override
         public Collection<Resource> listResources() {
-            throw new UnsupportedOperationException("KieBuilderSetImpl.DummyResource.listResources -> TODO");
+            throw new UnsupportedOperationException();
         }
 
         @Override
         public long getLastModified() {
-            throw new UnsupportedOperationException("KieBuilderSetImpl.DummyResource.getLastModified -> TODO");
+            throw new UnsupportedOperationException();
         }
 
         @Override
         public long getLastRead() {
-            throw new UnsupportedOperationException("KieBuilderSetImpl.DummyResource.getLastRead -> TODO");
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public String getEncoding() {
+            throw new UnsupportedOperationException();
         }
 
         @Override
         public InputStream getInputStream() throws IOException {
-            throw new UnsupportedOperationException("KieBuilderSetImpl.DummyResource.getInputStream -> TODO");
+            throw new UnsupportedOperationException();
         }
 
         @Override
         public Reader getReader() throws IOException {
-            throw new UnsupportedOperationException("KieBuilderSetImpl.DummyResource.getReader -> TODO");
+            throw new UnsupportedOperationException();
         }
     }
 }

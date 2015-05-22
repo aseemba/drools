@@ -16,14 +16,6 @@
 
 package org.drools.core.base;
 
-import java.lang.reflect.Method;
-import java.security.AccessController;
-import java.security.PrivilegedAction;
-import java.security.ProtectionDomain;
-import java.util.Date;
-import java.util.Map;
-
-import org.drools.core.RuntimeDroolsException;
 import org.drools.core.base.ClassFieldAccessorCache.ByteArrayClassLoader;
 import org.drools.core.base.ClassFieldAccessorCache.CacheEntry;
 import org.drools.core.base.extractors.BaseBooleanClassFieldReader;
@@ -48,13 +40,19 @@ import org.drools.core.base.extractors.BaseShortClassFieldReader;
 import org.drools.core.base.extractors.BaseShortClassFieldWriter;
 import org.drools.core.base.extractors.SelfReferenceClassFieldReader;
 import org.drools.core.common.InternalWorkingMemory;
-import org.drools.core.rule.builder.dialect.asm.ClassGenerator;
 import org.drools.core.util.asm.ClassFieldInspector;
 import org.mvel2.asm.ClassWriter;
 import org.mvel2.asm.Label;
 import org.mvel2.asm.MethodVisitor;
 import org.mvel2.asm.Opcodes;
 import org.mvel2.asm.Type;
+
+import java.lang.reflect.Method;
+import java.security.AccessController;
+import java.security.PrivilegedAction;
+import java.security.ProtectionDomain;
+import java.util.Date;
+import java.util.Map;
 
 import static org.drools.core.rule.builder.dialect.asm.ClassGenerator.createClassWriter;
 
@@ -95,12 +93,6 @@ public class ClassFieldAccessorFactory {
                                                     CacheEntry cache) {
         ByteArrayClassLoader byteArrayClassLoader = cache.getByteArrayClassLoader();
         Map<Class< ? >, ClassFieldInspector> inspectors = cache.getInspectors();
-//        if ( byteArrayClassLoader == null || byteArrayClassLoader.getParent() != classLoader ) {
-//            if ( classLoader == null ) {
-//                throw new RuntimeDroolsException( "ClassFieldAccessorFactory cannot have a null parent ClassLoader" );
-//            }
-//            byteArrayClassLoader = new ByteArrayClassLoader( classLoader );
-//        }
         try {
             // if it is a self reference
             if ( SELF_REFERENCE_FIELD.equals( fieldName ) ) {
@@ -147,17 +139,15 @@ public class ClassFieldAccessorFactory {
                     final ValueType valueType = ValueType.determineValueType( fieldType );
                     final Object[] params = {index, fieldType, valueType};
                     return (BaseClassFieldReader) newClass.getConstructors()[0].newInstance( params );
-                } else if ( fieldType != null ) {
+                } else {
                     // must be a public field
                     return null;
-                } else {
-                    throw new RuntimeDroolsException( "Field/method '" + fieldName + "' not found for class '" + clazz.getName() + "'\n" );
                 }
             }
-        } catch ( final RuntimeDroolsException e ) {
+        } catch ( final RuntimeException e ) {
             throw e;
         } catch ( final Exception e ) {
-            throw new RuntimeDroolsException( e );
+            throw new RuntimeException( e );
         }
     }
 
@@ -214,13 +204,13 @@ public class ClassFieldAccessorFactory {
                     }
 
                 } else {
-                    throw new RuntimeDroolsException( "Field/method '" + fieldName + "' not found for class '" + clazz.getName() + "'" );
+                    throw new RuntimeException( "Field/method '" + fieldName + "' not found for class '" + clazz.getName() + "'" );
                 }
             }
-        } catch ( final RuntimeDroolsException e ) {
+        } catch ( final RuntimeException e ) {
             throw e;
         } catch ( final Exception e ) {
-            throw new RuntimeDroolsException( e );
+            throw new RuntimeException( e );
         }
     }
 
@@ -280,10 +270,6 @@ public class ClassFieldAccessorFactory {
 
     /**
      * Builds the class header
-     *  
-     * @param clazz The class to build the extractor for
-     * @param className The extractor class name
-     * @param cw
      */
     protected ClassWriter buildClassHeader(Class< ? > superClass, String className) {
 
@@ -303,10 +289,6 @@ public class ClassFieldAccessorFactory {
     /**
      * Creates a constructor for the field extractor receiving
      * the index, field type and value type
-     * 
-     * @param originalClassName
-     * @param className
-     * @param cw
      */
     private void build3ArgConstructor(final Class< ? > superClazz,
                                       final String className,
@@ -372,11 +354,6 @@ public class ClassFieldAccessorFactory {
 
     /**
      * Creates the proxy reader method for the given method
-     * 
-     * @param fieldName
-     * @param fieldFlag
-     * @param method
-     * @param cw
      */
     protected void buildGetMethod(final Class< ? > originalClass,
                                   final String className,
@@ -390,8 +367,8 @@ public class ClassFieldAccessorFactory {
             overridingMethod = superClass.getMethod( getOverridingGetMethodName( fieldType ),
                                                      new Class[]{InternalWorkingMemory.class, Object.class} );
         } catch ( final Exception e ) {
-            throw new RuntimeDroolsException( "This is a bug. Please report back to JBoss Rules team.",
-                                              e );
+            throw new RuntimeException( "This is a bug. Please report back to JBoss Rules team.",
+                                        e );
         }
         final MethodVisitor mv = cw.visitMethod( Opcodes.ACC_PUBLIC,
                                                  overridingMethod.getName(),
@@ -447,10 +424,6 @@ public class ClassFieldAccessorFactory {
 
     /**
      * Creates the set method for the given field definition
-     *
-     * @param cw
-     * @param classDef
-     * @param fieldDef
      */
     protected void buildSetMethod(final Class< ? > originalClass,
                                   final String className,
@@ -466,8 +439,8 @@ public class ClassFieldAccessorFactory {
                 overridingMethod = superClass.getMethod( getOverridingSetMethodName( fieldType ),
                                                          new Class[]{Object.class, fieldType.isPrimitive() ? fieldType : Object.class} );
             } catch ( final Exception e ) {
-                throw new RuntimeDroolsException( "This is a bug. Please report back to JBoss Rules team.",
-                                                  e );
+                throw new RuntimeException( "This is a bug. Please report back to JBoss Rules team.",
+                                            e );
             }
 
             mv = cw.visitMethod( Opcodes.ACC_PUBLIC,

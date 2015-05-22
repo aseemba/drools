@@ -1,28 +1,30 @@
 package org.drools.compiler.testframework;
 
+import org.drools.core.beliefsystem.ModedAssertion;
+import org.drools.core.beliefsystem.simple.SimpleMode;
+import org.kie.api.runtime.rule.FactHandle;
+import org.drools.core.common.ActivationGroupNode;
+import org.drools.core.common.ActivationNode;
+import org.drools.core.common.InternalAgendaGroup;
+import org.drools.core.common.InternalFactHandle;
+import org.drools.core.common.InternalRuleFlowGroup;
+import org.drools.core.common.LogicalDependency;
+import org.drools.core.definitions.rule.impl.RuleImpl;
+import org.drools.core.event.rule.impl.AfterActivationFiredEventImpl;
+import org.drools.core.reteoo.LeftTupleImpl;
+import org.drools.core.rule.GroupElement;
+import org.drools.core.spi.Activation;
+import org.drools.core.spi.Consequence;
+import org.drools.core.spi.PropagationContext;
+import org.drools.core.util.LinkedList;
+import org.drools.core.util.LinkedListNode;
+import org.junit.Test;
+import org.kie.internal.runtime.beliefs.Mode;
+
 import java.util.HashSet;
 import java.util.List;
 
-import org.drools.core.common.InternalAgendaGroup;
-import org.drools.core.common.InternalRuleFlowGroup;
-import org.drools.core.spi.Consequence;
-import org.junit.Test;
 import static org.junit.Assert.*;
-
-import org.drools.core.FactHandle;
-import org.drools.core.common.ActivationGroupNode;
-import org.drools.core.common.ActivationNode;
-import org.drools.core.common.InternalFactHandle;
-import org.drools.core.common.LogicalDependency;
-import org.drools.core.util.LinkedList;
-import org.drools.core.util.LinkedListNode;
-import org.drools.core.event.AfterActivationFiredEvent;
-import org.drools.core.reteoo.LeftTupleImpl;
-import org.drools.core.rule.GroupElement;
-import org.drools.core.rule.Rule;
-import org.drools.core.spi.Activation;
-import org.drools.core.spi.AgendaGroup;
-import org.drools.core.spi.PropagationContext;
 
 public class RuleCoverageListenerTest {
 
@@ -39,8 +41,7 @@ public class RuleCoverageListenerTest {
         assertEquals( 0,
                       ls.getPercentCovered() );
 
-        ls.afterActivationFired( new AfterActivationFiredEvent( new MockActivation( "rule1" ) ),
-                                 null );
+        ls.afterMatchFired(new AfterActivationFiredEventImpl(new MockActivation("rule1"), null));
         assertEquals( 2,
                       ls.rules.size() );
         assertTrue( ls.rules.contains( "rule2" ) );
@@ -49,8 +50,7 @@ public class RuleCoverageListenerTest {
         assertEquals( 33,
                       ls.getPercentCovered() );
 
-        ls.afterActivationFired( new AfterActivationFiredEvent( new MockActivation( "rule2" ) ),
-                                 null );
+        ls.afterMatchFired(new AfterActivationFiredEventImpl(new MockActivation("rule2"), null));
         assertEquals( 1,
                       ls.rules.size() );
         assertFalse( ls.rules.contains( "rule2" ) );
@@ -60,8 +60,7 @@ public class RuleCoverageListenerTest {
         assertEquals( 66,
                       ls.getPercentCovered() );
 
-        ls.afterActivationFired( new AfterActivationFiredEvent( new MockActivation( "rule3" ) ),
-                                 null );
+        ls.afterMatchFired( new AfterActivationFiredEventImpl( new MockActivation( "rule3" ), null ));
         assertEquals( 0,
                       ls.rules.size() );
         assertFalse( ls.rules.contains( "rule2" ) );
@@ -76,16 +75,16 @@ public class RuleCoverageListenerTest {
 }
 
 @SuppressWarnings("serial")
-class MockActivation
+class MockActivation<T extends ModedAssertion<T>>
     implements
-    Activation {
+    Activation<T> {
     private String ruleName;
 
     public MockActivation(String ruleName) {
         this.ruleName = ruleName;
     }
 
-    public void addLogicalDependency(LogicalDependency node) {
+    public void addLogicalDependency(LogicalDependency<T> node) {
     }
 
     public ActivationGroupNode getActivationGroupNode() {
@@ -104,7 +103,7 @@ class MockActivation
         return null;
     }
 
-    public LinkedList getLogicalDependencies() {
+    public LinkedList<LogicalDependency<T>> getLogicalDependencies() {
         return null;
     }
 
@@ -112,8 +111,8 @@ class MockActivation
         return null;
     }
 
-    public Rule getRule() {
-        return new Rule( ruleName );
+    public RuleImpl getRule() {
+        return new RuleImpl( ruleName );
     }
 
     public Consequence getConsequence() {
@@ -149,9 +148,6 @@ class MockActivation
     public void setActivationGroupNode(ActivationGroupNode activationGroupNode) {
     }
 
-    public void setLogicalDependencies(LinkedList<LogicalDependency> justified) {
-    }
-
     public void setActivationNode(ActivationNode ruleFlowGroupNode) {
     }
 
@@ -178,23 +174,6 @@ class MockActivation
     public boolean isAdded() {
         return false;
     }
-    
-    public void addBlocked(LogicalDependency node) {
-    }
-
-    public LinkedList getBlocked() {
-        return null;
-    }
-
-    public void setBlocked(LinkedList<LogicalDependency> justified) {
-    }
-
-    public void addBlocked(LinkedListNode node) {
-    }
-
-    public LinkedList getBlockers() {
-        return null;
-    }
 
     public boolean isMatched() {
         return false;
@@ -210,6 +189,31 @@ class MockActivation
 
     public boolean isRuleAgendaItem() {
         return false;
+    }
+
+    @Override
+    public void addBlocked(LogicalDependency<SimpleMode> node) {
+
+    }
+
+    @Override
+    public LinkedList<LogicalDependency<SimpleMode>> getBlocked() {
+        return null;
+    }
+
+    @Override
+    public void setBlocked(LinkedList<LogicalDependency<SimpleMode>> justified) {
+
+    }
+
+    @Override
+    public LinkedList<SimpleMode> getBlockers() {
+        return null;
+    }
+
+    @Override
+    public void setLogicalDependencies(LinkedList<LogicalDependency<T>> justified) {
+
     }
 
     @Override

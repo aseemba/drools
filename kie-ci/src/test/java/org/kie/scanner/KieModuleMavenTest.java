@@ -1,12 +1,5 @@
 package org.kie.scanner;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-
 import org.drools.compiler.compiler.io.memory.MemoryFileSystem;
 import org.drools.compiler.kie.builder.impl.InternalKieModule;
 import org.drools.compiler.kie.builder.impl.KieContainerImpl;
@@ -15,7 +8,6 @@ import org.drools.compiler.kie.builder.impl.KieServicesImpl;
 import org.drools.core.factmodel.ClassBuilderFactory;
 import org.drools.core.factmodel.ClassDefinition;
 import org.drools.core.factmodel.FieldDefinition;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.kie.api.KieBase;
 import org.kie.api.KieServices;
@@ -29,6 +21,14 @@ import org.kie.api.definition.KiePackage;
 import org.kie.api.definition.rule.Rule;
 import org.kie.api.runtime.KieContainer;
 import org.kie.api.runtime.KieSession;
+
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.List;
 
 import static org.junit.Assert.*;
 import static org.kie.scanner.MavenRepository.getMavenRepository;
@@ -99,6 +99,51 @@ public class KieModuleMavenTest extends AbstractKieCiTest {
     }
 
     @Test
+    public void testKieModuleFromMavenWithTransitiveDependencies() throws Exception {
+        final KieServices ks = new KieServicesImpl() {
+
+            @Override
+            public KieRepository getRepository() {
+                return new KieRepositoryImpl(); // override repository to not store the artifact on deploy to trigger load from maven repo
+            }
+        };
+
+        ReleaseId dependency = ks.newReleaseId("org.drools", "drools-core", "5.5.0.Final");
+        ReleaseId releaseId = ks.newReleaseId("org.kie", "maven-test", "1.0-SNAPSHOT");
+
+        String pomText = getPom(releaseId, dependency);
+
+        InternalKieModule kJar1 = createKieJar(ks, releaseId, pomText, true, "rule1", "rule2");
+
+        File pomFile = new File(System.getProperty("java.io.tmpdir"), MavenRepository.toFileName(releaseId, null) + ".pom");
+        try {
+            FileOutputStream fos = new FileOutputStream(pomFile);
+            fos.write(pomText.getBytes());
+            fos.flush();
+            fos.close();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        MavenRepository.getMavenRepository().deployArtifact(releaseId, kJar1, pomFile);
+
+        KieContainer kieContainer = ks.newKieContainer(releaseId);
+
+        Collection<ReleaseId> expectedDependencies = new HashSet<ReleaseId>();
+        expectedDependencies.add(ks.newReleaseId("org.drools", "knowledge-api", "5.5.0.Final"));
+        expectedDependencies.add(ks.newReleaseId("org.drools", "knowledge-internal-api", "5.5.0.Final"));
+        expectedDependencies.add(ks.newReleaseId("org.drools", "drools-core", "5.5.0.Final"));
+        expectedDependencies.add(ks.newReleaseId("org.mvel", "mvel2", "2.1.3.Final"));
+        expectedDependencies.add(ks.newReleaseId("org.slf4j", "slf4j-api", "1.6.4"));
+
+        Collection<ReleaseId> dependencies = ((InternalKieModule)((KieContainerImpl) kieContainer).getKieModuleForKBase("KBase1")).getJarDependencies();
+        assertNotNull(dependencies);
+        assertEquals(5, dependencies.size());
+
+        boolean matchedAll = dependencies.containsAll(expectedDependencies);
+        assertTrue(matchedAll);
+    }
+
+    @Test
     public void testKieModulePojoDependencies() throws Exception {
         KieServices ks = KieServices.Factory.get();
 
@@ -165,11 +210,11 @@ public class KieModuleMavenTest extends AbstractKieCiTest {
         Collection<Rule> rules = packages.iterator().next().getRules();
         assertEquals(2, rules.size());
 
+        ks.getRepository().removeKieModule(releaseId);
 
         // deploy new version
         File kjar1 = new File(prefix + "src/test/resources/kjar/kjar-module-after.jar");
         File pom1 = new File(prefix + "src/test/resources/kjar/pom-kjar.xml");
-
 
         repository.deployArtifact(releaseId, kjar1, pom1);
 
@@ -181,6 +226,8 @@ public class KieModuleMavenTest extends AbstractKieCiTest {
         assertEquals(1, packages2.size());
         Collection<Rule> rules2 = packages2.iterator().next().getRules();
         assertEquals(4, rules2.size());
+
+        ks.getRepository().removeKieModule(releaseId);
     }
 
     @Test
@@ -193,10 +240,10 @@ public class KieModuleMavenTest extends AbstractKieCiTest {
             }
         };
 
-        ReleaseId dependency = ks.newReleaseId("org.drools", "drools-core", "${drools.version}");
+        ReleaseId dependency = ks.newReleaseId("org.drools", "drools-core", "${version.org.drools}");
         ReleaseId releaseId = ks.newReleaseId("org.kie.test", "maven-test", "1.0-SNAPSHOT");
-        InternalKieModule kJar1 = createKieJarWithProperties(ks, releaseId, true, "6.0.0.CR4", new ReleaseId[]{dependency}, "rule1", "rule2");
-        String pomText = generatePomXmlWithProperties(releaseId, "6.0.0.CR4", dependency);
+        InternalKieModule kJar1 = createKieJarWithProperties(ks, releaseId, true, "5.5.0.Final", new ReleaseId[]{dependency}, "rule1", "rule2");
+        String pomText = generatePomXmlWithProperties(releaseId, "5.5.0.Final", dependency);
         File pomFile = new File(System.getProperty("java.io.tmpdir"), MavenRepository.toFileName(releaseId, null) + ".pom");
         try {
             FileOutputStream fos = new FileOutputStream(pomFile);
@@ -255,7 +302,7 @@ public class KieModuleMavenTest extends AbstractKieCiTest {
         sBuilder.append(" <packaging>jar</packaging> \n");
         sBuilder.append(" <name>Default</name> \n");
         sBuilder.append(" <properties> \n");
-        sBuilder.append(" <drools.version>"+droolsVersion+"</drools.version> \n");
+        sBuilder.append(" <version.org.drools>"+droolsVersion+"</version.org.drools> \n");
         sBuilder.append(" </properties> \n");
 
         if (dependencies.length > 0) {

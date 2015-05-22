@@ -19,12 +19,12 @@ package org.drools.core.reteoo;
 import org.drools.core.common.BaseNode;
 import org.drools.core.common.DroolsObjectInputStream;
 import org.drools.core.common.DroolsObjectOutputStream;
-import org.drools.core.common.InternalRuleBase;
 import org.drools.core.common.InternalWorkingMemory;
 import org.drools.core.common.MemoryFactory;
+import org.drools.core.definitions.rule.impl.RuleImpl;
+import org.drools.core.impl.InternalKnowledgeBase;
 import org.drools.core.phreak.AddRemoveRule;
 import org.drools.core.rule.InvalidPatternException;
-import org.drools.core.rule.Rule;
 import org.drools.core.rule.WindowDeclaration;
 
 import java.io.ByteArrayInputStream;
@@ -34,10 +34,12 @@ import java.io.IOException;
 import java.io.ObjectInput;
 import java.io.ObjectOutput;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
+import java.util.Set;
 
 /**
  * Builds the Rete-OO network for a <code>Package</code>.
@@ -53,7 +55,7 @@ public class ReteooBuilder
     private static final long           serialVersionUID = 510l;
 
     /** The RuleBase */
-    private transient InternalRuleBase  ruleBase;
+    private transient InternalKnowledgeBase  kBase;
 
     private Map<String, BaseNode[]>       rules;
 
@@ -75,14 +77,14 @@ public class ReteooBuilder
      * Construct a <code>Builder</code> against an existing <code>Rete</code>
      * network.
      */
-    public ReteooBuilder( final InternalRuleBase ruleBase ) {
-        this.ruleBase = ruleBase;
+    public ReteooBuilder( final InternalKnowledgeBase  kBase ) {
+        this.kBase = kBase;
         this.rules = new HashMap<String, BaseNode[]>();
         this.namedWindows = new HashMap<String, WindowNode>();
 
         //Set to 1 as Rete node is set to 0
         this.idGenerator = new IdGenerator( 1 );
-        this.ruleBuilder = ruleBase.getConfiguration().getComponentFactory().getRuleBuilderFactory().newRuleBuilder();
+        this.ruleBuilder = kBase.getConfiguration().getComponentFactory().getRuleBuilderFactory().newRuleBuilder();
     }
 
     // ------------------------------------------------------------
@@ -94,15 +96,11 @@ public class ReteooBuilder
      *
      * @param rule
      *            The rule to add.
-     *
-     * @throws org.drools.core.RuleIntegrationException
-     *             if an error prevents complete construction of the network for
-     *             the <code>Rule</code>.
      * @throws InvalidPatternException
      */
-    public synchronized void addRule(final Rule rule) throws InvalidPatternException {
+    public synchronized void addRule(final RuleImpl rule) throws InvalidPatternException {
         final List<TerminalNode> terminals = this.ruleBuilder.addRule( rule,
-                                                                       this.ruleBase,
+                                                                       this.kBase,
                                                                        this.idGenerator );
 
         this.rules.put( rule.getName(),
@@ -111,13 +109,13 @@ public class ReteooBuilder
 
     public void addEntryPoint( String id ) {
         this.ruleBuilder.addEntryPoint( id,
-                                        this.ruleBase,
+                                        this.kBase,
                                         this.idGenerator );
     }
 
     public synchronized void addNamedWindow( WindowDeclaration window ) {
         final WindowNode wnode = this.ruleBuilder.addWindowNode( window,
-                                                                 this.ruleBase,
+                                                                 this.kBase,
                                                                  this.idGenerator );
 
         this.namedWindows.put( window.getName(),
@@ -132,7 +130,7 @@ public class ReteooBuilder
         return this.idGenerator;
     }
 
-    public synchronized BaseNode[] getTerminalNodes(final Rule rule) {
+    public synchronized BaseNode[] getTerminalNodes(final RuleImpl rule) {
         return this.rules.get( rule.getName() );
     }
 
@@ -144,12 +142,12 @@ public class ReteooBuilder
         return this.rules;
     }
 
-    public synchronized void removeRule(final Rule rule) {
+    public synchronized void removeRule(final RuleImpl rule) {
         // reset working memories for potential propagation
-        InternalWorkingMemory[] workingMemories = this.ruleBase.getWorkingMemories();
+        InternalWorkingMemory[] workingMemories = this.kBase.getWorkingMemories();
 
         final RuleRemovalContext context = new RuleRemovalContext( rule );
-        context.setRuleBase( ruleBase );
+        context.setKnowledgeBase(kBase);
 
         final BaseNode[] nodes = this.rules.remove( rule.getName() );
 
@@ -159,12 +157,12 @@ public class ReteooBuilder
     }
 
     public void removeTerminalNode(RuleRemovalContext context, TerminalNode tn, InternalWorkingMemory[] workingMemories)  {
-        if ( this.ruleBase.getConfiguration().isPhreakEnabled() ) {
-            AddRemoveRule.removeRule( tn, workingMemories, ruleBase );
+        if ( this.kBase.getConfiguration().isPhreakEnabled() ) {
+            AddRemoveRule.removeRule( tn, workingMemories, kBase );
         }
 
         RuleRemovalContext.CleanupAdapter adapter = null;
-        if ( !this.ruleBase.getConfiguration().isPhreakEnabled() ) {
+        if ( !this.kBase.getConfiguration().isPhreakEnabled() ) {
             if ( tn instanceof RuleTerminalNode) {
                 adapter = new RuleTerminalNode.RTNCleanupAdapter( (RuleTerminalNode) tn );
             }
@@ -172,6 +170,7 @@ public class ReteooBuilder
         }
 
         BaseNode node = (BaseNode) tn;
+        Set<BaseNode> removedSources = new HashSet<BaseNode>();
         LinkedList<BaseNode> betaStack = new LinkedList<BaseNode>();
         LinkedList<BaseNode> alphaStack = new LinkedList<BaseNode>();
         LinkedList<BaseNode> stillInUse = new LinkedList<BaseNode>();
@@ -180,7 +179,7 @@ public class ReteooBuilder
         // beta stacks processed first.
         boolean processRian = true;
         while ( node != null ) {
-            removeNode(node, alphaStack, betaStack, stillInUse, processRian, workingMemories, context);
+            removeNode(node, removedSources, alphaStack, betaStack, stillInUse, processRian, workingMemories, context);
             if ( !betaStack.isEmpty() ) {
                 node = betaStack.removeLast();
                 if ( node.getType() == NodeTypeEnums.RightInputAdaterNode ) {
@@ -199,17 +198,25 @@ public class ReteooBuilder
         resetMasks(stillInUse);
     }
 
-    public void removeNode(BaseNode node, LinkedList<BaseNode> alphaStack, LinkedList<BaseNode> betaStack, LinkedList<BaseNode> stillInUse, boolean processRian, InternalWorkingMemory[] workingMemories, RuleRemovalContext context )  {
+    private void removeNode(BaseNode node, Set<BaseNode> removedSources, LinkedList<BaseNode> alphaStack, LinkedList<BaseNode> betaStack, LinkedList<BaseNode> stillInUse, boolean processRian, InternalWorkingMemory[] workingMemories, RuleRemovalContext context )  {
         if ( !betaStack.isEmpty() && node == betaStack.getLast() ) {
             return;
         }
 
-        if (node.getType() == NodeTypeEnums.EntryPointNode ) {
+        if ( node.getType() == NodeTypeEnums.EntryPointNode ) {
             return;
         }
 
         if ( node.isInUse() ) {
             stillInUse.add(node);
+        }
+
+        if ( node.getType() != NodeTypeEnums.ObjectTypeNode &&
+             !node.isInUse() && kBase.getConfiguration().isPhreakEnabled() ) {
+            // phreak must clear node memories, although this should ideally be pushed into AddRemoveRule
+            for (InternalWorkingMemory workingMemory : workingMemories) {
+                workingMemory.clearNodeMemory( (MemoryFactory) node);
+            }
         }
 
         if ( NodeTypeEnums.isBetaNode( node ) ) {
@@ -225,30 +232,24 @@ public class ReteooBuilder
                 betaStack.addLast( ((BetaNode) node).getLeftTupleSource() );
                 betaStack.addLast( ((BetaNode) node).getRightInput() );
             } else {
-                removeNode( parent, alphaStack, betaStack, stillInUse, true, workingMemories, context );
+                removeNode( parent, removedSources, alphaStack, betaStack, stillInUse, true, workingMemories, context );
             }
         } else if ( NodeTypeEnums.isLeftTupleSink(node) ) {
             BaseNode parent =  ((LeftTupleSink) node).getLeftTupleSource();
             node.remove(context, this, workingMemories);
-            removeNode( parent, alphaStack, betaStack, stillInUse, true, workingMemories, context );
+            removeNode( parent, removedSources, alphaStack, betaStack, stillInUse, true, workingMemories, context );
         } else if ( NodeTypeEnums.LeftInputAdapterNode == node.getType() ) {
             BaseNode parent =  ((LeftInputAdapterNode) node).getParentObjectSource();
             node.remove(context, this, workingMemories);
-            removeNode( parent , alphaStack, betaStack, stillInUse, true, workingMemories, context );
+            removeNode( parent , removedSources, alphaStack, betaStack, stillInUse, true, workingMemories, context );
         } else if ( NodeTypeEnums.isObjectSource( node ) ) {
-            BaseNode parent =  ((ObjectSource) node).getParentObjectSource();
-            node.remove(context, this, workingMemories);
-            removeNode( parent, alphaStack, betaStack, stillInUse, true, workingMemories, context );
+            if ( removedSources.add(node) ) {
+                BaseNode parent = ((ObjectSource) node).getParentObjectSource();
+                node.remove(context, this, workingMemories);
+                removeNode(parent, removedSources, alphaStack, betaStack, stillInUse, true, workingMemories, context);
+            }
         } else {
             throw new IllegalStateException("Defensive exception, should not fall through");
-        }
-
-        if ( node.getType() != NodeTypeEnums.ObjectTypeNode &&
-             !node.isInUse() && ruleBase.getConfiguration().isPhreakEnabled() ) {
-            // phreak must clear node memories, although this should ideally be pushed into AddRemoveRule
-            for (InternalWorkingMemory workingMemory : workingMemories) {
-                workingMemory.clearNodeMemory( (MemoryFactory) node);
-            }
         }
     }
 
@@ -401,10 +402,10 @@ public class ReteooBuilder
 
     }
 
-    public void setRuleBase( ReteooRuleBase reteooRuleBase ) {
-        this.ruleBase = reteooRuleBase;
+    public void setRuleBase( InternalKnowledgeBase kBase ) {
+        this.kBase = kBase;
 
-        this.ruleBuilder = ruleBase.getConfiguration().getComponentFactory().getRuleBuilderFactory().newRuleBuilder();
+        this.ruleBuilder = kBase.getConfiguration().getComponentFactory().getRuleBuilderFactory().newRuleBuilder();
     }
 
 }

@@ -16,13 +16,6 @@
 
 package org.drools.core.reteoo.builder;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-
-import org.drools.core.RuntimeDroolsException;
 import org.drools.core.common.BaseNode;
 import org.drools.core.common.BetaConstraints;
 import org.drools.core.common.DefaultBetaConstraints;
@@ -32,6 +25,8 @@ import org.drools.core.common.QuadroupleBetaConstraints;
 import org.drools.core.common.RuleBasePartitionId;
 import org.drools.core.common.SingleBetaConstraints;
 import org.drools.core.common.TripleBetaConstraints;
+import org.drools.core.reteoo.AlphaNode;
+import org.drools.core.reteoo.BetaNode;
 import org.drools.core.reteoo.EntryPointNode;
 import org.drools.core.reteoo.NodeTypeEnums;
 import org.drools.core.reteoo.ObjectTypeNode;
@@ -42,11 +37,19 @@ import org.drools.core.rule.IntervalProviderConstraint;
 import org.drools.core.rule.InvalidPatternException;
 import org.drools.core.rule.Pattern;
 import org.drools.core.rule.RuleConditionElement;
+import org.drools.core.rule.constraint.MvelConstraint;
+import org.drools.core.spi.AlphaNodeFieldConstraint;
 import org.drools.core.spi.BetaNodeFieldConstraint;
 import org.drools.core.spi.ObjectType;
 import org.drools.core.time.Interval;
 import org.drools.core.time.TemporalDependencyMatrix;
 import org.drools.core.time.TimeUtils;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Utility functions for reteoo build
@@ -99,12 +102,12 @@ public class BuildUtils {
         RuleBasePartitionId partition = null;
         if ( candidate.getType() == NodeTypeEnums.EntryPointNode ) {
             // entry point nodes are always shared
-            node = context.getRuleBase().getRete().getEntryPointNode( ((EntryPointNode) candidate).getEntryPoint() );
+            node = context.getKnowledgeBase().getRete().getEntryPointNode( ((EntryPointNode) candidate).getEntryPoint() );
             // all EntryPointNodes belong to the main partition
             partition = RuleBasePartitionId.MAIN_PARTITION;
         } else if ( candidate.getType() == NodeTypeEnums.ObjectTypeNode ) {
             // object type nodes are always shared
-            Map<ObjectType, ObjectTypeNode> map = context.getRuleBase().getRete().getObjectTypeNodes( context.getCurrentEntryPoint() );
+            Map<ObjectType, ObjectTypeNode> map = context.getKnowledgeBase().getRete().getObjectTypeNodes( context.getCurrentEntryPoint() );
             if ( map != null ) {
                 ObjectTypeNode otn = map.get( ((ObjectTypeNode) candidate).getObjectType() );
                 if ( otn != null ) {
@@ -123,11 +126,11 @@ public class BuildUtils {
             } else if ( (context.getObjectSource() != null) && NodeTypeEnums.isObjectSink( candidate ) ) {
                 node = context.getObjectSource().getSinkPropagator().getMatchingNode( candidate );
             } else {
-                throw new RuntimeDroolsException( "This is a bug on node sharing verification. Please report to development team." );
+                throw new RuntimeException( "This is a bug on node sharing verification. Please report to development team." );
             }
         }
 
-        if ( node == null || node.isStreamMode() ) {
+        if ( node == null ) {
             // SteamMode in Phreak does not allow sharing
             // only attach() if it is a new node
             node = candidate;
@@ -137,7 +140,7 @@ public class BuildUtils {
                 // if it does not has a predefined label
                 if ( context.getPartitionId() == null ) {
                     // if no label in current context, create one
-                    context.setPartitionId( context.getRuleBase().createNewPartitionId() );
+                    context.setPartitionId( context.getKnowledgeBase().createNewPartitionId() );
                 }
                 partition = context.getPartitionId();
             }
@@ -148,11 +151,29 @@ public class BuildUtils {
             context.getNodes().add( node );
         } else {
             // shared node found
+            mergeNodes(node, candidate);
             // undo previous id assignment
             context.releaseId( candidate.getId() );
         }
         node.addAssociation( context.getRule(), context.peekRuleComponent() );
         return node;
+    }
+
+    private void mergeNodes(BaseNode node, BaseNode duplicate) {
+        if (node instanceof AlphaNode) {
+            AlphaNodeFieldConstraint alphaConstraint = ((AlphaNode) node).getConstraint();
+            if (alphaConstraint instanceof MvelConstraint) {
+                ((MvelConstraint)alphaConstraint).addPackageNames(((MvelConstraint)((AlphaNode) duplicate).getConstraint()).getPackageNames());
+            }
+        } else if (node instanceof BetaNode) {
+            BetaNodeFieldConstraint[] betaConstraints = ((BetaNode) node).getConstraints();
+            int i = 0;
+            for (BetaNodeFieldConstraint betaConstraint : betaConstraints) {
+                if (betaConstraint instanceof MvelConstraint) {
+                    ((MvelConstraint) betaConstraint).addPackageNames(((MvelConstraint) ((BetaNode) duplicate).getConstraints()[i++]).getPackageNames());
+                }
+            }
+        }
     }
 
     /**
@@ -165,9 +186,9 @@ public class BuildUtils {
     private boolean isSharingEnabledForNode(final BuildContext context,
                                             final BaseNode node) {
         if ( NodeTypeEnums.isLeftTupleSource( node )) {
-            return context.getRuleBase().getConfiguration().isShareBetaNodes();
+            return context.getKnowledgeBase().getConfiguration().isShareBetaNodes();
         } else if ( NodeTypeEnums.isObjectSource( node ) ) {
-            return context.getRuleBase().getConfiguration().isShareAlphaNodes();
+            return context.getKnowledgeBase().getConfiguration().isShareAlphaNodes();
         }
         return false;
     }
@@ -190,27 +211,27 @@ public class BuildUtils {
                 break;
             case 1 :
                 constraints = new SingleBetaConstraints( list.get( 0 ),
-                                                         context.getRuleBase().getConfiguration(),
+                                                         context.getKnowledgeBase().getConfiguration(),
                                                          disableIndexing );
                 break;
             case 2 :
                 constraints = new DoubleBetaConstraints( list.toArray( new BetaNodeFieldConstraint[list.size()] ),
-                                                         context.getRuleBase().getConfiguration(),
+                                                         context.getKnowledgeBase().getConfiguration(),
                                                          disableIndexing );
                 break;
             case 3 :
                 constraints = new TripleBetaConstraints( list.toArray( new BetaNodeFieldConstraint[list.size()] ),
-                                                         context.getRuleBase().getConfiguration(),
+                                                         context.getKnowledgeBase().getConfiguration(),
                                                          disableIndexing );
                 break;
             case 4 :
                 constraints = new QuadroupleBetaConstraints( list.toArray( new BetaNodeFieldConstraint[list.size()] ),
-                                                             context.getRuleBase().getConfiguration(),
+                                                             context.getKnowledgeBase().getConfiguration(),
                                                              disableIndexing );
                 break;
             default :
                 constraints = new DefaultBetaConstraints( list.toArray( new BetaNodeFieldConstraint[list.size()] ),
-                                                          context.getRuleBase().getConfiguration(),
+                                                          context.getKnowledgeBase().getConfiguration(),
                                                           disableIndexing );
         }
         return constraints;
@@ -292,7 +313,7 @@ public class BuildUtils {
                     Map<Declaration, Interval> temporal = new HashMap<Declaration, Interval>();
                     gatherTemporalRelationships( event.getConstraints(),
                                                  temporal );
-                    // intersect default values with the actual constrained intervals
+                    // intersects default values with the actual constrained intervals
                     for ( Map.Entry<Declaration, Interval> entry : temporal.entrySet() ) {
                         int targetIndex = declarations.indexOf( entry.getKey() );
                         Interval interval = entry.getValue();
@@ -319,9 +340,10 @@ public class BuildUtils {
                 IntervalProviderConstraint constr = (IntervalProviderConstraint) obj;
                 if ( constr.isTemporal() ) {
                     // if a constraint already exists, calculate the intersection
-                    Declaration target = constr.getRequiredDeclarations()[0];
+                    Declaration[] decs = constr.getRequiredDeclarations();
                     // only calculate relationships to other event patterns
-                    if( target.isPatternDeclaration() && target.getPattern().getObjectType().isEvent() ) {
+                    if( decs.length > 0 && decs[0].isPatternDeclaration() && decs[0].getPattern().getObjectType().isEvent() ) {
+                        Declaration target = decs[0];
                         Interval interval = temporal.get( target );
                         if ( interval == null ) {
                             interval = constr.getInterval();

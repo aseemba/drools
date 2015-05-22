@@ -16,34 +16,31 @@
 
 package org.drools.core.reteoo;
 
-import java.io.Externalizable;
-import java.io.IOException;
-import java.io.ObjectInput;
-import java.io.ObjectOutput;
-import java.io.Serializable;
-import java.util.Arrays;
-import java.util.Map;
-
 import org.drools.core.RuleBaseConfiguration;
 import org.drools.core.common.BetaConstraints;
 import org.drools.core.common.InternalFactHandle;
 import org.drools.core.common.InternalWorkingMemory;
 import org.drools.core.common.Memory;
 import org.drools.core.common.WorkingMemoryAction;
-import org.drools.core.marshalling.impl.ProtobufInputMarshaller.TupleKey;
-import org.drools.core.marshalling.impl.ProtobufMessages.FactHandle;
-import org.drools.core.util.AbstractBaseLinkedListNode;
-import org.drools.core.util.ArrayUtils;
 import org.drools.core.marshalling.impl.PersisterHelper;
 import org.drools.core.marshalling.impl.ProtobufInputMarshaller;
+import org.drools.core.marshalling.impl.ProtobufInputMarshaller.TupleKey;
 import org.drools.core.marshalling.impl.ProtobufMessages;
+import org.drools.core.marshalling.impl.ProtobufMessages.FactHandle;
 import org.drools.core.reteoo.builder.BuildContext;
 import org.drools.core.rule.Accumulate;
 import org.drools.core.rule.ContextEntry;
+import org.drools.core.spi.Accumulator;
 import org.drools.core.spi.AlphaNodeFieldConstraint;
 import org.drools.core.spi.PropagationContext;
+import org.drools.core.util.AbstractBaseLinkedListNode;
 
-import static org.drools.core.util.BitMaskUtil.intersect;
+import java.io.Externalizable;
+import java.io.IOException;
+import java.io.ObjectInput;
+import java.io.ObjectOutput;
+import java.util.Arrays;
+import java.util.Map;
 
 /**
  * AccumulateNode
@@ -75,8 +72,6 @@ public class AccumulateNode extends BetaNode {
                           final boolean unwrapRightObject,
                           final BuildContext context) {
         super( id,
-               context.getPartitionId(),
-               context.getRuleBase().getConfiguration().isMultithreadEvaluation(),
                leftInput,
                rightInput,
                sourceBinder,
@@ -157,11 +152,17 @@ public class AccumulateNode extends BetaNode {
         return handle;
     }
 
+    @Override
+    public void attach( BuildContext context ) {
+        this.resultBinder.init( context, getType() );
+        super.attach( context );
+    }
+
     /* (non-Javadoc)
-     * @see org.kie.reteoo.BaseNode#hashCode()
-     */
+         * @see org.kie.reteoo.BaseNode#hashCode()
+         */
     public int hashCode() {
-        return this.leftInput.hashCode() ^ this.rightInput.hashCode() ^ this.accumulate.hashCode() ^ this.resultBinder.hashCode() ^ ArrayUtils.hashCode( this.resultConstraints );
+        return this.leftInput.hashCode() ^ this.rightInput.hashCode() ^ this.accumulate.hashCode() ^ this.resultBinder.hashCode() ^ Arrays.hashCode( this.resultConstraints );
     }
 
     /* (non-Javadoc)
@@ -190,9 +191,11 @@ public class AccumulateNode extends BetaNode {
      * Creates a BetaMemory for the BetaNode's memory.
      */
     public Memory createMemory(final RuleBaseConfiguration config, InternalWorkingMemory wm) {
-        AccumulateMemory memory = new AccumulateMemory();
-        memory.betaMemory = this.constraints.createBetaMemory( config,
-                                                               NodeTypeEnums.AccumulateNode );
+        AccumulateMemory memory = this.accumulate.isMultiFunction() ?
+                                  new MultiAccumulateMemory(this.accumulate.getAccumulators()) :
+                                  new SingleAccumulateMemory(this.accumulate.getAccumulators()[0]);
+        memory.betaMemory = this.constraints.createBetaMemory(config,
+                                                              NodeTypeEnums.AccumulateNode);
         memory.workingMemoryContext = this.accumulate.createWorkingMemoryContext();
         memory.resultsContext = this.resultBinder.createContext();
         memory.alphaContexts = new ContextEntry[this.resultConstraints.length];
@@ -206,11 +209,11 @@ public class AccumulateNode extends BetaNode {
 
     }
 
-    public static class AccumulateMemory extends AbstractBaseLinkedListNode<Memory>
+    public static abstract class AccumulateMemory extends AbstractBaseLinkedListNode<Memory>
         implements
         Memory {
 
-        public Object[]           workingMemoryContext;
+        public Object             workingMemoryContext;
         public BetaMemory         betaMemory;
         public ContextEntry[]     resultsContext;
         public ContextEntry[]     alphaContexts;
@@ -231,29 +234,64 @@ public class AccumulateNode extends BetaNode {
             betaMemory.setSegmentMemory(segmentMemory);
         }
 
+        public abstract void reset();
+    }
+
+    public static class SingleAccumulateMemory extends AccumulateMemory {
+
+        private final Accumulator accumulator;
+
+        public SingleAccumulateMemory(Accumulator accumulator) {
+            this.accumulator = accumulator;
+        }
+
+        public void reset() {
+            betaMemory.reset();
+            workingMemoryContext = this.accumulator.createWorkingMemoryContext();
+        }
+    }
+
+    public static class MultiAccumulateMemory extends AccumulateMemory {
+
+        private final Accumulator[] accumulators;
+
+        public MultiAccumulateMemory(Accumulator[] accumulators) {
+            this.accumulators = accumulators;
+        }
+
+        public void reset() {
+            betaMemory.reset();
+            workingMemoryContext = new Object[ this.accumulators.length ];
+            for( int i = 0; i < this.accumulators.length; i++ ) {
+                ((Object[])workingMemoryContext)[i] = this.accumulators[i].createWorkingMemoryContext();
+            }
+        }
     }
 
     public static class AccumulateContext
         implements
         Externalizable {
-        public  Serializable[]      context;
+        public  Object              context;
         public  RightTuple          result;
         public  InternalFactHandle  resultFactHandle;
         public  LeftTuple           resultLeftTuple;
         public  boolean             propagated;
         private WorkingMemoryAction action; // is transiant
+        private PropagationContext  propagationContext;
 
         public void readExternal(ObjectInput in) throws IOException,
                 ClassNotFoundException {
-            context = (Serializable[]) in.readObject();
+            context = in.readObject();
             result = (RightTuple) in.readObject();
             propagated = in.readBoolean();
+            propagationContext = (PropagationContext) in.readObject();
         }
 
         public void writeExternal(ObjectOutput out) throws IOException {
             out.writeObject(context);
             out.writeObject(result);
             out.writeBoolean(propagated);
+            out.writeObject(propagationContext);
         }
 
         public WorkingMemoryAction getAction() {
@@ -278,6 +316,14 @@ public class AccumulateNode extends BetaNode {
 
         public void setResultLeftTuple(LeftTuple resultLeftTuple) {
             this.resultLeftTuple = resultLeftTuple;
+        }
+
+        public PropagationContext getPropagationContext() {
+            return propagationContext;
+        }
+
+        public void setPropagationContext(PropagationContext propagationContext) {
+            this.propagationContext = propagationContext;
         }
     }
 

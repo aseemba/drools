@@ -253,7 +253,8 @@ public class KieBaseModelImpl
                 return fileName.endsWith( ResourceType.DRL.getDefaultExtension() ) ||
                        fileName.endsWith( ResourceType.GDRL.getDefaultExtension() ) ||
                        fileName.endsWith( ResourceType.RDRL.getDefaultExtension() ) ||
-                       fileName.endsWith( ResourceType.BPMN2.getDefaultExtension() );
+                       fileName.endsWith( ResourceType.BPMN2.getDefaultExtension() ) ||
+                       fileName.endsWith( ResourceType.TDRL.getDefaultExtension() );
             }
         } );
     }
@@ -264,7 +265,8 @@ public class KieBaseModelImpl
                 (fileName.endsWith( ResourceType.DRL.getDefaultExtension() ) ||
                         fileName.endsWith( ResourceType.GDRL.getDefaultExtension() ) ||
                         fileName.endsWith( ResourceType.RDRL.getDefaultExtension() ) ||
-                        fileName.endsWith( ResourceType.BPMN2.getDefaultExtension() ));
+                        fileName.endsWith( ResourceType.BPMN2.getDefaultExtension() ) ||
+                        fileName.endsWith( ResourceType.TDRL.getDefaultExtension() ) );
     }
 
     public static class KBaseConverter extends AbstractXStreamConverter {
@@ -393,5 +395,17 @@ public class KieBaseModelImpl
         return "KieBaseModelImpl [name=" + name + ", includes=" + includes + ", packages=" + getPackages() + ", equalsBehavior=" + equalsBehavior + ", eventProcessingMode=" + eventProcessingMode + ", kSessions=" + kSessions + "]";
     }
 
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
 
+        KieBaseModelImpl that = (KieBaseModelImpl) o;
+        return name.equals(that.name);
+    }
+
+    @Override
+    public int hashCode() {
+        return name.hashCode();
+    }
 }

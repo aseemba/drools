@@ -5,13 +5,11 @@ import org.drools.compiler.Cheese;
 import org.drools.compiler.CommonTestMethodBase;
 import org.drools.compiler.Person;
 import org.drools.core.base.ClassObjectType;
-import org.drools.core.common.InternalRuleBase;
+import org.drools.core.common.InternalWorkingMemory;
 import org.drools.core.impl.KnowledgeBaseImpl;
-import org.drools.core.impl.StatefulKnowledgeSessionImpl;
 import org.drools.core.reteoo.LeftInputAdapterNode;
 import org.drools.core.reteoo.LeftTupleSink;
 import org.drools.core.reteoo.ObjectTypeNode;
-import org.drools.core.reteoo.ReteooWorkingMemoryInterface;
 import org.junit.Test;
 import org.kie.internal.KnowledgeBase;
 
@@ -20,7 +18,7 @@ import java.util.List;
 public class AlphaNetworkModifyTest extends CommonTestMethodBase {
     
     public ObjectTypeNode getObjectTypeNode(KnowledgeBase kbase, String nodeName) {
-        List<ObjectTypeNode> nodes = ((InternalRuleBase)((KnowledgeBaseImpl)kbase).ruleBase).getRete().getObjectTypeNodes();
+        List<ObjectTypeNode> nodes = ((KnowledgeBaseImpl)kbase).getRete().getObjectTypeNodes();
         for ( ObjectTypeNode n : nodes ) {
             if ( ((ClassObjectType)n.getObjectType()).getClassType().getSimpleName().equals( nodeName ) ) {
                 return n;
@@ -64,8 +62,8 @@ public class AlphaNetworkModifyTest extends CommonTestMethodBase {
         str += "end  \n";         
         
         KnowledgeBase kbase = loadKnowledgeBaseFromString( str );
-        
-        ReteooWorkingMemoryInterface wm = ((StatefulKnowledgeSessionImpl)kbase.newStatefulKnowledgeSession()).session;
+
+        InternalWorkingMemory wm = ((InternalWorkingMemory)kbase.newStatefulKnowledgeSession());
         
         
         ObjectTypeNode otnPerson = getObjectTypeNode(kbase, "Person" );
@@ -118,8 +116,8 @@ public class AlphaNetworkModifyTest extends CommonTestMethodBase {
         str += "end  \n";         
         
         KnowledgeBase kbase = loadKnowledgeBaseFromString( str );
-        
-        ReteooWorkingMemoryInterface wm = ((StatefulKnowledgeSessionImpl)kbase.newStatefulKnowledgeSession()).session;
+
+        InternalWorkingMemory wm = ((InternalWorkingMemory)kbase.newStatefulKnowledgeSession());
         wm.fireAllRules();
         
         
@@ -172,8 +170,8 @@ public class AlphaNetworkModifyTest extends CommonTestMethodBase {
         str += "end  \n";         
         
         KnowledgeBase kbase = loadKnowledgeBaseFromString( str );
-        
-        ReteooWorkingMemoryInterface wm = ((StatefulKnowledgeSessionImpl)kbase.newStatefulKnowledgeSession()).session;
+
+        InternalWorkingMemory wm = ((InternalWorkingMemory)kbase.newStatefulKnowledgeSession());
         wm.fireAllRules();
         
         

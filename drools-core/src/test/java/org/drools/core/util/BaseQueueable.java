@@ -18,24 +18,27 @@ package org.drools.core.util;
 
 import java.util.List;
 
-import org.drools.core.FactHandle;
+import org.drools.core.beliefsystem.ModedAssertion;
+import org.drools.core.beliefsystem.simple.SimpleMode;
+import org.kie.api.runtime.rule.FactHandle;
 import org.drools.core.common.ActivationGroupNode;
 import org.drools.core.common.ActivationNode;
 import org.drools.core.common.InternalAgendaGroup;
 import org.drools.core.common.InternalFactHandle;
 import org.drools.core.common.InternalRuleFlowGroup;
 import org.drools.core.common.LogicalDependency;
+import org.drools.core.definitions.rule.impl.RuleImpl;
 import org.drools.core.reteoo.LeftTupleImpl;
 import org.drools.core.rule.GroupElement;
-import org.drools.core.rule.Rule;
 import org.drools.core.spi.Activation;
 import org.drools.core.spi.AgendaGroup;
 import org.drools.core.spi.Consequence;
 import org.drools.core.spi.PropagationContext;
+import org.kie.internal.runtime.beliefs.Mode;
 
-public class BaseQueueable
+public class BaseQueueable<T extends ModedAssertion<T>>
         implements
-        Activation {
+        Activation<T> {
     private BinaryHeapQueue queue;
     private int   index;
     
@@ -55,7 +58,7 @@ public class BaseQueueable
         this.queue.dequeue( this.index );
     }
 
-    public void addLogicalDependency(LogicalDependency node) {
+    public void addLogicalDependency(LogicalDependency<T> node) {
     }
 
     public ActivationGroupNode getActivationGroupNode() {
@@ -70,7 +73,7 @@ public class BaseQueueable
         return null;
     }
 
-    public LinkedList getLogicalDependencies() {
+    public LinkedList<LogicalDependency<T>> getLogicalDependencies() {
         return null;
     }
 
@@ -78,7 +81,7 @@ public class BaseQueueable
         return null;
     }
 
-    public Rule getRule() {
+    public RuleImpl getRule() {
         return null;
     }
 
@@ -116,7 +119,7 @@ public class BaseQueueable
     public void setActivationGroupNode(ActivationGroupNode activationGroupNode) {
     }
 
-    public void setLogicalDependencies(LinkedList<LogicalDependency> justified) {
+    public void setLogicalDependencies(LinkedList<LogicalDependency<T>> justified) {
     }
 
     public void setActivationNode(ActivationNode ruleFlowGroupNode) {
@@ -146,14 +149,14 @@ public class BaseQueueable
         return false;
     }
     
-    public void addBlocked(LogicalDependency node) {
+    public void addBlocked(LogicalDependency<SimpleMode> node) {
     }
 
     public LinkedList getBlocked() {
         return null;
     }
 
-    public void setBlocked(LinkedList<LogicalDependency> justified) {
+    public void setBlocked(LinkedList<LogicalDependency<SimpleMode>> justified) {
     }
 
     public void addBlocked(LinkedListNode node) {

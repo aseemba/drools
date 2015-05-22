@@ -2,6 +2,7 @@ package org.drools.core.common;
 
 import org.drools.core.RuleBaseConfiguration;
 import org.drools.core.rule.IndexableConstraint;
+import org.drools.core.rule.constraint.MvelConstraint;
 import org.drools.core.util.index.IndexUtil;
 import org.drools.core.reteoo.BetaMemory;
 import org.drools.core.reteoo.builder.BuildContext;
@@ -53,7 +54,7 @@ public abstract class MultipleBetaConstraint implements BetaConstraints {
     }
 
     public final void init(BuildContext context, short betaNodeType) {
-        RuleBaseConfiguration config = context.getRuleBase().getConfiguration();
+        RuleBaseConfiguration config = context.getKnowledgeBase().getConfiguration();
 
         if ( disableIndexing || (!config.isIndexLeftBetaMemory() && !config.isIndexRightBetaMemory()) ) {
             indexed = new boolean[constraints.length];
@@ -121,5 +122,13 @@ public abstract class MultipleBetaConstraint implements BetaConstraints {
             }
         }
         return true;
+    }
+
+    public void registerEvaluationContext(BuildContext buildContext) {
+        for (int i = 0; i < constraints.length; i++) {
+            if (constraints[i] instanceof MvelConstraint) {
+                ((MvelConstraint) constraints[i]).registerEvaluationContext(buildContext);
+            }
+        }
     }
 }

@@ -15,14 +15,6 @@
  */
 package org.drools.persistence;
 
-import java.lang.reflect.Constructor;
-import java.util.Collections;
-import java.util.Date;
-import java.util.IdentityHashMap;
-import java.util.Map;
-import java.util.concurrent.locks.ReentrantLock;
-
-import org.drools.core.RuleBase;
 import org.drools.core.SessionConfiguration;
 import org.drools.core.command.CommandService;
 import org.drools.core.command.Interceptor;
@@ -36,7 +28,6 @@ import org.drools.core.command.runtime.DisposeCommand;
 import org.drools.core.command.runtime.UnpersistableCommand;
 import org.drools.core.common.EndOperationListener;
 import org.drools.core.common.InternalKnowledgeRuntime;
-import org.drools.core.impl.KnowledgeBaseImpl;
 import org.drools.core.marshalling.impl.MarshallingConfigurationImpl;
 import org.drools.core.runtime.process.InternalProcessRuntime;
 import org.drools.core.time.AcceptsTimerJobFactoryManager;
@@ -47,6 +38,7 @@ import org.drools.persistence.jta.JtaTransactionManager;
 import org.kie.api.KieBase;
 import org.kie.api.command.BatchExecutionCommand;
 import org.kie.api.command.Command;
+import org.kie.api.marshalling.ObjectMarshallingStrategy;
 import org.kie.api.runtime.Environment;
 import org.kie.api.runtime.EnvironmentName;
 import org.kie.api.runtime.KieSession;
@@ -55,6 +47,10 @@ import org.kie.internal.command.Context;
 import org.kie.internal.runtime.StatefulKnowledgeSession;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.lang.reflect.Constructor;
+import java.util.Date;
+import javax.persistence.EntityManager;
 
 public class SingleSessionCommandService
     implements
@@ -83,24 +79,6 @@ public class SingleSessionCommandService
         }
     }
 
-    public SingleSessionCommandService(RuleBase ruleBase,
-                                       SessionConfiguration conf,
-                                       Environment env) {
-        this( new KnowledgeBaseImpl( ruleBase ),
-              conf,
-              env );
-    }
-
-    public SingleSessionCommandService(Integer sessionId,
-                                       RuleBase ruleBase,
-                                       SessionConfiguration conf,
-                                       Environment env) {
-        this( sessionId,
-              new KnowledgeBaseImpl( ruleBase ),
-              conf,
-              env );
-    }
-
     public SingleSessionCommandService(KieBase kbase,
                                        KieSessionConfiguration conf,
                                        Environment env) {
@@ -125,7 +103,7 @@ public class SingleSessionCommandService
 
             persistenceContext.joinTransaction();
             this.sessionInfo = persistenceContext.persist( this.sessionInfo );
-
+            registerUpdateSync();
             txm.commit( transactionOwner );
         } catch ( RuntimeException re ) {
             rollbackTransaction( re,
@@ -139,7 +117,7 @@ public class SingleSessionCommandService
         }
 
         // update the session id to be the same as the session info id
-        ((InternalKnowledgeRuntime) ksession).setId( this.sessionInfo.getId() );
+        ((InternalKnowledgeRuntime) ksession).setId( this.sessionInfo.getId());
     }
 
     protected void initNewKnowledgeSession(KieBase kbase, KieSessionConfiguration conf) { 
@@ -156,8 +134,8 @@ public class SingleSessionCommandService
         config.setMarshallWorkItems( false );
 
         this.sessionInfo.setJPASessionMashallingHelper( this.marshallingHelper );
-        
-        ((InternalKnowledgeRuntime) this.ksession).setEndOperationListener( new EndOperationListenerImpl( this.sessionInfo ) );
+
+        ((InternalKnowledgeRuntime) this.ksession).setEndOperationListener( new EndOperationListenerImpl(this.txm, this.sessionInfo ) );
         
         this.kContext = new FixedKnowledgeCommandContext( new ContextImpl( "ksession", null),
                                                           null,
@@ -170,7 +148,7 @@ public class SingleSessionCommandService
         ((AcceptsTimerJobFactoryManager) ((InternalKnowledgeRuntime) ksession).getTimerService()).getTimerJobFactoryManager().setCommandService( this );
     }
     
-    public SingleSessionCommandService(Integer sessionId,
+    public SingleSessionCommandService(Long sessionId,
                                        KieBase kbase,
                                        KieSessionConfiguration conf,
                                        Environment env) {
@@ -197,7 +175,7 @@ public class SingleSessionCommandService
                           kbase,
                           conf,
                           persistenceContext );
-
+            registerUpdateSync();
             txm.commit( transactionOwner );
         } catch (SessionNotFoundException e){
             // do not rollback transaction otherwise it will mark it as aborted
@@ -219,10 +197,11 @@ public class SingleSessionCommandService
         }
     }
 
-    protected void initExistingKnowledgeSession(Integer sessionId,
+    protected void initExistingKnowledgeSession(Long sessionId,
                                 KieBase kbase,
                                 KieSessionConfiguration conf,
                                 PersistenceContext persistenceContext) {
+
         if ( !doRollback && this.ksession != null ) {
             return;
             // nothing to initialise
@@ -236,7 +215,6 @@ public class SingleSessionCommandService
             throw new SessionNotFoundException( "Could not find session data for id " + sessionId,
                                         e );
         }
-
         if ( sessionInfo == null ) {
             throw new SessionNotFoundException( "Could not find session data for id " + sessionId );
         }
@@ -252,7 +230,7 @@ public class SingleSessionCommandService
             config.setMarshallWorkItems( false );
         }
 
-        this.sessionInfo.setJPASessionMashallingHelper( this.marshallingHelper );
+        this.sessionInfo.setJPASessionMashallingHelper(this.marshallingHelper);
 
         // The CommandService for the TimerJobFactoryManager must be set before any timer jobs are scheduled. 
         // Otherwise, if overdue jobs are scheduled (and then run before the .commandService field can be set), 
@@ -267,7 +245,7 @@ public class SingleSessionCommandService
         // update the session id to be the same as the session info id
         ((InternalKnowledgeRuntime) ksession).setId( this.sessionInfo.getId() );
 
-        ((InternalKnowledgeRuntime) this.ksession).setEndOperationListener( new EndOperationListenerImpl( this.sessionInfo ) );
+        ((InternalKnowledgeRuntime) this.ksession).setEndOperationListener( new EndOperationListenerImpl( this.txm, this.sessionInfo ) );
 
         if ( this.kContext == null ) {
             // this should only happen when this class is first constructed
@@ -358,14 +336,17 @@ public class SingleSessionCommandService
     public static class EndOperationListenerImpl
         implements
         EndOperationListener {
+        private TransactionManager txm;
         private SessionInfo info;
 
-        public EndOperationListenerImpl(SessionInfo info) {
+        public EndOperationListenerImpl(TransactionManager txm, SessionInfo info) {
             this.info = info;
+            this.txm = txm;
         }
 
         public void endOperation(InternalKnowledgeRuntime kruntime) {
             this.info.setLastModificationDate( new Date( kruntime.getLastIdleTimestamp() ) );
+            TransactionManagerHelper.addToUpdatableSet(txm, info);
         }
     }
 
@@ -420,12 +401,12 @@ public class SingleSessionCommandService
             rollbackTransaction( re, transactionOwner );
             throw re;
         } catch ( Exception t1 ) {
-            rollbackTransaction( t1, transactionOwner );
+            rollbackTransaction(t1, transactionOwner);
             throw new RuntimeException( "Wrapped exception see cause", t1 );
         }
     }
 
-    public int getSessionId() {
+    public Long getSessionId() {
         return sessionInfo.getId();
     }
 
@@ -440,13 +421,24 @@ public class SingleSessionCommandService
         SingleSessionCommandService service;
 
         public SynchronizationImpl(SingleSessionCommandService service) {
-            super(1);
+            super(1, "SynchronizationImpl-"+service.toString());
             this.service = service;
         }
 
         public void afterCompletion(int status) {
             if ( status != TransactionManager.STATUS_COMMITTED ) {
                 this.service.rollback();
+            }
+
+
+            if (this.service.txm != null) {
+                ObjectMarshallingStrategy[] strategies = (ObjectMarshallingStrategy[]) this.service.env.get(EnvironmentName.OBJECT_MARSHALLING_STRATEGIES);
+
+                for (ObjectMarshallingStrategy strategy : strategies) {
+                    if (strategy instanceof TransactionAware) {
+                        ((TransactionAware) strategy).onEnd(this.service.txm);
+                    }
+                }
             }
 
             this.service.jpm.endCommandScopedEntityManager();
@@ -471,6 +463,12 @@ public class SingleSessionCommandService
             // not used
         }
 
+        @Override
+        public String toString() {
+            return "SynchronizationImpl{" +
+                    "service=" + service.sessionInfo +  " cmd=" + service.toString() +
+                    '}';
+        }
     }
 
     public KieSession getKieSession() {
@@ -484,6 +482,13 @@ public class SingleSessionCommandService
 
     private void rollback() {
         this.doRollback = true;
+    }
+
+    private void registerUpdateSync() {
+        if (this.txm.getResource("TriggerUpdateTransactionSynchronization-"+this.toString()) == null) {
+            this.txm.registerTransactionSynchronization(new TriggerUpdateTransactionSynchronization(txm, env));
+            this.txm.putResource("TriggerUpdateTransactionSynchronization-"+this.toString(), true);
+        }
     }
 
     private class TransactionInterceptor extends AbstractInterceptor {
@@ -511,7 +516,7 @@ public class SingleSessionCommandService
             try {
                 transactionOwner = txm.begin();
                 
-                    persistenceContext.joinTransaction();
+                persistenceContext.joinTransaction();
                 
                 initExistingKnowledgeSession( sessionInfo.getId(),
                         marshallingHelper.getKbase(),
@@ -521,6 +526,16 @@ public class SingleSessionCommandService
                 jpm.beginCommandScopedEntityManager();
 
                 registerRollbackSync();
+
+                if (txm != null) {
+                    ObjectMarshallingStrategy[] strategies = (ObjectMarshallingStrategy[]) env.get(EnvironmentName.OBJECT_MARSHALLING_STRATEGIES);
+
+                    for (ObjectMarshallingStrategy strategy : strategies) {
+                        if (strategy instanceof TransactionAware) {
+                            ((TransactionAware) strategy).onStart(txm);
+                        }
+                    }
+                }
 
                 T result = null;
                 if( command instanceof BatchExecutionCommand) {
@@ -532,7 +547,7 @@ public class SingleSessionCommandService
                     logger.trace("Executing " + command.getClass().getSimpleName());
                     result = executeNext((GenericCommand<T>) command);
                 }
-
+                registerUpdateSync();
                 txm.commit( transactionOwner );
 
                 return result;

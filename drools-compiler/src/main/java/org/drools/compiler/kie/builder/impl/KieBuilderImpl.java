@@ -1,20 +1,10 @@
 package org.drools.compiler.kie.builder.impl;
 
-import java.io.ByteArrayInputStream;
-import java.io.File;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Enumeration;
-import java.util.List;
-import java.util.Properties;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
-
+import org.drools.compiler.builder.impl.KnowledgeBuilderConfigurationImpl;
 import org.drools.compiler.commons.jci.compilers.CompilationResult;
 import org.drools.compiler.commons.jci.compilers.EclipseJavaCompiler;
-import org.drools.compiler.commons.jci.compilers.EclipseJavaCompilerSettings;
+import org.drools.compiler.commons.jci.compilers.JavaCompiler;
+import org.drools.compiler.commons.jci.compilers.JavaCompilerFactory;
 import org.drools.compiler.commons.jci.problems.CompilationProblem;
 import org.drools.compiler.commons.jci.readers.DiskResourceReader;
 import org.drools.compiler.commons.jci.readers.ResourceReader;
@@ -22,13 +12,16 @@ import org.drools.compiler.compiler.io.memory.MemoryFileSystem;
 import org.drools.compiler.kproject.ReleaseIdImpl;
 import org.drools.compiler.kproject.models.KieModuleModelImpl;
 import org.drools.compiler.kproject.xml.PomModel;
+import org.drools.compiler.rule.builder.dialect.java.JavaDialectConfiguration;
 import org.drools.core.builder.conf.impl.ResourceConfigurationImpl;
+import org.drools.core.util.IoUtils;
 import org.drools.core.util.StringUtils;
 import org.kie.api.KieBaseConfiguration;
 import org.kie.api.KieServices;
 import org.kie.api.builder.KieBuilder;
 import org.kie.api.builder.KieFileSystem;
 import org.kie.api.builder.KieModule;
+import org.kie.api.builder.KieRepository;
 import org.kie.api.builder.Message.Level;
 import org.kie.api.builder.ReleaseId;
 import org.kie.api.builder.Results;
@@ -42,8 +35,19 @@ import org.kie.internal.KnowledgeBaseFactory;
 import org.kie.internal.builder.IncrementalResults;
 import org.kie.internal.builder.InternalKieBuilder;
 import org.kie.internal.builder.KieBuilderSet;
-
 import org.kie.internal.io.ResourceTypeImpl;
+
+import java.io.ByteArrayInputStream;
+import java.io.File;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Enumeration;
+import java.util.List;
+import java.util.Properties;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 
 public class KieBuilderImpl
         implements
@@ -52,6 +56,8 @@ public class KieBuilderImpl
     static final String           RESOURCES_ROOT = "src/main/resources/";
     static final String           JAVA_ROOT      = "src/main/java/";
     static final String           JAVA_TEST_ROOT = "src/test/java/";
+
+    private static final String RESOURCES_ROOT_DOT_SEPARATOR = RESOURCES_ROOT.replace( '/', '.' );
 
     private ResultsImpl           results;
     private final ResourceReader  srcMfs;
@@ -72,11 +78,18 @@ public class KieBuilderImpl
 
     private KieBuilderSetImpl     kieBuilderSet;
 
+    private ClassLoader           classLoader;
+
     public KieBuilderImpl(File file) {
         this.srcMfs = new DiskResourceReader( file );
     }
 
     public KieBuilderImpl(KieFileSystem kieFileSystem) {
+        this(kieFileSystem, null);
+    }
+
+    public KieBuilderImpl(KieFileSystem kieFileSystem, ClassLoader classLoader) {
+        this.classLoader = classLoader;
         srcMfs = ((KieFileSystemImpl) kieFileSystem).asMemoryFileSystem();
     }
 
@@ -167,16 +180,14 @@ public class KieBuilderImpl
                 kModule.setPomModel(pomModel);
             }
 
-            KieModuleKieProject kProject = new KieModuleKieProject( kModule );
+            KieModuleKieProject kProject = new KieModuleKieProject( kModule, classLoader );
             for (ReleaseId unresolvedDep : kModule.getUnresolvedDependencies()) {
                 results.addMessage(Level.ERROR, "pom.xml", "Unresolved dependency " + unresolvedDep);
             }
 
             compileJavaClasses(kProject.getClassLoader());
 
-            if ( buildKieProject( kModule, results, kProject ) ) {
-                new KieMetaInfoBuilder(trgMfs, kModule).writeKieModuleMetaInfo();
-            }
+            buildKieProject(kModule, results, kProject, trgMfs);
         }
         return this;
     }
@@ -198,20 +209,25 @@ public class KieBuilderImpl
         return ((ReleaseIdImpl) releaseId).getCompilationCachePathPrefix() + kbaseName.replace( '.', '/' ) + "/kbase.cache";
     }
 
-    public static boolean buildKieModule(InternalKieModule kModule,
+    public static void buildKieModule(InternalKieModule kModule,
                                          ResultsImpl messages ) {
-        return buildKieProject(kModule, messages, new KieModuleKieProject( kModule ));
+        buildKieProject(kModule, messages, new KieModuleKieProject( kModule ), null);
     }
 
-    private static boolean buildKieProject(InternalKieModule kModule, ResultsImpl messages, KieModuleKieProject kProject) {
+    private static void buildKieProject(InternalKieModule kModule, ResultsImpl messages, KieModuleKieProject kProject, MemoryFileSystem trgMfs) {
         kProject.init();
         kProject.verify(messages);
 
         if ( messages.filterMessages( Level.ERROR ).isEmpty() ) {
-            KieServices.Factory.get().getRepository().addKieModule(kModule);
-            return true;
+            if (trgMfs != null) {
+                new KieMetaInfoBuilder(trgMfs, kModule).writeKieModuleMetaInfo();
+            }
+            KieRepository kieRepository = KieServices.Factory.get().getRepository();
+            kieRepository.addKieModule(kModule);
+            for (InternalKieModule kDep : kModule.getKieDependencies().values()) {
+                kieRepository.addKieModule(kDep);
+            }
         }
-        return false;
     }
 
     private void addKBasesFilesToTrg() {
@@ -298,16 +314,19 @@ public class KieBuilderImpl
     }
 
     public static boolean filterFileInKBase(InternalKieModule kieModule, KieBaseModel kieBase, String fileName) {
-        return isFileInKieBase( kieBase, fileName ) && (
-                FormatsManager.isKieExtension( fileName ) || getResourceType(kieModule, fileName) != null);
+        return isFileInKieBase( kieBase, fileName ) &&
+               (FormatsManager.isKieExtension( fileName ) || getResourceType(kieModule, fileName) != null);
     }
 
-    private static boolean isFileInKieBase(KieBaseModel kieBase,
-                                           String fileName) {
+    private static boolean isFileInKieBase(KieBaseModel kieBase, String fileName) {
+        int lastSep = Math.max(0, fileName.lastIndexOf( "/" ));
+        if (lastSep+1 < fileName.length() && fileName.charAt(lastSep+1) == '.') {
+            // skip dot files
+            return false;
+        }
         if ( kieBase.getPackages().isEmpty() ) {
             return true;
         } else {
-            int lastSep = fileName.lastIndexOf( "/" );
             String pkgNameForFile = lastSep > 0 ? fileName.substring( 0, lastSep ) : fileName;
             pkgNameForFile = pkgNameForFile.replace( '/', '.' );
             for ( String pkgName : kieBase.getPackages() ) {
@@ -315,9 +334,23 @@ public class KieBuilderImpl
                 if ( isNegative ) {
                     pkgName = pkgName.substring( 1 );
                 }
-                if ( pkgName.equals( "*" ) || pkgNameForFile.endsWith( pkgName ) ||
-                     (pkgName.endsWith( ".*" ) && pkgNameForFile.contains( pkgName.substring( 0, pkgName.length() - 2 ) )) ) {
+                if ( pkgName.equals( "*" ) || pkgNameForFile.endsWith( pkgName ) ) {
                     return !isNegative;
+                }
+                if (pkgName.endsWith( ".*" )) {
+                    String relativePkgNameForFile = pkgNameForFile.startsWith(RESOURCES_ROOT_DOT_SEPARATOR) ?
+                                                    pkgNameForFile.substring(RESOURCES_ROOT_DOT_SEPARATOR.length()) :
+                                                    pkgNameForFile;
+                    String pkgNameNoWildcard = pkgName.substring( 0, pkgName.length() - 2 );
+                    if ( relativePkgNameForFile.equals(pkgNameNoWildcard) || relativePkgNameForFile.startsWith(pkgNameNoWildcard + "." ) ) {
+                        return !isNegative;
+                    }
+                    if (relativePkgNameForFile.startsWith(kieBase.getName() + ".")) {
+                        relativePkgNameForFile = relativePkgNameForFile.substring(kieBase.getName().length() + 1);
+                        if ( relativePkgNameForFile.equals(pkgNameNoWildcard) || relativePkgNameForFile.startsWith(pkgNameNoWildcard + "." ) ) {
+                            return !isNegative;
+                        }
+                    }
                 }
             }
             return false;
@@ -370,7 +403,7 @@ public class KieBuilderImpl
         }
 
         if ( setDefaultsforEmptyKieModule( kModuleModel ) ) {
-            kModuleModelXml = kModuleModel.toXML().getBytes();
+            kModuleModelXml = kModuleModel.toXML().getBytes( IoUtils.UTF8_CHARSET );
         }
     }
 
@@ -416,7 +449,7 @@ public class KieBuilderImpl
             return mfs.getBytes( "pom.xml" );
         } else {
             // There is no pom.xml, and thus no ReleaseId, so generate a pom.xml from the global detault.
-            return generatePomXml( KieServices.Factory.get().getRepository().getDefaultReleaseId() ).getBytes();
+            return generatePomXml( KieServices.Factory.get().getRepository().getDefaultReleaseId() ).getBytes( IoUtils.UTF8_CHARSET );
         }
     }
 
@@ -429,14 +462,14 @@ public class KieBuilderImpl
                           pomXml,
                           true );
             trgMfs.write( g.getPomPropertiesPath(),
-                          generatePomProperties( releaseId ).getBytes(),
+                          generatePomProperties( releaseId ).getBytes( IoUtils.UTF8_CHARSET ),
                           true );
 
         }
 
         if ( kModuleModelXml != null ) {
             trgMfs.write( KieModuleModelImpl.KMODULE_JAR_PATH,
-                          kModuleModel.toXML().getBytes(),
+                          kModuleModel.toXML().getBytes( IoUtils.UTF8_CHARSET ),
                           true );
         }
     }
@@ -517,19 +550,23 @@ public class KieBuilderImpl
             }
         }
 
-        compileJavaClasses(classLoader, javaFiles, JAVA_ROOT);
-        compileJavaClasses(classLoader, javaTestFiles, JAVA_TEST_ROOT);
+        if ( !javaFiles.isEmpty() || !javaTestFiles.isEmpty() ) {
+            KnowledgeBuilderConfigurationImpl kconf = new KnowledgeBuilderConfigurationImpl(classLoader);
+            JavaDialectConfiguration javaConf = (JavaDialectConfiguration)kconf.getDialectConfiguration("java");
+            compileJavaClasses(javaConf, classLoader, javaFiles, JAVA_ROOT);
+            compileJavaClasses(javaConf, classLoader, javaTestFiles, JAVA_TEST_ROOT);
+        }
     }
 
-    private void compileJavaClasses(ClassLoader classLoader, List<String> javaFiles, String rootFolder) {
+    private void compileJavaClasses(JavaDialectConfiguration javaConf, ClassLoader classLoader, List<String> javaFiles, String rootFolder) {
         if ( !javaFiles.isEmpty() ) {
             String[] sourceFiles = javaFiles.toArray( new String[javaFiles.size()] );
 
-            EclipseJavaCompiler compiler = createCompiler( rootFolder );
-            CompilationResult res = compiler.compile( sourceFiles,
-                                                      srcMfs,
-                                                      trgMfs,
-                                                      classLoader );
+            JavaCompiler javaCompiler = createCompiler( javaConf, rootFolder );
+            CompilationResult res = javaCompiler.compile( sourceFiles,
+                                                          srcMfs,
+                                                          trgMfs,
+                                                          classLoader );
 
             for ( CompilationProblem problem : res.getErrors() ) {
                 results.addMessage( problem );
@@ -538,6 +575,14 @@ public class KieBuilderImpl
                 results.addMessage( problem );
             }
         }
+    }
+
+    private JavaCompiler createCompiler(JavaDialectConfiguration javaConf, String prefix) {
+        JavaCompiler javaCompiler = JavaCompilerFactory.getInstance().loadCompiler( javaConf );
+        if (javaCompiler instanceof EclipseJavaCompiler) {
+            ((EclipseJavaCompiler)javaCompiler).setPrefix(prefix);
+        }
+        return javaCompiler;
     }
 
     public static String findPomProperties(ZipFile zipFile) {
@@ -572,14 +617,6 @@ public class KieBuilderImpl
             }
         }
         return null;
-    }
-
-    private EclipseJavaCompiler createCompiler(String prefix) {
-        EclipseJavaCompilerSettings settings = new EclipseJavaCompilerSettings();
-        settings.setSourceVersion( "1.5" );
-        settings.setTargetVersion( "1.5" );
-        return new EclipseJavaCompiler( settings,
-                                        prefix );
     }
 
     @Override

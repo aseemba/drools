@@ -16,6 +16,7 @@
 
 package org.drools.core.base;
 
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -23,13 +24,14 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 
-import org.drools.core.RuntimeDroolsException;
-
 public class ClassTypeResolver
     implements
     TypeResolver {
     private String                           defaultPackagName;
+
     private Set<String>                      imports          = Collections.emptySet();
+
+    private Set<String>                      implicitImports  = Collections.emptySet();
 
     private ClassLoader                      classLoader;
 
@@ -60,7 +62,7 @@ public class ClassTypeResolver
         this.imports = imports;
 
         if ( classLoader == null ) {
-            throw new RuntimeDroolsException( "ClassTypeResolver cannot have a null parent ClassLoader" );
+            throw new RuntimeException( "ClassTypeResolver cannot have a null parent ClassLoader" );
         }
 
         this.classLoader = classLoader;
@@ -105,8 +107,19 @@ public class ClassTypeResolver
         this.imports.add( importEntry );
     }
 
+    public void addImplicitImport( final String importEntry ) {
+        if ( this.implicitImports == Collections.EMPTY_SET ) {
+            this.implicitImports = new HashSet<String>();
+        }
+        this.implicitImports.add(importEntry);
+    }
+
     public Class<?> lookupFromCache( final String className ) {
         return this.cachedImports.get( className );
+    }
+
+    public Class<?> resolveType(String className) throws ClassNotFoundException {
+        return resolveType(className, ACCEPT_ALL_CLASS_FILTER);
     }
 
     /*
@@ -118,13 +131,17 @@ public class ClassTypeResolver
     /* (non-Javadoc)
      * @see org.kie.semantics.java.TypeResolver#resolveType(java.lang.String)
      */
-    public Class< ? > resolveType( String className ) throws ClassNotFoundException {
+    public Class< ? > resolveType( String className, ClassFilter classFilter ) throws ClassNotFoundException {
         Class< ? > clazz = null;
         boolean isArray = false;
         boolean isPrimitive = false;
         final StringBuilder arrayClassName = new StringBuilder();
 
         clazz = lookupFromCache( className );
+
+        if (clazz != null && !classFilter.accept(clazz)) {
+            clazz = null;
+        }
 
         if ( clazz == null && className.indexOf( '[' ) > 0 ) {
             // is an array?
@@ -152,60 +169,40 @@ public class ClassTypeResolver
         if ( clazz == null ) {
             try {
                 clazz = this.classLoader.loadClass( className );
+                if (!classFilter.accept(clazz)) {
+                    clazz = null;
+                }
             } catch ( final ClassNotFoundException e ) {
                 clazz = null;
             }
         }
 
+
         // try as a nested class
         if ( clazz == null ) {
             clazz = importClass( className,
                                  className );
-        }
-
-        // Now try the className with each of the given imports
-        if ( clazz == null ) {
-            final Set<Class<?>> validClazzCandidates = new HashSet<Class<?>>();
-
-            for (String i : imports) {
-                clazz = importClass( i, className );
-                if ( clazz != null ) {
-                    validClazzCandidates.add( clazz );
-                }
-            }
-
-            if ( validClazzCandidates.size() > 1 ) {
-                for ( Iterator<Class<?>> validIt = validClazzCandidates.iterator(); validIt.hasNext(); ) {
-                    Class<?> cls = validIt.next();
-                    if ( this.defaultPackagName.equals( cls.getPackage().getName() ) ) {
-                        validIt.remove();
-                    }
-                }
-            }
-
-            // If there are more than one possible resolutions, complain about
-            // the ambiguity
-            if ( validClazzCandidates.size() > 1 ) {
-                final StringBuilder sb = new StringBuilder();
-                final Iterator<Class<?>> clazzCandIter = validClazzCandidates.iterator();
-                while ( clazzCandIter.hasNext() ) {
-                    if ( 0 != sb.length() ) {
-                        sb.append( ", " );
-                    }
-                    sb.append( clazzCandIter.next().getName() );
-                }
-                throw new Error( "Unable to find ambiguously defined class '" + className + "', candidates are: [" + sb.toString() + "]" );
-            } else if ( validClazzCandidates.size() == 1 ) {
-                clazz = (Class<?>) validClazzCandidates.toArray()[0];
-            } else {
+            if (clazz != null && !classFilter.accept(clazz)) {
                 clazz = null;
             }
+        }
 
+        // Now try the className with each of the given explicit imports
+        if ( clazz == null ) {
+            clazz = getClassFromImports(className, classFilter, imports);
+        }
+
+        // Now try the className with each of the given implicit imports
+        if ( clazz == null ) {
+            clazz = getClassFromImports(className, classFilter, implicitImports);
         }
 
         // Now try the java.lang package
         if ( clazz == null ) {
             clazz = defaultClass( className );
+            if (clazz != null && !classFilter.accept(clazz)) {
+                clazz = null;
+            }
         }
 
         // If array component class was found, try to resolve the array class of it
@@ -240,8 +237,43 @@ public class ClassTypeResolver
         return clazz;
     }
 
-    private Class<?> importClass( final String importText,
-                               final String className ) {
+    private Class<?> getClassFromImports(String className, ClassFilter classFilter, Collection<String> usedImports) {
+        final Set<Class<?>> validClazzCandidates = new HashSet<Class<?>>();
+
+        for (String i : usedImports) {
+            Class<?> clazz = importClass( i, className );
+            if ( clazz != null && classFilter.accept(clazz) ) {
+                validClazzCandidates.add( clazz );
+            }
+        }
+
+        if ( validClazzCandidates.size() > 1 ) {
+            for ( Iterator<Class<?>> validIt = validClazzCandidates.iterator(); validIt.hasNext(); ) {
+                Class<?> cls = validIt.next();
+                if ( this.defaultPackagName.equals( cls.getPackage().getName() ) ) {
+                    validIt.remove();
+                }
+            }
+        }
+
+        // If there are more than one possible resolutions, complain about
+        // the ambiguity
+        if ( validClazzCandidates.size() > 1 ) {
+            final StringBuilder sb = new StringBuilder();
+            final Iterator<Class<?>> clazzCandIter = validClazzCandidates.iterator();
+            while ( clazzCandIter.hasNext() ) {
+                if ( 0 != sb.length() ) {
+                    sb.append( ", " );
+                }
+                sb.append( clazzCandIter.next().getName() );
+            }
+            throw new Error( "Unable to find ambiguously defined class '" + className + "', candidates are: [" + sb.toString() + "]" );
+        }
+
+        return validClazzCandidates.size() == 1 ? validClazzCandidates.iterator().next() : null;
+    }
+
+    private Class<?> importClass( String importText, String className ) {
         String qualifiedClass = null;
         Class<?> clazz = null;
 
@@ -329,5 +361,10 @@ public class ClassTypeResolver
             this.imports.clear();
             this.cachedImports.clear();
         }
+    }
+
+    @Override
+    public ClassLoader getClassLoader() {
+        return classLoader;
     }
 }

@@ -1,22 +1,23 @@
 package org.drools.compiler.rule.builder.dialect.mvel;
 
-import static org.drools.compiler.rule.builder.dialect.DialectUtil.copyErrorLocation;
-
-import java.util.Arrays;
-import java.util.Map;
-
 import org.drools.compiler.compiler.BoundIdentifiers;
 import org.drools.compiler.compiler.DescrBuildError;
 import org.drools.compiler.rule.builder.RuleBuildContext;
 import org.drools.compiler.rule.builder.SalienceBuilder;
 import org.drools.core.base.mvel.MVELCompilationUnit;
 import org.drools.core.base.mvel.MVELSalienceExpression;
+import org.drools.core.definitions.rule.impl.RuleImpl;
+import org.drools.core.definitions.rule.impl.RuleImpl.SafeSalience;
 import org.drools.core.reteoo.RuleTerminalNode.SortDeclarations;
 import org.drools.core.rule.Declaration;
 import org.drools.core.rule.MVELDialectRuntimeData;
-import org.drools.core.rule.Rule.SafeSalience;
 import org.drools.core.spi.KnowledgeHelper;
 import org.kie.internal.security.KiePolicyHelper;
+
+import java.util.Arrays;
+import java.util.Map;
+
+import static org.drools.compiler.rule.builder.dialect.DialectUtil.copyErrorLocation;
 
 public class MVELSalienceBuilder
     implements
@@ -25,19 +26,19 @@ public class MVELSalienceBuilder
     public void build(RuleBuildContext context) {
         boolean typesafe = context.isTypesafe();
         // pushing consequence LHS into the stack for variable resolution
-        context.getBuildStack().push( context.getRule().getLhs() );
+        context.getBuildStack().push( ((RuleImpl)context.getRule()).getLhs() );
 
         try {
             // This builder is re-usable in other dialects, so specify by name            
             MVELDialect dialect = (MVELDialect) context.getDialect( "mvel" );
             
-            Map<String, Declaration> decls = context.getDeclarationResolver().getDeclarations(context.getRule());
+            Map<String, Declaration> decls = context.getDeclarationResolver().getDeclarations((RuleImpl)context.getRule());
 
             MVELAnalysisResult analysis = ( MVELAnalysisResult) dialect.analyzeExpression( context,
                                                                                            context.getRuleDescr(),
                                                                                            (String) context.getRuleDescr().getSalience(),
                                                                                            new BoundIdentifiers(context.getDeclarationResolver().getDeclarationClasses( decls ),
-                                                                                                                context.getPackageBuilder().getGlobals() ) );
+                                                                                                                context.getKnowledgeBuilder().getGlobals() ) );
             context.setTypesafe( analysis.isTypesafe() );
             final BoundIdentifiers usedIdentifiers = analysis.getBoundIdentifiers();
             int i = usedIdentifiers.getDeclrClasses().keySet().size();
@@ -66,7 +67,7 @@ public class MVELSalienceBuilder
             data.addCompileable( context.getRule(),
                                  expr );
             
-            expr.compile( data );
+            expr.compile( data, context.getRule() );
         } catch ( final Exception e ) {
             copyErrorLocation(e, context.getRuleDescr());
             context.addError( new DescrBuildError( context.getParentDescr(),

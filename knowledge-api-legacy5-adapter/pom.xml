@@ -5,8 +5,8 @@
   <modelVersion>4.0.0</modelVersion>
   <parent>
     <groupId>org.drools</groupId>
-    <artifactId>drools-multiproject</artifactId>
-    <version>6.1.0-SNAPSHOT</version>
+    <artifactId>drools</artifactId>
+    <version>6.3.0-SNAPSHOT</version>
   </parent>
 
   <artifactId>knowledge-api</artifactId>
@@ -33,6 +33,15 @@
       <artifactId>drools-decisiontables</artifactId>
     </dependency>
     <dependency>
+      <groupId>org.kie</groupId>
+      <artifactId>kie-api</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.kie</groupId>
+      <artifactId>kie-internal</artifactId>
+    </dependency>
+
+    <dependency>
     <!-- External dependencies -->
     <groupId>org.osgi</groupId>
       <artifactId>org.osgi.core</artifactId>
@@ -54,8 +63,8 @@
       <scope>provided</scope>
     </dependency>
     <dependency>
-      <groupId>javax.xml.bind</groupId>
-      <artifactId>jaxb-api</artifactId>
+      <groupId>org.jboss.spec.javax.xml.bind</groupId>
+      <artifactId>jboss-jaxb-api_2.2_spec</artifactId>
       <scope>provided</scope>
     </dependency>
     <dependency>
@@ -74,13 +83,8 @@
       <scope>provided</scope>
     </dependency>
     <dependency>
-      <groupId>javax.jms</groupId>
-      <artifactId>jms</artifactId>
-      <scope>provided</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.quartz-scheduler</groupId>
-      <artifactId>quartz</artifactId>
+      <groupId>org.jboss.spec.javax.jms</groupId>
+      <artifactId>jboss-jms-api_1.1_spec</artifactId>
       <scope>provided</scope>
     </dependency>
     <dependency>

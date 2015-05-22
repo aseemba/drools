@@ -16,22 +16,11 @@
 
 package org.drools.core.marshalling.impl;
 
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.Iterator;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.SortedSet;
-
+import com.google.protobuf.ByteString;
 import org.drools.core.InitialFact;
 import org.drools.core.WorkingMemoryEntryPoint;
 import org.drools.core.beliefsystem.BeliefSet;
-import org.drools.core.common.AbstractWorkingMemory;
+import org.drools.core.beliefsystem.ModedAssertion;
 import org.drools.core.common.ActivationIterator;
 import org.drools.core.common.AgendaGroupQueueImpl;
 import org.drools.core.common.AgendaItem;
@@ -41,7 +30,6 @@ import org.drools.core.common.EqualityKey;
 import org.drools.core.common.EventFactHandle;
 import org.drools.core.common.InternalAgenda;
 import org.drools.core.common.InternalFactHandle;
-import org.drools.core.common.InternalRuleBase;
 import org.drools.core.common.InternalWorkingMemory;
 import org.drools.core.common.InternalWorkingMemoryEntryPoint;
 import org.drools.core.common.LeftTupleIterator;
@@ -54,12 +42,15 @@ import org.drools.core.common.ObjectTypeConfigurationRegistry;
 import org.drools.core.common.QueryElementFactHandle;
 import org.drools.core.common.TruthMaintenanceSystem;
 import org.drools.core.common.WorkingMemoryAction;
+import org.drools.core.definitions.rule.impl.RuleImpl;
+import org.drools.core.impl.StatefulKnowledgeSessionImpl;
 import org.drools.core.marshalling.impl.ProtobufMessages.FactHandle;
 import org.drools.core.marshalling.impl.ProtobufMessages.ObjectTypeConfiguration;
 import org.drools.core.marshalling.impl.ProtobufMessages.ProcessData.Builder;
 import org.drools.core.marshalling.impl.ProtobufMessages.Timers;
 import org.drools.core.marshalling.impl.ProtobufMessages.Timers.Timer;
 import org.drools.core.marshalling.impl.ProtobufMessages.Tuple;
+import org.drools.core.phreak.PropagationEntry;
 import org.drools.core.phreak.RuleAgendaItem;
 import org.drools.core.process.instance.WorkItem;
 import org.drools.core.reteoo.AccumulateNode.AccumulateContext;
@@ -71,17 +62,18 @@ import org.drools.core.reteoo.LeftTuple;
 import org.drools.core.reteoo.NodeTypeEnums;
 import org.drools.core.reteoo.ObjectSink;
 import org.drools.core.reteoo.ObjectTypeConf;
+import org.drools.core.reteoo.ObjectTypeNode;
 import org.drools.core.reteoo.ObjectTypeNode.ObjectTypeNodeMemory;
 import org.drools.core.reteoo.QueryElementNode.QueryElementNodeMemory;
 import org.drools.core.reteoo.RightInputAdapterNode;
 import org.drools.core.reteoo.RightTuple;
-import org.drools.core.rule.Rule;
 import org.drools.core.spi.Activation;
 import org.drools.core.spi.AgendaGroup;
 import org.drools.core.spi.RuleFlowGroup;
 import org.drools.core.time.JobContext;
 import org.drools.core.time.SelfRemovalJobContext;
 import org.drools.core.time.Trigger;
+import org.drools.core.time.impl.CompositeMaxDurationTrigger;
 import org.drools.core.time.impl.CronTrigger;
 import org.drools.core.time.impl.IntervalTrigger;
 import org.drools.core.time.impl.PointInTimeTrigger;
@@ -94,7 +86,16 @@ import org.kie.api.marshalling.ObjectMarshallingStrategy;
 import org.kie.api.marshalling.ObjectMarshallingStrategyStore;
 import org.kie.api.runtime.rule.EntryPoint;
 
-import com.google.protobuf.ByteString;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
 
 /**
  * An output marshaller that uses ProtoBuf as the marshalling framework
@@ -126,17 +127,17 @@ public class ProtobufOutputMarshaller {
     }
 
     private static ProtobufMessages.KnowledgeSession serializeSession(MarshallerWriteContext context) throws IOException {
-        AbstractWorkingMemory wm = (AbstractWorkingMemory) context.wm;
+        StatefulKnowledgeSessionImpl wm = (StatefulKnowledgeSessionImpl) context.wm;
 
         try {
             wm.getLock().lock();
-            for (WorkingMemoryEntryPoint ep : wm.getEntryPoints().values()) {
+            for (WorkingMemoryEntryPoint ep : wm.getWorkingMemoryEntryPoints().values()) {
                 if (ep instanceof NamedEntryPoint) {
                     ((NamedEntryPoint)ep).lock();
                 }
             }
 
-            wm.getAgenda().unstageActivations();
+            ((InternalAgenda)wm.getAgenda()).unstageActivations();
 
             evaluateRuleActivations( wm );
 
@@ -164,7 +165,7 @@ public class ProtobufOutputMarshaller {
 
             writeNodeMemories( context, _ruleData );
 
-            for ( EntryPoint wmep : wm.getEntryPoints().values() ) {
+            for ( EntryPoint wmep : wm.getWorkingMemoryEntryPoints().values() ) {
                 org.drools.core.marshalling.impl.ProtobufMessages.EntryPoint.Builder _epb = ProtobufMessages.EntryPoint.newBuilder();
                 _epb.setEntryPointId( wmep.getEntryPointId() );
 
@@ -218,7 +219,7 @@ public class ProtobufOutputMarshaller {
 
             return _session.build();
         } finally {
-            for (WorkingMemoryEntryPoint ep : wm.getEntryPoints().values()) {
+            for (WorkingMemoryEntryPoint ep : wm.getWorkingMemoryEntryPoints().values()) {
                 if (ep instanceof NamedEntryPoint) {
                     ((NamedEntryPoint)ep).unlock();
                 }
@@ -241,18 +242,21 @@ public class ProtobufOutputMarshaller {
                     }
     	});
         for( ObjectTypeConf otc : otcs ) {
-    		final ObjectTypeNodeMemory memory = (ObjectTypeNodeMemory) context.wm.getNodeMemory( otc.getConcreteObjectTypeNode() );
-    		if( memory != null && ! memory.memory.isEmpty() ) {
-        		ObjectTypeConfiguration _otc = ObjectTypeConfiguration.newBuilder()
-                        .setType( otc.getTypeName() )
-                        .setTmsEnabled( otc.isTMSEnabled() )
-                        .build();
-                _epb.addOtc(_otc );
-    		}
+            ObjectTypeNode objectTypeNode = otc.getConcreteObjectTypeNode();
+            if (objectTypeNode != null) {
+                final ObjectTypeNodeMemory memory = (ObjectTypeNodeMemory) context.wm.getNodeMemory(objectTypeNode);
+                if (memory != null) {
+                    ObjectTypeConfiguration _otc = ObjectTypeConfiguration.newBuilder()
+                                                                          .setType(otc.getTypeName())
+                                                                          .setTmsEnabled(otc.isTMSEnabled())
+                                                                          .build();
+                    _epb.addOtc(_otc);
+                }
+            }
     	}
 	}
 
-	private static void evaluateRuleActivations(AbstractWorkingMemory wm) {
+	private static void evaluateRuleActivations(StatefulKnowledgeSessionImpl wm) {
         // ET: NOTE: initially we were only resolving partially evaluated rules
         // but some tests fail because of that. Have to resolve all rule agenda items
         // in order to fix the tests
@@ -268,17 +272,17 @@ public class ProtobufOutputMarshaller {
         // need to evaluate all lazy partially evaluated activations before serializing
         boolean dirty = true;
         while ( dirty) {
-            for ( Activation activation : wm.getAgenda().getActivations() ) {
+            for ( Activation activation : ((InternalAgenda)wm.getAgenda()).getActivations() ) {
                 if ( activation.isRuleAgendaItem() /*&& evaluated.contains( activation.getRule().getPackageName()+"."+activation.getRule().getName() )*/ ) {
                     // evaluate it
-                    ((RuleAgendaItem)activation).getRuleExecutor().reEvaluateNetwork( wm, null, false );
+                    ((RuleAgendaItem)activation).getRuleExecutor().reEvaluateNetwork( wm, null );
                     ((RuleAgendaItem)activation).getRuleExecutor().removeRuleAgendaItemWhenEmpty( wm );
                 }
             }
             dirty = false;
-            if ( ((InternalRuleBase)wm.getRuleBase()).getConfiguration().isPhreakEnabled() ) {
+            if ( wm.getKnowledgeBase().getConfiguration().isPhreakEnabled() ) {
                 // network evaluation with phreak and TMS may make previous processed rules dirty again, so need to reprocess until all is flushed.
-                for ( Activation activation : wm.getAgenda().getActivations() ) {
+                for ( Activation activation : ((InternalAgenda)wm.getAgenda()).getActivations() ) {
                     if ( activation.isRuleAgendaItem() && ((RuleAgendaItem)activation).getRuleExecutor().isDirty() ) {
                         dirty = true;
                         break;
@@ -336,6 +340,7 @@ public class ProtobufOutputMarshaller {
                 dormant.add( item );
             }
         }
+
         Collections.sort( dormant, ActivationsSorter.INSTANCE );
         for ( org.drools.core.spi.Activation activation : dormant ) {
             _ab.addMatch( writeActivation( context, (AgendaItem) activation ) );
@@ -571,13 +576,15 @@ public class ProtobufOutputMarshaller {
     public static void writeActionQueue(MarshallerWriteContext context,
                                         ProtobufMessages.RuleData.Builder _session) throws IOException {
 
-        AbstractWorkingMemory wm = (AbstractWorkingMemory) context.wm;
-        if ( !wm.getActionQueue().isEmpty() ) {
+        if ( context.wm.hasPendingPropagations() ) {
             ProtobufMessages.ActionQueue.Builder _queue = ProtobufMessages.ActionQueue.newBuilder();
 
-            WorkingMemoryAction[] queue = wm.getActionQueue().toArray( new WorkingMemoryAction[wm.getActionQueue().size()] );
-            for ( int i = queue.length - 1; i >= 0; i-- ) {
-                _queue.addAction( queue[i].serialize( context ) );
+            Iterator<? extends PropagationEntry> i = context.wm.getActionsIterator();
+            while ( i.hasNext() ) {
+                PropagationEntry entry = i.next();
+                if (entry instanceof WorkingMemoryAction) {
+                    _queue.addAction(((WorkingMemoryAction) entry).serialize(context));
+                }
             }
             _session.setActionQueue( _queue.build() );
         }
@@ -663,14 +670,14 @@ public class ProtobufOutputMarshaller {
                                                                                      belief.getObject() ) ) );
             }
 
-            if ( belief.getValue() != null ) {
-                ObjectMarshallingStrategy strategy = objectMarshallingStrategyStore.getStrategyObject( belief.getValue() );
+            if ( belief.getMode() != null ) {
+                ObjectMarshallingStrategy strategy = objectMarshallingStrategyStore.getStrategyObject( belief.getMode() );
 
                 Integer index = context.getStrategyIndex( strategy );
                 _logicalDependency.setValueStrategyIndex( index.intValue() );
                 _logicalDependency.setValue( ByteString.copyFrom( strategy.marshal( context.strategyContext.get( strategy ),
                                                                                     context,
-                                                                                    belief.getValue() ) ) );
+                                                                                    belief.getMode() ) ) );
             }
             _beliefSet.addLogicalDependency( _logicalDependency.build() );
         }
@@ -758,8 +765,8 @@ public class ProtobufOutputMarshaller {
         int size = objectStore.size();
         InternalFactHandle[] handles = new InternalFactHandle[size];
         int i = 0;
-        for ( Iterator< ? > it = objectStore.iterateFactHandles(); it.hasNext(); ) {
-            handles[i++] = (InternalFactHandle) it.next();
+        for ( Iterator<InternalFactHandle> it = objectStore.iterateFactHandles(); it.hasNext(); ) {
+            handles[i++] = it.next();
         }
 
         Arrays.sort( handles,
@@ -811,11 +818,11 @@ public class ProtobufOutputMarshaller {
         }
     }
 
-    public static ProtobufMessages.Activation writeActivation(MarshallerWriteContext context,
-                                                              AgendaItem agendaItem) {
+    public static <M extends ModedAssertion<M>> ProtobufMessages.Activation writeActivation(MarshallerWriteContext context,
+                                                                                            AgendaItem<M> agendaItem) {
         ProtobufMessages.Activation.Builder _activation = ProtobufMessages.Activation.newBuilder();
 
-        Rule rule = agendaItem.getRule();
+        RuleImpl rule = agendaItem.getRule();
         _activation.setPackageName( rule.getPackage() );
         _activation.setRuleName( rule.getName() );
         _activation.setTuple( writeTuple( agendaItem.getTuple() ) );
@@ -831,9 +838,9 @@ public class ProtobufOutputMarshaller {
             _activation.setHandleId( agendaItem.getFactHandle().getId() );
         }
 
-        org.drools.core.util.LinkedList<LogicalDependency> list = agendaItem.getLogicalDependencies();
+        org.drools.core.util.LinkedList<LogicalDependency<M>> list = agendaItem.getLogicalDependencies();
         if ( list != null && !list.isEmpty() ) {
-            for ( LogicalDependency node = list.getFirst(); node != null; node = node.getNext() ) {
+            for ( LogicalDependency<?> node = list.getFirst(); node != null; node = node.getNext() ) {
                 _activation.addLogicalDependency( ((BeliefSet) node.getJustified()).getFactHandle().getId() );
             }
         }
@@ -867,6 +874,10 @@ public class ProtobufOutputMarshaller {
             ProtobufMessages.Timers.Builder _timers = ProtobufMessages.Timers.newBuilder();
             for ( TimerJobInstance timer : sortedTimers ) {
                 JobContext jctx = ((SelfRemovalJobContext) timer.getJobContext()).getJobContext();
+                if (jctx instanceof ObjectTypeNode.ExpireJobContext &&
+                    !((ObjectTypeNode.ExpireJobContext) jctx).getExpireAction().getFactHandle().isValid()) {
+                    continue;
+                }
                 TimersOutputMarshaller writer = outCtx.writersByClass.get( jctx.getClass() );
                 Timer _timer = writer.serialize( jctx, outCtx );
                 if ( _timer != null ) {
@@ -932,6 +943,22 @@ public class ProtobufOutputMarshaller {
                             .setNextFireTime( pinTrigger.hasNextFireTime().getTime() )
                             .build() )
                     .build();
+        } else if ( trigger instanceof CompositeMaxDurationTrigger ) {
+            CompositeMaxDurationTrigger cmdTrigger = (CompositeMaxDurationTrigger) trigger;
+            ProtobufMessages.Trigger.CompositeMaxDurationTrigger.Builder _cmdt = ProtobufMessages.Trigger.CompositeMaxDurationTrigger.newBuilder();
+            if ( cmdTrigger.getMaxDurationTimestamp() != null ) {
+                _cmdt.setMaxDurationTimestamp( cmdTrigger.getMaxDurationTimestamp().getTime() );
+            }
+            if ( cmdTrigger.getTimerCurrentDate() != null ) {
+                _cmdt.setTimerCurrentDate( cmdTrigger.getTimerCurrentDate().getTime() );
+            }
+            if ( cmdTrigger.getTimerTrigger() != null ) {
+                _cmdt.setTimerTrigger( writeTrigger(cmdTrigger.getTimerTrigger(), outCtx) );
+            }
+            return ProtobufMessages.Trigger.newBuilder()
+                                           .setType( ProtobufMessages.Trigger.TriggerType.COMPOSITE_MAX_DURATION )
+                                           .setCmdt( _cmdt.build() )
+                                           .build();
         }
         throw new RuntimeException( "Unable to serialize Trigger for type: " + trigger.getClass() );
     }

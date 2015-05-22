@@ -103,7 +103,14 @@ public class CommandBasedStatefulKnowledgeSession extends AbstractRuntime
         this.commandService = commandService;
     }
 
+    /**
+     * Deprecated use {@link #getIdentifier()} instead
+     */
+    @Deprecated
     public int getId() {
+        return commandService.execute( new GetIdCommand() ).intValue();
+    }
+    public long getIdentifier() {
         return commandService.execute( new GetIdCommand() );
     }
 
@@ -195,6 +202,11 @@ public class CommandBasedStatefulKnowledgeSession extends AbstractRuntime
                 public void signalEvent(String type, Object event, long processInstanceId) {
                     SignalEventCommand command = new SignalEventCommand(processInstanceId, type, event);
                     commandService.execute(command);
+                }
+
+                @Override
+                public void dispose() {
+                    // no-op
                 }
             };
         }
@@ -359,12 +371,12 @@ public class CommandBasedStatefulKnowledgeSession extends AbstractRuntime
         return this.commandService.execute( new GetFactHandleCommand( object ) );
     }
 
-    public <T extends org.kie.api.runtime.rule.FactHandle> Collection<T> getFactHandles() {
+    public <T extends FactHandle> Collection<T> getFactHandles() {
         return (Collection<T>) this.commandService.execute( new GetFactHandlesCommand() );
 
     }
 
-    public <T extends org.kie.api.runtime.rule.FactHandle> Collection<T> getFactHandles(ObjectFilter filter) {
+    public <T extends FactHandle> Collection<T> getFactHandles(ObjectFilter filter) {
         return (Collection<T>) this.commandService.execute( new GetFactHandlesCommand( filter ) );
     }
 

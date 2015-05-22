@@ -16,19 +16,15 @@
 
 package org.drools.core.common;
 
-import java.util.Map;
-import java.util.concurrent.locks.Lock;
-
-import org.drools.core.FactException;
-import org.drools.core.FactHandle;
 import org.drools.core.SessionConfiguration;
 import org.drools.core.WorkingMemory;
+import org.drools.core.definitions.rule.impl.RuleImpl;
 import org.drools.core.event.AgendaEventSupport;
-import org.drools.core.event.WorkingMemoryEventSupport;
+import org.drools.core.event.RuleRuntimeEventSupport;
+import org.drools.core.phreak.PropagationEntry;
 import org.drools.core.reteoo.EntryPointNode;
 import org.drools.core.reteoo.ObjectTypeConf;
 import org.drools.core.rule.EntryPointId;
-import org.drools.core.rule.Rule;
 import org.drools.core.runtime.impl.ExecutionResultImpl;
 import org.drools.core.runtime.process.InternalProcessRuntime;
 import org.drools.core.spi.Activation;
@@ -38,45 +34,48 @@ import org.drools.core.type.DateFormats;
 import org.kie.api.runtime.Calendars;
 import org.kie.api.runtime.Channel;
 import org.kie.api.runtime.rule.EntryPoint;
+import org.kie.api.runtime.rule.FactHandle;
+
+import java.util.Collection;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.concurrent.locks.Lock;
 
 public interface InternalWorkingMemory
-    extends
-        WorkingMemory {
-    public int getId();
+    extends WorkingMemory {
+
+    int getId();
+    void setId(Long id);
+
+    void setRuleRuntimeEventSupport(RuleRuntimeEventSupport workingMemoryEventSupport);
+
+    void setAgendaEventSupport(AgendaEventSupport agendaEventSupport);
+
+    Memory getNodeMemory(MemoryFactory node);
+
+    void clearNodeMemory(MemoryFactory node);
     
-    public void setId(int id);
+    NodeMemories getNodeMemories();
 
-    public void setWorkingMemoryEventSupport(WorkingMemoryEventSupport workingMemoryEventSupport);
+    long getNextPropagationIdCounter();
 
-    ///public ObjectHashMap getAssertMap();
+    ObjectStore getObjectStore();
 
-    public void setAgendaEventSupport(AgendaEventSupport agendaEventSupport);
+    void executeQueuedActionsForRete();
 
-    public Memory getNodeMemory(MemoryFactory node);
+    void queueWorkingMemoryAction(final WorkingMemoryAction action);
 
-    public void clearNodeMemory(MemoryFactory node);
+    FactHandleFactory getFactHandleFactory();
     
-    public NodeMemories getNodeMemories();
-
-    public long getNextPropagationIdCounter();
-
-    //public ObjectHashMap getFactHandleMap()
+    EntryPointId getEntryPoint();
     
-    public ObjectStore getObjectStore();
+    EntryPointNode getEntryPointNode();
 
-    public void executeQueuedActions();
+    EntryPoint getEntryPoint(String name);
 
-    public void queueWorkingMemoryAction(final WorkingMemoryAction action);
-
-    public FactHandleFactory getFactHandleFactory();
-    
-    public EntryPointId getEntryPoint();
-    
-    public EntryPointNode getEntryPointNode();
-    
-    public void insert(final InternalFactHandle handle,
+    void insert(final InternalFactHandle handle,
                        final Object object,
-                       final Rule rule,
+                       final RuleImpl rule,
                        final Activation activation,
                        ObjectTypeConf typeConf);
     
@@ -88,21 +87,21 @@ public interface InternalWorkingMemory
      * @param object
      * @return null if fact handle not found
      */
-    public FactHandle getFactHandleByIdentity(final Object object);
+    FactHandle getFactHandleByIdentity(final Object object);
 
     void delete(final FactHandle factHandle,
-                       final Rule rule,
-                       final Activation activation) throws FactException;
+                       final RuleImpl rule,
+                       final Activation activation);
 
-    public Lock getLock();
+    Lock getLock();
 
-    public boolean isSequential();
+    boolean isSequential();
     
-    public ObjectTypeConfigurationRegistry getObjectTypeConfigurationRegistry();
+    ObjectTypeConfigurationRegistry getObjectTypeConfigurationRegistry();
     
-    public InternalFactHandle getInitialFactHandle();
+    InternalFactHandle getInitialFactHandle();
     
-    public Calendars getCalendars();
+    Calendars getCalendars();
     
     /**
      * Returns the TimerService instance (session clock) for this
@@ -110,11 +109,9 @@ public interface InternalWorkingMemory
      * 
      * @return
      */
-    public TimerService getTimerService();
+    TimerService getTimerService();
 
-    public void setKnowledgeRuntime(InternalKnowledgeRuntime kruntime);
-    
-    public InternalKnowledgeRuntime getKnowledgeRuntime();
+    InternalKnowledgeRuntime getKnowledgeRuntime();
     
     /**
      * Returns a map of channel Id->Channel of all channels in
@@ -122,18 +119,17 @@ public interface InternalWorkingMemory
      * 
      * @return
      */
-    public Map< String, Channel> getChannels();
+    Map< String, Channel> getChannels();
     
-    public Map<String, ? extends EntryPoint> getEntryPoints();
+    Collection< ? extends EntryPoint> getEntryPoints();
 
-    public SessionConfiguration getSessionConfiguration();
+    SessionConfiguration getSessionConfiguration();
     
+    void startBatchExecution(ExecutionResultImpl results);
     
-    public void startBatchExecution(ExecutionResultImpl results);
+    ExecutionResultImpl getExecutionResult();
     
-    public ExecutionResultImpl getExecutionResult();
-    
-    public void endBatchExecution();
+    void endBatchExecution();
     
     /**
      * This method must be called before starting any new work in the engine,
@@ -143,7 +139,7 @@ public interface InternalWorkingMemory
      * This method must be extremely light to avoid contentions when called by 
      * multiple threads/entry-points
      */
-    public void startOperation();
+    void startOperation();
 
     /**
      * This method must be called after finishing any work in the engine,
@@ -153,7 +149,7 @@ public interface InternalWorkingMemory
      * This method must be extremely light to avoid contentions when called by 
      * multiple threads/entry-points
      */
-    public void endOperation();
+    void endOperation();
     
     /**
      * Returns the number of time units (usually ms) that the engine is idle
@@ -163,7 +159,7 @@ public interface InternalWorkingMemory
      *  
      * @return
      */
-    public long getIdleTime();
+    long getIdleTime();
     
     /**
      * Returns the number of time units (usually ms) to
@@ -172,9 +168,9 @@ public interface InternalWorkingMemory
      * @return the number of time units until the next scheduled job or -1 if
      *         there is no job scheduled
      */
-    public long getTimeToNextJob();
+    long getTimeToNextJob();
     
-    public void updateEntryPointsCache();
+    void updateEntryPointsCache();
     
     /**
      * This method is called by the agenda before firing a new activation
@@ -187,7 +183,7 @@ public interface InternalWorkingMemory
      * to allow the working memory to resume any activities blocked during 
      * activation firing. 
      */
-    public void activationFired();
+    void activationFired();
     
     /**
      * Returns the total number of facts in the working memory, i.e., counting
@@ -196,11 +192,20 @@ public interface InternalWorkingMemory
      * 
      * @return
      */
-    public long getTotalFactCount();
+    long getTotalFactCount();
     
-    public DateFormats getDateFormats();
+    DateFormats getDateFormats();
     
     InternalProcessRuntime getProcessRuntime();
 
     void closeLiveQuery(InternalFactHandle factHandle);
+
+    void addPropagation(PropagationEntry propagationEntry);
+    void flushPropagations();
+    void flushNonMarshallablePropagations();
+    boolean hasPendingPropagations();
+
+    Iterator<? extends PropagationEntry> getActionsIterator();
+
+    void removeGlobal(String identifier);
 }

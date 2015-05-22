@@ -19,15 +19,9 @@ package org.drools.core.reteoo;
 import org.drools.core.common.InternalWorkingMemory;
 import org.drools.core.common.Memory;
 import org.drools.core.common.RightTupleSets;
-import org.drools.core.common.SynchronizedRightTupleSets;
-import org.drools.core.phreak.TupleEntry;
+import org.drools.core.common.RightTupleSetsImpl;
 import org.drools.core.rule.ContextEntry;
 import org.drools.core.util.AbstractBaseLinkedListNode;
-
-import java.util.ArrayDeque;
-import java.util.Deque;
-import java.util.Queue;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 public class BetaMemory extends AbstractBaseLinkedListNode<Memory>
         implements
@@ -54,7 +48,7 @@ public class BetaMemory extends AbstractBaseLinkedListNode<Memory>
                       final short nodeType) {
         this.leftTupleMemory = tupleMemory;
         this.rightTupleMemory = objectMemory;
-        this.stagedRightTuples = new SynchronizedRightTupleSets(this);
+        this.stagedRightTuples = new RightTupleSetsImpl(this);
         this.context = context;
         this.nodeType = nodeType;
     }
@@ -91,7 +85,15 @@ public class BetaMemory extends AbstractBaseLinkedListNode<Memory>
     }
 
     public void linkNode(InternalWorkingMemory wm) {
-        segmentMemory.linkNode(nodePosMaskBit, wm);
+        linkNode(wm, true);
+    }
+
+    public void linkNode(InternalWorkingMemory wm, boolean notify) {
+        if (notify) {
+            segmentMemory.linkNode(nodePosMaskBit, wm);
+        } else {
+            segmentMemory.linkNodeWithoutRuleNotify(nodePosMaskBit);
+        }
     }
 
     public void unlinkNode(InternalWorkingMemory wm) {
@@ -135,7 +137,15 @@ public class BetaMemory extends AbstractBaseLinkedListNode<Memory>
     }
 
     public void setNodeDirty(InternalWorkingMemory wm) {
-        segmentMemory.notifyRuleLinkSegment(wm, nodePosMaskBit);
+        setNodeDirty(wm, true);
+    }
+
+    public void setNodeDirty(InternalWorkingMemory wm, boolean notify) {
+        if (notify) {
+            segmentMemory.notifyRuleLinkSegment(wm, nodePosMaskBit);
+        } else {
+            segmentMemory.linkSegmentWithoutRuleNotify(wm, nodePosMaskBit);
+        }
     }
 
     public void setNodeDirtyWithoutNotify() {
@@ -144,5 +154,16 @@ public class BetaMemory extends AbstractBaseLinkedListNode<Memory>
 
     public void setNodeCleanWithoutNotify() {
         segmentMemory.updateCleanNodeMask( nodePosMaskBit );
+    }
+
+    public void reset() {
+        if (leftTupleMemory != null) {
+            leftTupleMemory.clear();
+        }
+        if (rightTupleMemory != null) {
+            rightTupleMemory.clear();
+        }
+        stagedRightTuples.resetAll();
+        counter = 0;
     }
 }

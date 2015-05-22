@@ -3,226 +3,261 @@ package org.drools.core.beliefsystem.jtms;
 import org.drools.core.beliefsystem.BeliefSet;
 import org.drools.core.beliefsystem.BeliefSystem;
 import org.drools.core.beliefsystem.jtms.JTMSBeliefSetImpl.MODE;
+import org.drools.core.beliefsystem.simple.SimpleLogicalDependency;
+import org.drools.core.beliefsystem.simple.SimpleMode;
+import org.drools.core.common.EqualityKey;
 import org.drools.core.common.InternalFactHandle;
 import org.drools.core.common.LogicalDependency;
 import org.drools.core.common.NamedEntryPoint;
-import org.drools.core.beliefsystem.simple.SimpleLogicalDependency;
+import org.drools.core.common.ObjectTypeConfigurationRegistry;
 import org.drools.core.common.TruthMaintenanceSystem;
-import org.drools.core.rule.Rule;
-import org.drools.core.util.LinkedListEntry;
 import org.drools.core.reteoo.ObjectTypeConf;
 import org.drools.core.spi.Activation;
 import org.drools.core.spi.PropagationContext;
 
-public class JTMSBeliefSystem
+import static org.drools.core.reteoo.PropertySpecificUtil.allSetButTraitBitMask;
+import org.drools.core.definitions.rule.impl.RuleImpl;
+import org.drools.core.reteoo.ObjectTypeConf;
+import org.drools.core.spi.Activation;
+import org.drools.core.spi.PropagationContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+public class JTMSBeliefSystem<M extends JTMSMode<M>>
         implements
-        BeliefSystem {
-    public static boolean          STRICT = false;
+        BeliefSystem<M> {
+    protected static final transient Logger  log    = LoggerFactory.getLogger(JTMSBeliefSystem.class);
+    public static                    boolean STRICT = false;
 
-    private TruthMaintenanceSystem tms;
-
-    protected NamedEntryPoint        defEP;
-    protected NamedEntryPoint        negEP;
+    private   TruthMaintenanceSystem tms;
+    protected NamedEntryPoint        ep;
 
     public JTMSBeliefSystem(NamedEntryPoint ep,
                             TruthMaintenanceSystem tms) {
-        this.defEP = ep;
+        this.ep = ep;
         this.tms = tms;
-        initMainEntryPoints();
-    }
-
-    private void initMainEntryPoints() {
-        negEP = (NamedEntryPoint) defEP.getWorkingMemoryEntryPoint( MODE.NEGATIVE.getId() );
     }
 
     public TruthMaintenanceSystem getTruthMaintenanceSystem() {
         return this.tms;
     }
 
-    public void insert(LogicalDependency node,
-                       BeliefSet beliefSet,
-                       PropagationContext context,
-                       ObjectTypeConf typeConf) {
-        JTMSBeliefSet jtmsBeliefSet = (JTMSBeliefSet) beliefSet;
+    @Override
+    public BeliefSet<M> insert( M mode, RuleImpl rule, Activation activation, Object payload, BeliefSet<M> beliefSet, PropagationContext context, ObjectTypeConf typeConf ) {
+        if ( log.isTraceEnabled() ) {
+            log.trace( "TMSInsert {} {}", payload, mode.getValue() );
+        }
 
+        JTMSBeliefSet jtmsBeliefSet = (JTMSBeliefSet) beliefSet;
         boolean wasEmpty = jtmsBeliefSet.isEmpty();
         boolean wasNegated = jtmsBeliefSet.isNegated();
-        boolean wasUndecided = jtmsBeliefSet.isUndecided();
+        boolean wasDecided = jtmsBeliefSet.isDecided();
+        InternalFactHandle fh =  jtmsBeliefSet.getFactHandle();
 
-        jtmsBeliefSet.add( node.getJustifierEntry() );
+        jtmsBeliefSet.add( mode );
 
-        if ( wasEmpty ) {
-            // Insert Belief
-            if ( ! jtmsBeliefSet.isUndecided() ) {
-                insertBelief( node, typeConf, jtmsBeliefSet, context, wasEmpty, wasNegated, wasUndecided );
-            } else {
-                defEP.getObjectStore().removeHandle( jtmsBeliefSet.getFactHandle() );
-            }
-        } else if ( !wasUndecided && jtmsBeliefSet.isUndecided() ) {
-            // Handle Conflict
-            if ( STRICT ) {
-                throw new IllegalStateException( "FATAL : A fact and its negation have been asserted " + jtmsBeliefSet.getFactHandle().getObject() );
-            }
-
-            InternalFactHandle fh;
-            boolean fullyRetract;
-            if ( wasNegated ) {
-                fh = jtmsBeliefSet.getNegativeFactHandle();
-                jtmsBeliefSet.setNegativeFactHandle( null );
-                fullyRetract = true; // Only fully retract negatives
-
-                ((NamedEntryPoint) fh.getEntryPoint()).delete( fh, context.getRuleOrigin(), node.getJustifier() );
-            } else {
-                fh = jtmsBeliefSet.getPositiveFactHandle();
-                jtmsBeliefSet.setPositiveFactHandle( null );
-                fullyRetract = false; // Positives only retract from the rete network, handle must remain
-
-                NamedEntryPoint nep = (NamedEntryPoint) fh.getEntryPoint() ;
-
-//                final ObjectTypeConf typeConf = nep.getObjectTypeConfigurationRegistry().getObjectTypeConf( nep.getEntryPoint(),
-//                                                                                                            handle.getObject() );
-
-                nep.getEntryPointNode().retractObject( fh, context, typeConf, nep.getInternalWorkingMemory() );
-            }
-
+        if ( !wasEmpty && wasDecided && fh.isNegated() != beliefSet.isNegated() ) {
+            // if it was decided, first remove it and re-add it. So it's in the correct map
+            ep.getObjectStore().removeHandle(fh);
+            fh.setNegated( beliefSet.isNegated() );
+            ep.getObjectStore().addHandle(fh, fh.getObject() );
         } else {
-            if ( wasUndecided && ! jtmsBeliefSet.isUndecided() ) {
-                insertBelief( node, typeConf, jtmsBeliefSet, context, wasEmpty, wasNegated, wasUndecided );
-            }
+            fh.setNegated( beliefSet.isNegated() );
         }
-    }
 
-    protected void insertBelief(LogicalDependency node,
-                              ObjectTypeConf typeConf,
-                              JTMSBeliefSet jtmsBeliefSet,
-                              PropagationContext context,
-                              boolean wasEmpty,
-                              boolean wasNegated,
-                              boolean isUndecided) {
-        if ( jtmsBeliefSet.isNegated() && ! jtmsBeliefSet.isUndecided() ) {
-            jtmsBeliefSet.setNegativeFactHandle( (InternalFactHandle) negEP.insert( node.getObject() ) );
 
-            // As the neg partition is always stated, it'll have no equality key.
-            // However the equality key is needed to stop duplicate LogicalCallbacks, so we manually set it
-            // @FIXME **MDP could this be a problem during derialization, where the
-            jtmsBeliefSet.getNegativeFactHandle().setEqualityKey( jtmsBeliefSet.getFactHandle().getEqualityKey() );
-            jtmsBeliefSet.setPositiveFactHandle( null );
-            if ( !(wasNegated || isUndecided) ) {
-                defEP.getObjectStore().removeHandle( jtmsBeliefSet.getFactHandle() ); // Make sure the FH is no longer visible in the default ObjectStore
-            }
-        } else if ( jtmsBeliefSet.isPositive() && ! jtmsBeliefSet.isUndecided() ) {
-            jtmsBeliefSet.setPositiveFactHandle( jtmsBeliefSet.getFactHandle() ); // Use the BeliefSet FH for positive facts
-            jtmsBeliefSet.setNegativeFactHandle( null );
-
-            if ( !wasEmpty && (wasNegated || isUndecided ) ) {
-                jtmsBeliefSet.getFactHandle().setObject( node.getObject() ); // Set the Object, as it may have been a negative initialization, before conflict
-                defEP.getObjectStore().addHandle( jtmsBeliefSet.getPositiveFactHandle(), jtmsBeliefSet.getPositiveFactHandle().getObject() ); // Make sure the FH is visible again
-            }
-            defEP.insert( jtmsBeliefSet.getPositiveFactHandle(),
-                          node.getObject(),
-                          node.getJustifier().getRule(),
-                          node.getJustifier(),
-                          typeConf,
-                          null );
+        if ( wasEmpty && jtmsBeliefSet.isDecided()  ) {
+            ep.insert(jtmsBeliefSet.getFactHandle(),
+                      payload,
+                      rule,
+                      activation,
+                      typeConf,
+                      null);
+        } else {
+            processBeliefSet(rule, activation, payload, context, jtmsBeliefSet, wasDecided,wasNegated, fh);
         }
+        return beliefSet;
     }
 
 
-    public void read(LogicalDependency node,
-                     BeliefSet beliefSet,
+    public BeliefSet<M> insert(LogicalDependency<M> node,
+                               BeliefSet<M> beliefSet,
+                               PropagationContext context,
+                               ObjectTypeConf typeConf) {
+        return insert( node.getMode(), node.getJustifier().getRule(), node.getJustifier(), node.getObject(), beliefSet, context, typeConf );
+    }
+
+    public void read(LogicalDependency<M> node,
+                     BeliefSet<M> beliefSet,
                      PropagationContext context,
                      ObjectTypeConf typeConf) {
         throw new UnsupportedOperationException( "This is not serializable yet" );
     }
 
-    public void delete(LogicalDependency node,
-                       BeliefSet beliefSet,
+    @Override
+    public void delete(LogicalDependency<M> node,
+                       BeliefSet<M> beliefSet,
                        PropagationContext context) {
-        JTMSBeliefSet jtmsBeliefSet = (JTMSBeliefSet) beliefSet;
-        boolean wasConflicting = jtmsBeliefSet.isUndecided();
+        delete( node.getMode(), node.getJustifier().getRule(), node.getJustifier(), node.getObject(), beliefSet, context );
+    }
+
+    @Override
+    public void delete( M mode, RuleImpl rule, Activation activation, Object payload, BeliefSet<M> beliefSet, PropagationContext context ) {
+        if ( log.isTraceEnabled() ) {
+            log.trace( "TMSDelete {} {}", payload, mode.getValue() );
+        }
+
+        JTMSBeliefSet<M> jtmsBeliefSet = (JTMSBeliefSet<M>) beliefSet;
+        boolean wasDecided = jtmsBeliefSet.isDecided();
         boolean wasNegated = jtmsBeliefSet.isNegated();
 
-        // If the prime object is removed, we need to update the FactHandle, and tell the callback to update
-        boolean primeChanged = false;
+        InternalFactHandle fh =  jtmsBeliefSet.getFactHandle();
 
-        if ( (jtmsBeliefSet.getPositiveFactHandle() != null && jtmsBeliefSet.getPositiveFactHandle().getObject() == node.getObject()) ||
-             (jtmsBeliefSet.getNegativeFactHandle() != null && jtmsBeliefSet.getNegativeFactHandle().getObject() == node.getObject()) ) {
-            primeChanged = true;
+        beliefSet.remove( mode );
+
+        if ( wasDecided && fh.isNegated() != beliefSet.isNegated() ) {
+            // if it was decided, first remove it and re-add it. So it's in the correct map
+            ep.getObjectStore().removeHandle(fh);
+            fh.setNegated( beliefSet.isNegated() );
+            ep.getObjectStore().addHandle(fh, fh.getObject() );
+        } else {
+            fh.setNegated( beliefSet.isNegated() );
         }
 
-        beliefSet.remove( node.getJustifierEntry() );
+
+        if ( beliefSet.isEmpty() && fh.getEqualityKey().getStatus() == EqualityKey.JUSTIFIED ) {
+            // the set is empty, so delete form the EP, so things are cleaned up.
+            ep.delete(fh, fh.getObject(), getObjectTypeConf(beliefSet), (RuleImpl) context.getRule(), (Activation) context.getLeftTupleOrigin() );
+        } else  if ( !(processBeliefSet( rule, activation, payload, context, jtmsBeliefSet, wasDecided, wasNegated, fh) && beliefSet.isEmpty())  ) {
+            //  The state of the BS did not change, but maybe the prime did
+            if ( fh.getObject() == payload ) {
+                // prime, node.object which is the current fh.object,  has changed and object is decided, so update
+                String value;
+                Object object = null;
+
+                if ( jtmsBeliefSet.isNegated() ) {
+                    value = MODE.NEGATIVE.getId();
+                    // Find the new node, and update the handle to it, Negatives iterate from the last
+                    for ( JTMSMode entry = (JTMSMode) jtmsBeliefSet.getLast(); entry != null; entry = (JTMSMode) entry.getPrevious() ) {
+                        if ( entry.getValue().equals( value ) ) {
+                            object = entry.getLogicalDependency().getObject();
+                            break;
+                        }
+                    }
+                } else {
+                    value = MODE.POSITIVE.getId();
+                    // Find the new node, and update the handle to it, Positives iterate from the front
+                    for ( JTMSMode entry = (JTMSMode) jtmsBeliefSet.getFirst(); entry != null; entry = (JTMSMode) entry.getNext() ) {
+                        if ( entry.getValue() == null || entry.getValue().equals( value ) ) {
+                            object = entry.getLogicalDependency().getObject();
+                            break;
+                        }
+                    }
+                }
+
+                // Equality might have changed on the object, so remove (which uses the handle id) and add back in
+                if ( fh.getObject() != object ) {
+                    ((NamedEntryPoint) fh.getEntryPoint()).getObjectStore().updateHandle( fh, object );
+                    ((NamedEntryPoint) fh.getEntryPoint() ).update( fh, fh.getObject(), allSetButTraitBitMask(), object.getClass(), null );
+                }
+            }
+        }
+
         if ( beliefSet.isEmpty() ) {
-            if ( wasNegated ) {
-                defEP.getObjectStore().addHandle( beliefSet.getFactHandle(), beliefSet.getFactHandle().getObject() ); // was negated, so add back in, so main retract works
-                InternalFactHandle fh = jtmsBeliefSet.getNegativeFactHandle();
-                ((NamedEntryPoint) fh.getEntryPoint()).delete( fh, (Rule) context.getRuleOrigin(), node.getJustifier() );
-            }
+            // if the beliefSet is empty, we must null the logical handle
+            EqualityKey key = fh.getEqualityKey();
+            key.setLogicalFactHandle( null );
+            key.setBeliefSet(null);
 
-            if ( !(context.getType() == PropagationContext.DELETION && context.getFactHandle() == beliefSet.getFactHandle()) ) { // don't start retract, if the FH is already in the process of being retracted
-                // do not if the FH is the root of the context, it means it's already in the process of retraction
-                InternalFactHandle fh = jtmsBeliefSet.getFactHandle();
-                ((NamedEntryPoint) fh.getEntryPoint()).delete( fh, (Rule) context.getRuleOrigin(), node.getJustifier() );
-            }
-
-        } else if ( wasConflicting && !jtmsBeliefSet.isUndecided() ) {
-            insertBelief( node,
-                          defEP.getObjectTypeConfigurationRegistry().getObjectTypeConf( defEP.getEntryPoint(), node.getObject() ),
-                          jtmsBeliefSet,
-                          context,
-                          false,
-                          wasNegated,
-                          wasConflicting );
-        } else if ( primeChanged ) {
-            // we know there must be at least one more of the same type, as they are still in conflict
-            String value;
-            InternalFactHandle handle;
-            Object object = null;
-            if ( jtmsBeliefSet.isNegated() ) {
-                if ( ! wasNegated ) {
-                    jtmsBeliefSet.setNegativeFactHandle( jtmsBeliefSet.getPositiveFactHandle() );
-                    jtmsBeliefSet.setPositiveFactHandle( null );
-                }
-                value = MODE.NEGATIVE.getId();
-                handle = jtmsBeliefSet.getNegativeFactHandle();
-                // Find the new node, and update the handle to it, Negatives iterate from the last
-                for ( LinkedListEntry<LogicalDependency> entry = (LinkedListEntry<LogicalDependency>) jtmsBeliefSet.getLast(); entry != null; entry = (LinkedListEntry<LogicalDependency>) entry.getPrevious() ) {
-                    if ( entry.getObject().getValue().equals( value ) ) {
-                        object = entry.getObject().getObject();
-                        break;
-                    }
-                }
-            } else {
-                if ( wasNegated ) {
-                    jtmsBeliefSet.setPositiveFactHandle( jtmsBeliefSet.getNegativeFactHandle() );
-                    jtmsBeliefSet.setNegativeFactHandle( null );
-                }
-                value = MODE.POSITIVE.getId();
-                handle = jtmsBeliefSet.getPositiveFactHandle();
-                // Find the new node, and update the handle to it, Positives iterate from the front
-                for ( LinkedListEntry<LogicalDependency> entry = (LinkedListEntry<LogicalDependency>) jtmsBeliefSet.getFirst(); entry != null; entry = (LinkedListEntry<LogicalDependency>) entry.getNext() ) {
-                    if ( entry.getObject().getValue() == null || entry.getObject().getValue().equals( value ) ) {
-                        object = entry.getObject().getObject();
-                        break;
-                    }
-                }
-            }
-
-            // Equality might have changed on the object, so remove (which uses the handle id) and add back in
-            if ( handle.getObject() != object ) {
-                ((NamedEntryPoint) handle.getEntryPoint()).getObjectStore().updateHandle( handle, object );
-                ((NamedEntryPoint) handle.getEntryPoint() ).update( handle, true, handle.getObject(), Long.MAX_VALUE, Object.class, null );
+            if ( key.getStatus() == EqualityKey.JUSTIFIED ) {
+                // if it's stated, there will be other handles, so leave it in the TMS
+                tms.remove( key );
             }
         }
+    }
+
+    private boolean processBeliefSet(RuleImpl rule, Activation activation, Object payload, PropagationContext pctx, JTMSBeliefSet<M> jtmsBeliefSet, boolean wasDecided, boolean wasNegated, InternalFactHandle fh) {
+        if ( !wasDecided && jtmsBeliefSet.isDecided()  ) {
+            ep.insert(jtmsBeliefSet.getFactHandle(),
+                      payload,
+                      rule,
+                      activation,
+                      getObjectTypeConf(jtmsBeliefSet),
+                      null);
+            return true;
+        } else if ( wasDecided && !jtmsBeliefSet.isDecided() ) {
+            // Handle Conflict
+            if ( STRICT ) {
+                throw new IllegalStateException( "FATAL : A fact and its negation have been asserted " + jtmsBeliefSet.getFactHandle().getObject() );
+            }
+
+            // was decided, now is not, so must be removed from the network. Leave in EP though, we only delete from that when the set is empty
+            ep.delete(fh, fh.getObject(), getObjectTypeConf(jtmsBeliefSet), (RuleImpl) pctx.getRule(), (Activation) pctx.getLeftTupleOrigin() );
+            return true;
+        } else if (wasNegated != jtmsBeliefSet.isNegated()) {
+            // was decided, still is decided by the negation changed. This must be propagated through the engine
+            // This does not happen for pure JTMS, but does for DFL.
+            final PropagationContext updatePctx = ep.getPctxFactory().createPropagationContext(ep.getInternalWorkingMemory().getNextPropagationIdCounter(), PropagationContext.MODIFICATION,
+                                                                                                       (RuleImpl) pctx.getRule(), (pctx.getLeftTupleOrigin() == null) ? null : pctx.getLeftTupleOrigin(),
+                                                                                                       fh, ep.getEntryPoint());
+            ep.update(fh, fh.getObject(), fh.getObject(),  getObjectTypeConf(jtmsBeliefSet), (RuleImpl) pctx.getRule(), updatePctx );
+        }
+        return false;
+    }
+
+    public void stage(PropagationContext context,
+                      BeliefSet<M> beliefSet) {
+        InternalFactHandle bfh = beliefSet.getFactHandle();
+        // Remove the FH from the network
+        ep.delete(bfh, bfh.getObject(), getObjectTypeConf(beliefSet),(RuleImpl) context.getRule(), null);
+    }
+
+    public void unstage(PropagationContext context,
+                        BeliefSet<M> beliefSet) {
+        InternalFactHandle bfh = beliefSet.getFactHandle();
+
+        // Add the FH back into the network
+        ep.insert(bfh, bfh.getObject(), (RuleImpl) context.getRule(), null, getObjectTypeConf(beliefSet), null );
+    }
+
+    private ObjectTypeConf getObjectTypeConf(BeliefSet<M> jtmsBeliefSet) {
+        InternalFactHandle fh = jtmsBeliefSet.getFactHandle();
+        ObjectTypeConfigurationRegistry reg;
+        ObjectTypeConf typeConf;
+        reg = ep.getObjectTypeConfigurationRegistry();
+        typeConf = reg.getObjectTypeConf( ep.getEntryPoint(), fh.getObject() );
+        return typeConf;
     }
 
     public BeliefSet newBeliefSet(InternalFactHandle fh) {
         return new JTMSBeliefSetImpl( this, fh );
     }
 
-    public LogicalDependency newLogicalDependency(Activation activation,
-                                                  BeliefSet beliefSet,
+    public LogicalDependency newLogicalDependency(Activation<M> activation,
+                                                  BeliefSet<M> beliefSet,
                                                   Object object,
                                                   Object value) {
-        return new SimpleLogicalDependency( activation, beliefSet, object, value );
+        JTMSMode<M> mode = asMode( value );
+        SimpleLogicalDependency dep =  new SimpleLogicalDependency(activation, beliefSet, object, mode);
+        mode.setLogicalDependency( dep );
+
+        return dep;
+    }
+
+    @Override
+    public M asMode( Object value ) {
+        JTMSMode<M> mode;
+        if ( value == null ) {
+            mode = new JTMSMode(MODE.POSITIVE.getId(), this);
+        } else if ( value instanceof String ) {
+            if ( MODE.POSITIVE.getId().equals( value ) ) {
+                mode = new JTMSMode(MODE.POSITIVE.getId(), this);
+            }   else {
+                mode = new JTMSMode(MODE.NEGATIVE.getId(), this);
+            }
+        } else {
+            mode = new JTMSMode(((MODE)value).getId(), this);
+        }
+        return (M) mode;
     }
 }

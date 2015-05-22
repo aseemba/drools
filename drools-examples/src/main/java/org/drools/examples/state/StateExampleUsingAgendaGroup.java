@@ -16,18 +16,7 @@
 
 package org.drools.examples.state;
 
-import java.io.IOException;
-import java.io.InputStreamReader;
-
-import org.drools.core.RuleBase;
-import org.drools.core.RuleBaseFactory;
-import org.drools.core.StatefulSession;
-import org.drools.compiler.compiler.DroolsParserException;
-import org.drools.compiler.compiler.PackageBuilder;
-import org.drools.core.event.AfterActivationFiredEvent;
-import org.drools.core.event.DefaultAgendaEventListener;
 import org.kie.api.KieServices;
-import org.kie.api.logger.KieRuntimeLogger;
 import org.kie.api.runtime.KieContainer;
 import org.kie.api.runtime.KieSession;
 

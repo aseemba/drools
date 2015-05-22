@@ -16,20 +16,6 @@
 
 package org.drools.core.base;
 
-import java.io.Externalizable;
-import java.io.IOException;
-import java.io.ObjectInput;
-import java.io.ObjectOutput;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.IdentityHashMap;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Set;
-
-import org.drools.core.RuntimeDroolsException;
 import org.drools.core.base.AccessorKey.AccessorType;
 import org.drools.core.base.extractors.MVELDateClassFieldReader;
 import org.drools.core.base.extractors.MVELNumberClassFieldReader;
@@ -44,6 +30,19 @@ import org.drools.core.spi.InternalReadAccessor;
 import org.drools.core.util.asm.ClassFieldInspector;
 import org.kie.api.definition.type.FactField;
 import org.kie.internal.builder.KnowledgeBuilderResult;
+
+import java.io.Externalizable;
+import java.io.IOException;
+import java.io.ObjectInput;
+import java.io.ObjectOutput;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.IdentityHashMap;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Set;
 
 public class ClassFieldAccessorStore
     implements
@@ -312,7 +311,7 @@ public class ClassFieldAccessorStore
 
         ClassObjectTypeLookupEntry entry = (ClassObjectTypeLookupEntry) this.lookup.get( key );
         if ( entry == null ) {
-            entry = new ClassObjectTypeLookupEntry(  cache.getClassObjectType( objectType ) );
+            entry = new ClassObjectTypeLookupEntry( cache.getClassObjectType( objectType, false ) );
             this.lookup.put( key,
                              entry );
         }
@@ -374,7 +373,7 @@ public class ClassFieldAccessorStore
                     ClassObjectTypeLookupEntry lookupEntry = (ClassObjectTypeLookupEntry) this.lookup.get( entry.getKey() );
                     if ( lookupEntry == null ) {
                                                 // Create new entry with correct ClassObjectType and targets
-                        lookupEntry = new ClassObjectTypeLookupEntry(  cache.getClassObjectType( ((ClassObjectTypeLookupEntry) entry.getValue()).getClassObjectType() ) );
+                        lookupEntry = new ClassObjectTypeLookupEntry(  cache.getClassObjectType( ((ClassObjectTypeLookupEntry) entry.getValue()).getClassObjectType(), true ) );
 
                         this.lookup.put( entry.getKey(),
                                          lookupEntry );
@@ -466,29 +465,6 @@ public class ClassFieldAccessorStore
         writer.setWriteAccessor( cache.getWriteAcessor( writer ) );
     }
 
-    //    public void wire(PatternExtractor reader) {
-    //        ObjectType objectType = reader.getObjectType();
-    //
-    //        if ( objectType instanceof ClassObjectType ) {
-    //            ClassObjectType cot = (ClassObjectType) objectType;
-    //            try {
-    //                Class cls = this.cache.getClassLoader().loadClass( cot.getClassName() );
-    //                cot.setClassType( cls );
-    //            } catch ( ClassNotFoundException e ) {
-    //                throw new RuntimeDroolsException( "Unable to load ClassObjectType class '" + cot.getClassName() + "'" );
-    //            }
-    //        }
-    //    }
-
-//    public void wire(ClassObjectType objectType) {
-//        try {
-//            Class cls = this.cache.getClassLoader().loadClass( objectType.getClassName() );
-//            objectType.setClassType( cls );
-//        } catch ( ClassNotFoundException e ) {
-//            throw new RuntimeDroolsException( "Unable to load ClassObjectType class '" + objectType.getClassName() + "'" );
-//        }
-//    }
-
     public void wire( ClassWireable wireable ) {
         try {
             if ( wireable.getClassType() == null || ! wireable.getClassType().isPrimitive() ) {
@@ -496,7 +472,7 @@ public class ClassFieldAccessorStore
                 wireable.wire( cls );
             }
         } catch ( ClassNotFoundException e ) {
-            throw new RuntimeDroolsException( "Unable to load ClassObjectType class '" + wireable.getClassName() + "'" );
+            throw new RuntimeException( "Unable to load ClassObjectType class '" + wireable.getClassName() + "'" );
         }
     }
 

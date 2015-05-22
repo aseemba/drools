@@ -17,21 +17,22 @@
 package org.drools.workbench.models.guided.scorecard.backend;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
-import org.dmg.pmml.pmml_4_1.descr.Attribute;
-import org.dmg.pmml.pmml_4_1.descr.Characteristic;
-import org.dmg.pmml.pmml_4_1.descr.Characteristics;
-import org.dmg.pmml.pmml_4_1.descr.Extension;
-import org.dmg.pmml.pmml_4_1.descr.FIELDUSAGETYPE;
-import org.dmg.pmml.pmml_4_1.descr.INVALIDVALUETREATMENTMETHOD;
-import org.dmg.pmml.pmml_4_1.descr.MiningField;
-import org.dmg.pmml.pmml_4_1.descr.MiningSchema;
-import org.dmg.pmml.pmml_4_1.descr.Output;
-import org.dmg.pmml.pmml_4_1.descr.PMML;
-import org.dmg.pmml.pmml_4_1.descr.Scorecard;
-import org.drools.core.util.ArrayUtils;
-import org.drools.pmml.pmml_4_1.extensions.PMMLExtensionNames;
+import org.dmg.pmml.pmml_4_2.descr.Attribute;
+import org.dmg.pmml.pmml_4_2.descr.Characteristic;
+import org.dmg.pmml.pmml_4_2.descr.Characteristics;
+import org.dmg.pmml.pmml_4_2.descr.Extension;
+import org.dmg.pmml.pmml_4_2.descr.FIELDUSAGETYPE;
+import org.dmg.pmml.pmml_4_2.descr.INVALIDVALUETREATMENTMETHOD;
+import org.dmg.pmml.pmml_4_2.descr.MiningField;
+import org.dmg.pmml.pmml_4_2.descr.MiningSchema;
+import org.dmg.pmml.pmml_4_2.descr.Output;
+import org.dmg.pmml.pmml_4_2.descr.PMML;
+import org.dmg.pmml.pmml_4_2.descr.Scorecard;
+import org.drools.core.util.StringUtils;
+import org.drools.pmml.pmml_4_2.extensions.PMMLExtensionNames;
 import org.drools.scorecards.ScorecardCompiler;
 import org.drools.scorecards.parser.xls.XLSKeywords;
 import org.drools.scorecards.pmml.ScorecardPMMLExtensionNames;
@@ -41,6 +42,9 @@ import org.drools.workbench.models.datamodel.imports.Import;
 import org.drools.workbench.models.guided.scorecard.shared.ScoreCardModel;
 
 public class GuidedScoreCardDRLPersistence {
+
+    private static final List<String> NUMERIC_OPERATORS = Arrays.asList("=", ">", "<", ">=", "<=");
+
 
     public static String marshal( final ScoreCardModel model ) {
         final PMML pmml = createPMMLDocument( model );
@@ -67,6 +71,22 @@ public class GuidedScoreCardDRLPersistence {
         extension.setValue( model.getFactName() );
 
         pmmlScorecard.getExtensionsAndCharacteristicsAndMiningSchemas().add( extension );
+
+        String agendaGroup = model.getAgendaGroup();
+        if (!StringUtils.isEmpty(agendaGroup)){
+            extension = new Extension();
+            extension.setName( PMMLExtensionNames.AGENDA_GROUP );
+            extension.setValue(agendaGroup);
+            pmmlScorecard.getExtensionsAndCharacteristicsAndMiningSchemas().add( extension );
+        }
+
+        String ruleFlowGroup = model.getRuleFlowGroup();
+        if (!StringUtils.isEmpty(ruleFlowGroup)){
+            extension = new Extension();
+            extension.setName( PMMLExtensionNames.RULEFLOW_GROUP );
+            extension.setValue(agendaGroup);
+            pmmlScorecard.getExtensionsAndCharacteristicsAndMiningSchemas().add( extension );
+        }
 
         extension = new Extension();
         extension.setName( PMMLExtensionNames.MODEL_IMPORTS );
@@ -141,7 +161,6 @@ public class GuidedScoreCardDRLPersistence {
             extension.setValue( characteristic.getFact() );
             miningField.getExtensions().add( extension );
 
-            final String[] numericOperators = new String[]{ "=", ">", "<", ">=", "<=" };
             for ( final org.drools.workbench.models.guided.scorecard.shared.Attribute attribute : characteristic.getAttributes() ) {
                 final Attribute _attribute = new Attribute();
                 _characteristic.getAttributes().add( _attribute );
@@ -168,7 +187,7 @@ public class GuidedScoreCardDRLPersistence {
                         predicateResolver = attribute.getValue() + ",";
                     }
                 } else {
-                    if ( ArrayUtils.contains( numericOperators, operator ) ) {
+                    if ( NUMERIC_OPERATORS.contains( operator ) ) {
                         predicateResolver = operator + " " + attribute.getValue();
                     } else {
                         predicateResolver = attribute.getValue().replace( ",", "-" );

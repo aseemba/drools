@@ -16,6 +16,7 @@
 
 package org.drools.benchmark.manners;
 
+import org.drools.core.util.IoUtils;
 import org.kie.internal.KnowledgeBase;
 import org.kie.internal.KnowledgeBaseFactory;
 import org.kie.internal.builder.KnowledgeBuilder;
@@ -75,12 +76,12 @@ public class MannersBenchmark {
                 String arg = args[0];
                 filename = arg;
             } else {
-                filename = "manners128.dat";
+                filename = "manners5.dat";
             }
     
             InputStream is = MannersBenchmark.class.getResourceAsStream( "data/" + filename );
-            List list = getInputObjects( is );
-            for ( Iterator it = list.iterator(); it.hasNext(); ) {
+            List<Object> list = getInputObjects( is );
+            for ( Iterator<Object> it = list.iterator(); it.hasNext(); ) {
                 Object object = it.next();
                 ksession.insert( object );
             }
@@ -106,7 +107,7 @@ public class MannersBenchmark {
         List<Object> list = new ArrayList<Object>();
 
         try {
-            BufferedReader br = new BufferedReader( new InputStreamReader( inputStream ) );
+            BufferedReader br = new BufferedReader( new InputStreamReader( inputStream, IoUtils.UTF8_CHARSET ) );
 
             String line;
             while ( (line = br.readLine()) != null ) {
@@ -208,7 +209,7 @@ public class MannersBenchmark {
         writer.write( LINE_SEPARATOR );
         writer.write( "(context (state start))" + LINE_SEPARATOR );
 
-        return new ByteArrayInputStream( writer.getBuffer().toString().getBytes() );
+        return new ByteArrayInputStream( writer.getBuffer().toString().getBytes( IoUtils.UTF8_CHARSET ) );
     }
 
 }

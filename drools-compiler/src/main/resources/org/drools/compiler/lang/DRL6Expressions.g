@@ -14,9 +14,9 @@ options {
     import org.drools.compiler.lang.ParserHelper;
     import org.drools.compiler.lang.DroolsParserExceptionFactory;
     import org.drools.compiler.lang.Location;
-    import org.drools.core.CheckedDroolsException;
 
     import org.drools.compiler.lang.api.AnnotatedDescrBuilder;
+    import org.drools.compiler.lang.api.AnnotationDescrBuilder;
 
     import org.drools.compiler.lang.descr.AtomicExprDescr;
     import org.drools.compiler.lang.descr.AnnotatedBaseDescr;
@@ -178,35 +178,49 @@ finally { ternOp--; }
 
 
 fullAnnotation [AnnotatedDescrBuilder inDescrBuilder] returns [AnnotationDescr result]
-@init{ String n = ""; }
+@init{ String n = ""; AnnotationDescrBuilder annoBuilder = null; }
   : AT name=ID { n = $name.text; } ( DOT x=ID { n += "." + $x.text; } )*
-        { if( buildDescr ) { $result = inDescrBuilder != null ? (AnnotationDescr) inDescrBuilder.newAnnotation( n ).getDescr() : new AnnotationDescr( n ); } }
-    annotationArgs[result]
+        { if( buildDescr ) {
+                if ( inDescrBuilder == null ) {
+                    $result = new AnnotationDescr( n );
+                } else {
+                    annoBuilder = inDescrBuilder instanceof AnnotationDescrBuilder ?
+                        ((AnnotationDescrBuilder) inDescrBuilder).newAnnotation( n ) : inDescrBuilder.newAnnotation( n );
+                    $result = (AnnotationDescr) annoBuilder.getDescr();
+                }
+            }
+        }
+    annotationArgs[result, annoBuilder]
   ;
 
-annotationArgs [AnnotationDescr descr]
+annotationArgs [AnnotationDescr descr, AnnotatedDescrBuilder inDescrBuilder]
   : LEFT_PAREN
     (
-       value=ID { if ( buildDescr ) { $descr.setValue( $value.text ); } }
-       | annotationElementValuePairs[descr]
+       (ID EQUALS_ASSIGN) => annotationElementValuePairs[descr, inDescrBuilder]
+       | value=annotationValue[inDescrBuilder] { if ( buildDescr ) { $descr.setValue( $value.result ); } }
     )?
     RIGHT_PAREN
   ;
 
-annotationElementValuePairs [AnnotationDescr descr]
-  : annotationElementValuePair[descr] ( COMMA annotationElementValuePair[descr] )*
+annotationElementValuePairs [AnnotationDescr descr, AnnotatedDescrBuilder inDescrBuilder]
+  : annotationElementValuePair[descr, inDescrBuilder] ( COMMA annotationElementValuePair[descr, inDescrBuilder] )*
   ;
 
-annotationElementValuePair [AnnotationDescr descr]
-  : key=ID EQUALS_ASSIGN val=annotationValue { if ( buildDescr ) { $descr.setKeyValue( $key.text, $val.text ); } }
+annotationElementValuePair [AnnotationDescr descr, AnnotatedDescrBuilder inDescrBuilder]
+  : key=ID EQUALS_ASSIGN val=annotationValue[inDescrBuilder] { if ( buildDescr ) { $descr.setKeyValue( $key.text, $val.result ); } }
   ;
 
-annotationValue
-  : expression | annotationArray
+annotationValue[AnnotatedDescrBuilder inDescrBuilder] returns [Object result]
+  : exp=expression { if ( buildDescr ) $result = $exp.text; }
+    | annos=annotationArray[inDescrBuilder] { if ( buildDescr ) $result = $annos.result.toArray(); }
+    | anno=fullAnnotation[inDescrBuilder] { if ( buildDescr ) $result = $anno.result; }
   ;
 
-annotationArray
-  :  LEFT_CURLY ( annotationValue ( COMMA annotationValue )* )? RIGHT_CURLY
+annotationArray[AnnotatedDescrBuilder inDescrBuilder] returns [java.util.List result]
+@init { $result = new java.util.ArrayList();}
+  :  LEFT_CURLY ( anno=annotationValue[inDescrBuilder] { $result.add( $anno.result ); }
+                ( COMMA anno=annotationValue[inDescrBuilder] { $result.add( $anno.result ); } )* )?
+     RIGHT_CURLY
   ;
 
 
@@ -494,7 +508,11 @@ unaryExpressionNotPlusMinus returns [BaseDescr result]
         | ({inMap == 0 && ternOp == 0 && input.LA(2) == DRL6Lexer.UNIFY}? (var=ID UNIFY 
                 { hasBindings = true; helper.emit($var, DroolsEditorType.IDENTIFIER_VARIABLE); helper.emit($UNIFY, DroolsEditorType.SYMBOL); if( buildDescr ) { bind = new BindingDescr($var.text, null, true); helper.setStart( bind, $var ); } } ))
         )?
-        left=primary { if( buildDescr ) { $result = $left.result; } }
+
+        ( (DIV ID)=>left2=xpathPrimary { if( buildDescr ) { $result = $left2.result; } }
+          | left1=primary { if( buildDescr ) { $result = $left1.result; } }
+        )
+
         ((selector)=>selector)*
         {
             if( buildDescr ) {
@@ -532,6 +550,20 @@ primitiveType
     |	float_key
     |	double_key
     ;
+
+xpathPrimary returns [BaseDescr result]
+    : xpathChunk+
+    ;
+
+xpathChunk returns [BaseDescr result]
+    : (DIV ID)=> DIV ID (DOT ID)* (LEFT_SQUARE xpathExpressionList RIGHT_SQUARE)?
+    ;
+
+xpathExpressionList returns [java.util.List<String> exprs]
+@init { $exprs = new java.util.ArrayList<String>();}
+  :   ((HASH ID)=> HASH ID | f=expression { $exprs.add( $f.text ); })
+      (COMMA s=expression { $exprs.add( $s.text ); })*
+  ;
 
 primary returns [BaseDescr result]
     :	(parExpression)=> expr=parExpression {  if( buildDescr  ) { $result = $expr.result; }  }

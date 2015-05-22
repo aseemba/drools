@@ -15,10 +15,6 @@
  */
 package org.drools.examples.sudoku;
 
-import java.util.Formatter;
-import java.util.HashSet;
-import java.util.Set;
-
 import org.drools.examples.sudoku.swing.AbstractSudokuGridModel;
 import org.drools.examples.sudoku.swing.SudokuGridEvent;
 import org.drools.examples.sudoku.swing.SudokuGridModel;
@@ -29,6 +25,10 @@ import org.kie.api.event.rule.RuleRuntimeEventListener;
 import org.kie.api.runtime.KieContainer;
 import org.kie.api.runtime.KieSession;
 import org.kie.api.runtime.rule.FactHandle;
+
+import java.util.Formatter;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * An object of this class solves Sudoku problems.
@@ -53,7 +53,6 @@ public class Sudoku extends AbstractSudokuGridModel implements SudokuGridModel {
     
     /**
      * Constructor.
-     * @param kBase a Knowledge Base with rules for solving Sudoku problems.
      */
     public Sudoku(KieContainer kc) {
         this.kc = kc;
@@ -99,6 +98,7 @@ public class Sudoku extends AbstractSudokuGridModel implements SudokuGridModel {
             }
             System.out.println();
         }
+        fmt.close();
     }
     
     /**
@@ -139,7 +139,7 @@ public class Sudoku extends AbstractSudokuGridModel implements SudokuGridModel {
                     aSet.addAll(cell.getFree());
                 }
             }
-            if (! aSet.equals(CellGroup.allNine)) {
+            if (! aSet.equals(CellGroup.ALL_NINE)) {
                 throw new IllegalStateException("deficit in row");
             }
         }
@@ -155,7 +155,7 @@ public class Sudoku extends AbstractSudokuGridModel implements SudokuGridModel {
                     aSet.addAll(cell.getFree());
                 }
             }
-            if (! aSet.equals(CellGroup.allNine)) {
+            if (! aSet.equals(CellGroup.ALL_NINE)) {
                 throw new IllegalStateException("deficit in column");
             }
         }
@@ -172,7 +172,7 @@ public class Sudoku extends AbstractSudokuGridModel implements SudokuGridModel {
                         aSet.addAll(cell.getFree());
                     }
                 }
-                if (! aSet.equals(CellGroup.allNine)) {
+                if (! aSet.equals(CellGroup.ALL_NINE)) {
                     throw new IllegalStateException("deficit in square");
                 }
             }

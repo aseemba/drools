@@ -1,5 +1,15 @@
 package org.drools.compiler.rule.builder;
 
+import org.drools.compiler.compiler.AnalysisResult;
+import org.drools.compiler.compiler.DescrBuildError;
+import org.drools.compiler.compiler.Dialect;
+import org.drools.compiler.lang.descr.BaseDescr;
+import org.drools.compiler.lang.descr.LiteralRestrictionDescr;
+import org.drools.compiler.lang.descr.OperatorDescr;
+import org.drools.compiler.lang.descr.PredicateDescr;
+import org.drools.compiler.lang.descr.RelationalExprDescr;
+import org.drools.compiler.rule.builder.dialect.mvel.MVELAnalysisResult;
+import org.drools.compiler.rule.builder.dialect.mvel.MVELDialect;
 import org.drools.core.base.ClassObjectType;
 import org.drools.core.base.DroolsQuery;
 import org.drools.core.base.EvaluatorWrapper;
@@ -7,20 +17,9 @@ import org.drools.core.base.ValueType;
 import org.drools.core.base.evaluators.EvaluatorDefinition;
 import org.drools.core.base.evaluators.Operator;
 import org.drools.core.base.mvel.MVELCompilationUnit;
-import org.drools.compiler.compiler.AnalysisResult;
-import org.drools.compiler.compiler.DescrBuildError;
-import org.drools.compiler.compiler.Dialect;
-import org.drools.core.util.index.IndexUtil;
-import org.drools.compiler.lang.descr.BaseDescr;
-import org.drools.compiler.lang.descr.LiteralRestrictionDescr;
-import org.drools.compiler.lang.descr.OperatorDescr;
-import org.drools.compiler.lang.descr.PredicateDescr;
-import org.drools.compiler.lang.descr.RelationalExprDescr;
 import org.drools.core.rule.Declaration;
 import org.drools.core.rule.Pattern;
 import org.drools.core.rule.ReturnValueRestriction;
-import org.drools.compiler.rule.builder.dialect.mvel.MVELAnalysisResult;
-import org.drools.compiler.rule.builder.dialect.mvel.MVELDialect;
 import org.drools.core.rule.constraint.EvaluatorConstraint;
 import org.drools.core.rule.constraint.MvelConstraint;
 import org.drools.core.spi.Constraint;
@@ -29,26 +28,29 @@ import org.drools.core.spi.FieldValue;
 import org.drools.core.spi.InternalReadAccessor;
 import org.drools.core.spi.KnowledgeHelper;
 import org.drools.core.spi.Restriction;
+import org.drools.core.util.index.IndexUtil;
 import org.mvel2.ConversionHandler;
 import org.mvel2.DataConversion;
 import org.mvel2.util.CompatibilityStrategy;
 import org.mvel2.util.NullType;
 
 import java.lang.reflect.Modifier;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-import static org.drools.core.util.ClassUtils.convertFromPrimitiveType;
 import static org.drools.compiler.rule.builder.PatternBuilder.buildAnalysis;
 import static org.drools.compiler.rule.builder.PatternBuilder.getUsedDeclarations;
 import static org.drools.compiler.rule.builder.dialect.DialectUtil.copyErrorLocation;
+import static org.drools.core.util.ClassUtils.convertFromPrimitiveType;
 
 public class MVELConstraintBuilder implements ConstraintBuilder {
 
     public static final boolean USE_MVEL_EXPRESSION = true;
-    protected static Set<String> mvelOperators;
+    protected static final Set<String> MVEL_OPERATORS;
 
     static {
         if (USE_MVEL_EXPRESSION) {
@@ -56,7 +58,7 @@ public class MVELConstraintBuilder implements ConstraintBuilder {
             DataConversion.addConversionHandler(Boolean.class, BooleanConversionHandler.INSTANCE);
             DataConversion.addConversionHandler(boolean.class, BooleanConversionHandler.INSTANCE);
 
-            mvelOperators = new HashSet<String>() {{
+            MVEL_OPERATORS = new HashSet<String>() {{
                 add("==");
                 add("!=");
                 add(">");
@@ -75,7 +77,7 @@ public class MVELConstraintBuilder implements ConstraintBuilder {
     }
 
     public boolean isMvelOperator(String operator) {
-        return mvelOperators.contains(operator);
+        return MVEL_OPERATORS.contains(operator);
     }
 
     public boolean useMvelExpression() {
@@ -93,8 +95,16 @@ public class MVELConstraintBuilder implements ConstraintBuilder {
                                               Declaration requiredDeclaration,
                                               RelationalExprDescr relDescr) {
         if (!isMvelOperator(operatorDescr.getOperator())) {
+            if (requiredDeclaration == null) {
+                return null;
+            }
+
             EvaluatorDefinition.Target right = getRightTarget( extractor );
-            EvaluatorDefinition.Target left = (requiredDeclaration.isPatternDeclaration() && !(Date.class.isAssignableFrom( requiredDeclaration.getExtractor().getExtractToClass() ) || Number.class.isAssignableFrom( requiredDeclaration.getExtractor().getExtractToClass() ))) ? EvaluatorDefinition.Target.HANDLE : EvaluatorDefinition.Target.FACT;
+            EvaluatorDefinition.Target left = (requiredDeclaration.isPatternDeclaration() &&
+                                               !(Date.class.isAssignableFrom( requiredDeclaration.getExtractor().getExtractToClass() )
+                                                 || Number.class.isAssignableFrom( requiredDeclaration.getExtractor().getExtractToClass() ))) ?
+                                              EvaluatorDefinition.Target.HANDLE :
+                                              EvaluatorDefinition.Target.FACT;
             final Evaluator evaluator = getEvaluator( context,
                                                       relDescr,
                                                       extractor.getValueType(),
@@ -106,13 +116,16 @@ public class MVELConstraintBuilder implements ConstraintBuilder {
             return new EvaluatorConstraint(new Declaration[] { requiredDeclaration }, evaluator, extractor);
         }
 
-        boolean isUnification = requiredDeclaration != null && requiredDeclaration.getPattern().getObjectType().equals( new ClassObjectType( DroolsQuery.class ) ) && Operator.EQUAL.getOperatorString().equals( operatorDescr.getOperator() );
+        boolean isUnification = requiredDeclaration != null &&
+                                requiredDeclaration.getPattern().getObjectType().equals( new ClassObjectType( DroolsQuery.class ) ) &&
+                                Operator.EQUAL.getOperatorString().equals( operatorDescr.getOperator() );
         if (isUnification) {
             expression = resolveUnificationAmbiguity(expression, declarations, leftValue, rightValue);
         }
+        expression = normalizeMVELVariableExpression(expression, leftValue, rightValue, relDescr);
         IndexUtil.ConstraintType constraintType = IndexUtil.ConstraintType.decode(operatorDescr.getOperator());
         MVELCompilationUnit compilationUnit = isUnification ? null : buildCompilationUnit(context, pattern, expression, null);
-        return new MvelConstraint(context.getPkg().getName(), expression, declarations, compilationUnit, constraintType, requiredDeclaration, extractor, isUnification);
+        return new MvelConstraint(Arrays.asList(context.getPkg().getName()), expression, declarations, compilationUnit, constraintType, requiredDeclaration, extractor, isUnification);
     }
 
     public Constraint buildMvelConstraint(String packageName, String expression, Declaration[] declarations, MVELCompilationUnit compilationUnit, boolean isDynamic) {
@@ -123,7 +136,7 @@ public class MVELConstraintBuilder implements ConstraintBuilder {
         return new MvelConstraint( packageName, expression, declarations, compilationUnit, isDynamic );
     }
 
-    public Constraint buildMvelConstraint(String packageName, String expression, Declaration[] declarations, MVELCompilationUnit compilationUnit, IndexUtil.ConstraintType constraintType, Declaration indexingDeclaration, InternalReadAccessor extractor, boolean isUnification) {
+    public Constraint buildMvelConstraint(Collection<String> packageName, String expression, Declaration[] declarations, MVELCompilationUnit compilationUnit, IndexUtil.ConstraintType constraintType, Declaration indexingDeclaration, InternalReadAccessor extractor, boolean isUnification) {
         return new MvelConstraint( packageName, expression, declarations, compilationUnit, constraintType, indexingDeclaration, extractor, isUnification );
     }
 
@@ -139,6 +152,18 @@ public class MVELConstraintBuilder implements ConstraintBuilder {
                                              LiteralRestrictionDescr restrictionDescr) {
         if (!isMvelOperator(operator)) {
             Evaluator evaluator = buildLiteralEvaluator(context, extractor, restrictionDescr, vtype);
+            if (evaluator != null && evaluator.isTemporal()) {
+                try {
+                    field = context.getCompilerFactory().getFieldFactory().getFieldValue(field.getValue(),
+                                                                                         ValueType.DATE_TYPE,
+                                                                                         context.getKnowledgeBuilder().getDateFormats());
+                } catch (Exception e) {
+                    context.addError( new DescrBuildError( context.getParentDescr(),
+                                                           restrictionDescr,
+                                                           null,
+                                                           e.getMessage() ) );
+                }
+            }
             return new EvaluatorConstraint(field, evaluator, extractor);
         }
 
@@ -186,6 +211,20 @@ public class MVELConstraintBuilder implements ConstraintBuilder {
             expr = "isEmpty()" + expr.substring(5);
         }
 
+        return expr;
+    }
+
+    protected static String normalizeMVELVariableExpression(String expr,
+                                                            String leftValue,
+                                                            String rightValue,
+                                                            RelationalExprDescr relDescr) {
+        if (relDescr.getOperator().equals("str")) {
+            String method = relDescr.getParametersText();
+            if (method.equals("length")) {
+                return leftValue + ".length()" + (relDescr.isNegated() ? " != " : " == ") + rightValue;
+            }
+            return (relDescr.isNegated() ? "!" : "") + leftValue + "." + method + "(" + rightValue + ")";
+        }
         return expr;
     }
 
@@ -245,9 +284,9 @@ public class MVELConstraintBuilder implements ConstraintBuilder {
 
         if ( evaluator == null ) {
             context.addError( new DescrBuildError( context.getParentDescr(),
-                                                          descr,
-                                                          null,
-                                                          "Evaluator '" + (isNegated ? "not " : "") + evaluatorString + "' does not support type '" + valueType ) );
+                                                   descr,
+                                                   null,
+                                                   "Evaluator '" + (isNegated ? "not " : "") + evaluatorString + "' does not support type '" + valueType ) );
         }
 
         return evaluator;

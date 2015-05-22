@@ -1,6 +1,8 @@
 package org.drools.compiler.kie.builder.impl;
 
 import org.drools.compiler.kie.builder.impl.event.KieServicesEventListerner;
+import org.drools.compiler.kproject.ReleaseIdImpl;
+import org.drools.compiler.kproject.models.KieModuleModelImpl;
 import org.drools.core.RuleBaseConfiguration;
 import org.drools.core.SessionConfiguration;
 import org.drools.core.audit.KnowledgeRuntimeLoggerProviderImpl;
@@ -8,29 +10,25 @@ import org.drools.core.command.impl.CommandFactoryServiceImpl;
 import org.drools.core.concurrent.ExecutorProviderImpl;
 import org.drools.core.impl.EnvironmentFactory;
 import org.drools.core.io.impl.ResourceFactoryServiceImpl;
-import org.drools.compiler.kproject.ReleaseIdImpl;
-import org.drools.compiler.kproject.models.KieModuleModelImpl;
 import org.drools.core.marshalling.impl.MarshallerProviderImpl;
 import org.kie.api.KieBaseConfiguration;
-import org.kie.api.KieServices;
-import org.kie.api.builder.KieScannerFactoryService;
-import org.kie.api.builder.ReleaseId;
 import org.kie.api.builder.KieBuilder;
 import org.kie.api.builder.KieFileSystem;
-import org.kie.api.builder.model.KieModuleModel;
 import org.kie.api.builder.KieRepository;
 import org.kie.api.builder.KieScanner;
+import org.kie.api.builder.KieScannerFactoryService;
+import org.kie.api.builder.ReleaseId;
+import org.kie.api.builder.model.KieModuleModel;
 import org.kie.api.command.KieCommands;
 import org.kie.api.concurrent.KieExecutors;
-import org.kie.api.runtime.Environment;
-import org.kie.api.runtime.KieSessionConfiguration;
-import org.kie.internal.io.ResourceFactoryService;
-import org.kie.internal.utils.ServiceRegistryImpl;
 import org.kie.api.io.KieResources;
 import org.kie.api.logger.KieLoggers;
 import org.kie.api.marshalling.KieMarshallers;
 import org.kie.api.persistence.jpa.KieStoreServices;
+import org.kie.api.runtime.Environment;
 import org.kie.api.runtime.KieContainer;
+import org.kie.api.runtime.KieSessionConfiguration;
+import org.kie.internal.utils.ServiceRegistryImpl;
 
 import java.io.File;
 import java.lang.ref.WeakReference;
@@ -40,8 +38,6 @@ import static org.drools.compiler.compiler.io.memory.MemoryFileSystem.readFromJa
 import static org.drools.core.common.ProjectClassLoader.findParentClassLoader;
 
 public class KieServicesImpl implements InternalKieServices {
-    private ResourceFactoryService resourceFactory;
-    
     private volatile KieContainer classpathKContainer;
 
     private volatile ClassLoader classpathClassLoader;
@@ -49,13 +45,6 @@ public class KieServicesImpl implements InternalKieServices {
     private final Object lock = new Object();
 
     private WeakReference<KieServicesEventListerner> listener;
-
-    public ResourceFactoryService getResourceFactory() {
-        if ( resourceFactory == null ) {
-            this.resourceFactory = new ResourceFactoryServiceImpl();
-        }
-        return resourceFactory;
-    }
 
     public KieRepository getRepository() {
         return KieRepositoryImpl.INSTANCE;
@@ -103,11 +92,15 @@ public class KieServicesImpl implements InternalKieServices {
     }
     
     public KieContainer newKieContainer(ReleaseId releaseId) {
+        return newKieContainer(releaseId, null);
+    }
+
+    public KieContainer newKieContainer(ReleaseId releaseId, ClassLoader classLoader) {
         InternalKieModule kieModule = (InternalKieModule) getRepository().getKieModule(releaseId);
         if (kieModule == null) {
             throw new RuntimeException("Cannot find KieModule: " + releaseId);
         }
-        KieProject kProject = new KieModuleKieProject( kieModule );
+        KieProject kProject = new KieModuleKieProject( kieModule, classLoader );
         return new KieContainerImpl( kProject, getRepository(), releaseId );
     }
     
@@ -119,6 +112,10 @@ public class KieServicesImpl implements InternalKieServices {
     public KieBuilder newKieBuilder(KieFileSystem kieFileSystem) {
         return new KieBuilderImpl(kieFileSystem);
     }    
+
+    public KieBuilder newKieBuilder(KieFileSystem kieFileSystem, ClassLoader classLoader) {
+        return new KieBuilderImpl(kieFileSystem, classLoader);
+    }
 
     public KieScanner newKieScanner(KieContainer kieContainer) {
         KieScannerFactoryService scannerFactoryService = ServiceRegistryImpl.getInstance().get( KieScannerFactoryService.class );
@@ -186,6 +183,10 @@ public class KieServicesImpl implements InternalKieServices {
 
     public KieSessionConfiguration newKieSessionConfiguration(Properties properties) {
         return new SessionConfiguration(properties);
+    }
+
+    public KieSessionConfiguration newKieSessionConfiguration(Properties properties, ClassLoader classLoader) {
+        return new SessionConfiguration(properties, classLoader);
     }
 
     public Environment newEnvironment() {

@@ -16,26 +16,20 @@
 
 package org.drools.core.reteoo;
 
-import java.io.IOException;
-import java.io.ObjectInput;
-import java.io.ObjectOutput;
-
 import org.drools.core.common.BetaConstraints;
 import org.drools.core.common.InternalFactHandle;
 import org.drools.core.common.InternalWorkingMemory;
 import org.drools.core.common.RightTupleSets;
-import org.drools.core.phreak.RightTupleEntry;
 import org.drools.core.reteoo.builder.BuildContext;
 import org.drools.core.spi.PropagationContext;
 
-import static org.drools.core.util.BitMaskUtil.intersect;
+import java.io.IOException;
+import java.io.ObjectInput;
+import java.io.ObjectOutput;
 
 public class NotNode extends BetaNode {
     private static final long serialVersionUID = 510l;
 
-    static int                notAssertObject  = 0;
-    static int                notAssertTuple   = 0;
-    
     // The reason why this is here is because forall can inject a
     //  "this == " + BASE_IDENTIFIER $__forallBaseIdentifier
     // Which we don't want to actually count in the case of forall node linking
@@ -50,13 +44,11 @@ public class NotNode extends BetaNode {
                    final ObjectSource rightInput,
                    final BetaConstraints joinNodeBinder,
                    final BuildContext context) {
-        super( id,
-               context.getPartitionId(),
-               context.getRuleBase().getConfiguration().isMultithreadEvaluation(),
-               leftInput,
-               rightInput,
-               joinNodeBinder,
-               context );
+        super(id,
+              leftInput,
+              rightInput,
+              joinNodeBinder,
+              context);
         this.tupleMemoryEnabled = context.isTupleMemoryEnabled();
         
         // The reason why this is here is because forall can inject a
@@ -129,7 +121,7 @@ public class NotNode extends BetaNode {
 
     public String toString() {
         ObjectTypeNode source = getObjectTypeNode();
-        return "[NotNode(" + this.getId() + ") - " + ((source != null) ? ((ObjectTypeNode) source).getObjectType() : "<source from a subnetwork>") + "]";
+        return "[NotNode(" + this.getId() + ") - " + ((source != null) ? source.getObjectType() : "<source from a subnetwork>") + "]";
     }
 
     @Override
@@ -151,14 +143,7 @@ public class NotNode extends BetaNode {
         // strangely we link here, this is actually just to force a network evaluation
         // The assert is then processed and the rule unlinks then.
         // This is because we need the first RightTuple to link with it's blocked
-        boolean stagedInsertWasEmpty = false;
-        if ( streamMode ) {
-            stagedInsertWasEmpty = memory.getSegmentMemory().getTupleQueue().isEmpty();
-            memory.getSegmentMemory().getTupleQueue().add(new RightTupleEntry(rightTuple, pctx, memory, pctx.getType()));
-            //log.trace( "NotNode insert queue={} size={} lt={}", System.identityHashCode( memory.getSegmentMemory().getTupleQueue() ), memory.getSegmentMemory().getTupleQueue().size(), rightTuple );
-        }  else {
-            stagedInsertWasEmpty = memory.getStagedRightTuples().addInsert( rightTuple );
-        }
+        boolean stagedInsertWasEmpty = memory.getStagedRightTuples().addInsert( rightTuple );
 
         if (  memory.getAndIncCounter() == 0 && isEmptyBetaConstraints()  ) {
             // NotNodes can only be unlinked, if they have no variable constraints
@@ -167,6 +152,8 @@ public class NotNode extends BetaNode {
             // nothing staged before, notify rule, so it can evaluate network
             memory.setNodeDirty(wm);
         }
+
+        flushLeftTupleIfNecessary(wm, memory.getSegmentMemory());
     }
 
     public void retractRightTuple(final RightTuple rightTuple,
@@ -174,22 +161,23 @@ public class NotNode extends BetaNode {
                                   final InternalWorkingMemory workingMemory) {
         final BetaMemory memory = (BetaMemory) workingMemory.getNodeMemory( this );
         rightTuple.setPropagationContext( pctx );
+        doDeleteRightTuple( rightTuple,
+                            workingMemory,
+                            memory );
+    }
+
+    public void doDeleteRightTuple(final RightTuple rightTuple,
+                                   final InternalWorkingMemory wm,
+                                   final BetaMemory memory) {
         RightTupleSets stagedRightTuples = memory.getStagedRightTuples();
-        boolean  stagedDeleteWasEmpty = false;
-        if ( streamMode ) {
-            stagedDeleteWasEmpty = memory.getSegmentMemory().getTupleQueue().isEmpty();
-            memory.getSegmentMemory().getTupleQueue().add(new RightTupleEntry(rightTuple, pctx, memory, pctx.getType()));
-            //log.trace( "NotNode delete queue={} size={} lt={}", System.identityHashCode( memory.getSegmentMemory().getTupleQueue() ), memory.getSegmentMemory().getTupleQueue().size(), rightTuple );
-        } else {
-            stagedDeleteWasEmpty = stagedRightTuples.addDelete( rightTuple );
-        }
+        boolean stagedDeleteWasEmpty = stagedRightTuples.addDelete( rightTuple );
 
         if (  memory.getAndDecCounter() == 1 && isEmptyBetaConstraints()  ) {
             // NotNodes can only be unlinked, if they have no variable constraints
-            memory.linkNode( workingMemory );
+            memory.linkNode( wm );
         }  else if ( stagedDeleteWasEmpty ) {
             // nothing staged before, notify rule, so it can evaluate network
-            memory.setNodeDirty(workingMemory);
+            memory.setNodeDirty( wm );
         }
     }
 

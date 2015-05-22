@@ -17,6 +17,7 @@
 package org.drools.workbench.models.commons.backend.rule;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -54,6 +55,10 @@ import org.drools.workbench.models.commons.backend.imports.ImportsParser;
 import org.drools.workbench.models.commons.backend.imports.ImportsWriter;
 import org.drools.workbench.models.commons.backend.packages.PackageNameParser;
 import org.drools.workbench.models.commons.backend.packages.PackageNameWriter;
+import org.drools.workbench.models.commons.backend.rule.context.LHSGeneratorContext;
+import org.drools.workbench.models.commons.backend.rule.context.LHSGeneratorContextFactory;
+import org.drools.workbench.models.commons.backend.rule.context.RHSGeneratorContext;
+import org.drools.workbench.models.commons.backend.rule.context.RHSGeneratorContextFactory;
 import org.drools.workbench.models.datamodel.imports.Import;
 import org.drools.workbench.models.datamodel.imports.Imports;
 import org.drools.workbench.models.datamodel.oracle.DataType;
@@ -83,6 +88,7 @@ import org.drools.workbench.models.datamodel.rule.ExpressionCollection;
 import org.drools.workbench.models.datamodel.rule.ExpressionField;
 import org.drools.workbench.models.datamodel.rule.ExpressionFormLine;
 import org.drools.workbench.models.datamodel.rule.ExpressionMethod;
+import org.drools.workbench.models.datamodel.rule.ExpressionMethodParameter;
 import org.drools.workbench.models.datamodel.rule.ExpressionPart;
 import org.drools.workbench.models.datamodel.rule.ExpressionText;
 import org.drools.workbench.models.datamodel.rule.ExpressionUnboundFact;
@@ -96,7 +102,6 @@ import org.drools.workbench.models.datamodel.rule.FromAccumulateCompositeFactPat
 import org.drools.workbench.models.datamodel.rule.FromCollectCompositeFactPattern;
 import org.drools.workbench.models.datamodel.rule.FromCompositeFactPattern;
 import org.drools.workbench.models.datamodel.rule.FromEntryPointFactPattern;
-import org.drools.workbench.models.datamodel.rule.HasParameterizedOperator;
 import org.drools.workbench.models.datamodel.rule.IAction;
 import org.drools.workbench.models.datamodel.rule.IFactPattern;
 import org.drools.workbench.models.datamodel.rule.IPattern;
@@ -105,6 +110,8 @@ import org.drools.workbench.models.datamodel.rule.RuleMetadata;
 import org.drools.workbench.models.datamodel.rule.RuleModel;
 import org.drools.workbench.models.datamodel.rule.SingleFieldConstraint;
 import org.drools.workbench.models.datamodel.rule.SingleFieldConstraintEBLeftSide;
+import org.drools.workbench.models.datamodel.rule.builder.DRLConstraintValueBuilder;
+import org.drools.workbench.models.datamodel.rule.visitors.ToStringExpressionVisitor;
 import org.drools.workbench.models.datamodel.workitems.HasBinding;
 import org.drools.workbench.models.datamodel.workitems.PortableBooleanParameterDefinition;
 import org.drools.workbench.models.datamodel.workitems.PortableFloatParameterDefinition;
@@ -114,6 +121,7 @@ import org.drools.workbench.models.datamodel.workitems.PortableParameterDefiniti
 import org.drools.workbench.models.datamodel.workitems.PortableStringParameterDefinition;
 import org.drools.workbench.models.datamodel.workitems.PortableWorkDefinition;
 
+import static org.drools.core.util.StringUtils.*;
 import static org.drools.workbench.models.commons.backend.rule.RuleModelPersistenceHelper.*;
 
 /**
@@ -124,14 +132,11 @@ public class RuleModelDRLPersistenceImpl
         RuleModelPersistence {
 
     private static final String WORKITEM_PREFIX = "wi";
-    private static final String DATE_FORMAT = "drools.dateformat";
 
     private static final RuleModelPersistence INSTANCE = new RuleModelDRLPersistenceImpl();
 
-    public static final String DEFAULT_DIALECT = "mvel";
-
     //This is the default dialect for rules not specifying one explicitly
-    protected DRLConstraintValueBuilder constraintValueBuilder = DRLConstraintValueBuilder.getBuilder( DEFAULT_DIALECT );
+    protected DRLConstraintValueBuilder constraintValueBuilder = DRLConstraintValueBuilder.getBuilder( DRLConstraintValueBuilder.DEFAULT_DIALECT );
 
     //Keep a record of all variable bindings for Actions that depend on them
     protected Map<String, IFactPattern> bindingsPatterns;
@@ -179,11 +184,12 @@ public class RuleModelDRLPersistenceImpl
         this.marshalLHS( buf,
                          model,
                          isDSLEnhanced,
-                         new GeneratorContextFactory() );
+                         new LHSGeneratorContextFactory() );
         buf.append( "\tthen\n" );
         this.marshalRHS( buf,
                          model,
-                         isDSLEnhanced );
+                         isDSLEnhanced,
+                         new RHSGeneratorContextFactory() );
         this.marshalFooter( buf );
         return buf.toString();
     }
@@ -271,7 +277,7 @@ public class RuleModelDRLPersistenceImpl
         // Un comment below for mvel
         if ( !hasDialect ) {
             RuleAttribute attr = new RuleAttribute( "dialect",
-                                                    DEFAULT_DIALECT );
+                                                    DRLConstraintValueBuilder.DEFAULT_DIALECT );
             buf.append( "\t" );
             buf.append( attr );
             buf.append( "\n" );
@@ -300,7 +306,7 @@ public class RuleModelDRLPersistenceImpl
     protected void marshalLHS( final StringBuilder buf,
                                final RuleModel model,
                                final boolean isDSLEnhanced,
-                               final GeneratorContextFactory generatorContextFactory ) {
+                               final LHSGeneratorContextFactory generatorContextFactory ) {
         String indentation = "\t\t";
         String nestedIndentation = indentation;
         boolean isNegated = model.isNegated();
@@ -334,7 +340,7 @@ public class RuleModelDRLPersistenceImpl
                                                       final StringBuilder buf,
                                                       final String nestedIndentation,
                                                       final boolean isNegated,
-                                                      final GeneratorContextFactory generatorContextFactory ) {
+                                                      final LHSGeneratorContextFactory generatorContextFactory ) {
         return new LHSPatternVisitor( isDSLEnhanced,
                                       bindingsPatterns,
                                       bindingsFields,
@@ -347,7 +353,8 @@ public class RuleModelDRLPersistenceImpl
 
     protected void marshalRHS( final StringBuilder buf,
                                final RuleModel model,
-                               final boolean isDSLEnhanced ) {
+                               final boolean isDSLEnhanced,
+                               final RHSGeneratorContextFactory generatorContextFactory ) {
         String indentation = "\t\t";
         if ( model.rhs != null ) {
 
@@ -367,20 +374,119 @@ public class RuleModelDRLPersistenceImpl
             //Marshall the model itself
             RHSActionVisitor actionVisitor = getRHSActionVisitor( isDSLEnhanced,
                                                                   buf,
-                                                                  indentation );
+                                                                  indentation,
+                                                                  generatorContextFactory );
+
+            //Reconcile ActionSetField and ActionUpdateField calls
+            final List<IAction> actions = new ArrayList<IAction>();
+            for ( IAction action : model.rhs ) {
+                if ( action instanceof ActionCallMethod ) {
+                    actions.add( action );
+                } else if ( action instanceof ActionSetField ) {
+                    final ActionSetField asf = (ActionSetField) action;
+                    final ActionSetFieldWrapper afw = findExistingAction( asf,
+                                                                          actions );
+                    if ( afw == null ) {
+                        actions.add( new ActionSetFieldWrapper( asf,
+                                                                ( asf instanceof ActionUpdateField ) ) );
+                    } else {
+                        final List<ActionFieldValue> existingActionFieldValue = new ArrayList<ActionFieldValue>( Arrays.asList( afw.getAction().getFieldValues() ) );
+                        for ( ActionFieldValue afv : asf.getFieldValues() ) {
+                            existingActionFieldValue.add( afv );
+                        }
+                        final ActionFieldValue[] temp = new ActionFieldValue[ existingActionFieldValue.size() ];
+                        afw.getAction().setFieldValues( existingActionFieldValue.toArray( temp ) );
+                    }
+
+                } else {
+                    actions.add( action );
+                }
+            }
+            model.rhs = new IAction[ actions.size() ];
+            for ( int i = 0; i < actions.size(); i++ ) {
+                final IAction action = actions.get( i );
+                if ( action instanceof ActionSetFieldWrapper ) {
+                    model.rhs[ i ] = ( (ActionSetFieldWrapper) action ).getAction();
+                } else {
+                    model.rhs[ i ] = action;
+                }
+            }
+
+            //Now generate DRL
             for ( IAction action : model.rhs ) {
                 actionVisitor.visit( action );
             }
         }
     }
 
+    private ActionSetFieldWrapper findExistingAction( final ActionSetField asf,
+                                                      final List<IAction> actions ) {
+        for ( IAction action : actions ) {
+            if ( action instanceof ActionSetFieldWrapper ) {
+                final ActionSetFieldWrapper afw = (ActionSetFieldWrapper) action;
+                if ( asf.getVariable().equals( afw.getAction().getVariable() ) && ( asf instanceof ActionUpdateField ) == afw.isUpdate() ) {
+                    return afw;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static class ActionSetFieldWrapper implements IAction {
+
+        private final ActionSetField action;
+        private final boolean isUpdate;
+
+        private ActionSetFieldWrapper( final ActionSetField action,
+                                       final boolean isUpdate ) {
+            this.action = clone( action );
+            this.isUpdate = isUpdate;
+        }
+
+        private ActionSetField getAction() {
+            return action;
+        }
+
+        private boolean isUpdate() {
+            return isUpdate;
+        }
+
+        private ActionSetField clone( final ActionSetField action ) {
+            if ( action instanceof ActionUpdateField ) {
+                final ActionUpdateField auf = (ActionUpdateField) action;
+                final ActionUpdateField clone = new ActionUpdateField( auf.getVariable() );
+                clone.setFieldValues( auf.getFieldValues() );
+                return clone;
+
+            } else if ( action instanceof ActionCallMethod ) {
+                final ActionCallMethod acm = (ActionCallMethod) action;
+                final ActionCallMethod clone = new ActionCallMethod( acm.getVariable() );
+                clone.setState( acm.getState() );
+                clone.setMethodName( acm.getMethodName() );
+                clone.setFieldValues( acm.getFieldValues() );
+                return clone;
+
+            } else if ( action instanceof ActionSetField ) {
+                final ActionSetField clone = new ActionSetField( action.getVariable() );
+                clone.setFieldValues( action.getFieldValues() );
+                return clone;
+
+            } else {
+                return action;
+            }
+        }
+
+    }
+
     protected RHSActionVisitor getRHSActionVisitor( final boolean isDSLEnhanced,
                                                     final StringBuilder buf,
-                                                    final String indentation ) {
+                                                    final String indentation,
+                                                    final RHSGeneratorContextFactory generatorContextFactory ) {
         return new RHSActionVisitor( isDSLEnhanced,
                                      bindingsPatterns,
                                      bindingsFields,
                                      constraintValueBuilder,
+                                     generatorContextFactory,
                                      buf,
                                      indentation );
     }
@@ -422,13 +528,15 @@ public class RuleModelDRLPersistenceImpl
         private Map<String, IFactPattern> bindingsPatterns;
         private Map<String, FieldConstraint> bindingsFields;
         protected DRLConstraintValueBuilder constraintValueBuilder;
-        protected GeneratorContextFactory generatorContextFactory;
+        protected LHSGeneratorContextFactory generatorContextFactory;
+
+        protected final LHSGeneratorContext rootContext;
 
         public LHSPatternVisitor( final boolean isDSLEnhanced,
                                   final Map<String, IFactPattern> bindingsPatterns,
                                   final Map<String, FieldConstraint> bindingsFields,
                                   final DRLConstraintValueBuilder constraintValueBuilder,
-                                  final GeneratorContextFactory generatorContextFactory,
+                                  final LHSGeneratorContextFactory generatorContextFactory,
                                   final StringBuilder b,
                                   final String indentation,
                                   final boolean isPatternNegated ) {
@@ -437,9 +545,34 @@ public class RuleModelDRLPersistenceImpl
             this.bindingsFields = bindingsFields;
             this.constraintValueBuilder = constraintValueBuilder;
             this.generatorContextFactory = generatorContextFactory;
+            this.rootContext = generatorContextFactory.newGeneratorContext();
             this.indentation = indentation;
             this.isPatternNegated = isPatternNegated;
-            buf = b;
+            this.buf = b;
+        }
+
+        protected void preGeneratePattern( final LHSGeneratorContext gctx ) {
+            // empty, overridden by rule templates
+        }
+
+        protected void postGeneratePattern( final LHSGeneratorContext gctx ) {
+            // empty, overridden by rule templates
+        }
+
+        protected void preGenerateNestedConnector( final LHSGeneratorContext gctx ) {
+            // empty, overridden by rule templates
+        }
+
+        protected void postGenerateNestedConnector( final LHSGeneratorContext gctx ) {
+            // empty, overridden by rule templates
+        }
+
+        protected void preGenerateNestedConstraint( final LHSGeneratorContext gctx ) {
+            // empty, overridden by rule templates
+        }
+
+        protected void postGenerateNestedConstraint( final LHSGeneratorContext gctx ) {
+            // empty, overridden by rule templates
         }
 
         public void visitFactPattern( final FactPattern pattern ) {
@@ -448,10 +581,18 @@ public class RuleModelDRLPersistenceImpl
                 // adding passthrough markup
                 buf.append( ">" );
             }
-            generateFactPattern( pattern );
+
+            final LHSGeneratorContext gctx = generatorContextFactory.newChildGeneratorContext( rootContext,
+                                                                                               pattern );
+            preGeneratePattern( gctx );
+
+            generateFactPattern( pattern,
+                                 gctx );
             if ( isPatternNegated ) {
                 buf.append( " and " );
             }
+
+            postGeneratePattern( gctx );
             buf.append( "\n" );
         }
 
@@ -508,12 +649,17 @@ public class RuleModelDRLPersistenceImpl
                 // adding passthrough markup
                 buf.append( ">" );
             }
+
             if ( pattern.getFactPattern() != null ) {
-                generateFactPattern( pattern.getFactPattern() );
+                final LHSGeneratorContext gctx = generatorContextFactory.newChildGeneratorContext( rootContext,
+                                                                                                   pattern.getFactPattern() );
+                generateFactPattern( pattern.getFactPattern(),
+                                     gctx );
+
+                buf.append( " from " );
+                renderExpression( pattern.getExpression() );
+                buf.append( "\n" );
             }
-            buf.append( " from " );
-            renderExpression( pattern.getExpression() );
-            buf.append( "\n" );
         }
 
         public void visitFromCollectCompositeFactPattern( final FromCollectCompositeFactPattern pattern ) {
@@ -528,32 +674,38 @@ public class RuleModelDRLPersistenceImpl
                 // adding passthrough markup
                 buf.append( ">" );
             }
+
             if ( pattern.getFactPattern() != null ) {
-                generateFactPattern( pattern.getFactPattern() );
-            }
-            buf.append( " from collect ( " );
-            if ( pattern.getRightPattern() != null ) {
-                if ( pattern.getRightPattern() instanceof FactPattern ) {
-                    generateFactPattern( (FactPattern) pattern.getRightPattern() );
-                } else if ( pattern.getRightPattern() instanceof FromAccumulateCompositeFactPattern ) {
-                    visitFromAccumulateCompositeFactPattern( (FromAccumulateCompositeFactPattern) pattern.getRightPattern(),
-                                                             isSubPattern );
-                } else if ( pattern.getRightPattern() instanceof FromCollectCompositeFactPattern ) {
-                    visitFromCollectCompositeFactPattern( (FromCollectCompositeFactPattern) pattern.getRightPattern(),
-                                                          isSubPattern );
-                } else if ( pattern.getRightPattern() instanceof FromEntryPointFactPattern ) {
-                    visitFromEntryPointFactPattern( (FromEntryPointFactPattern) pattern.getRightPattern(),
-                                                    isSubPattern );
-                } else if ( pattern.getRightPattern() instanceof FromCompositeFactPattern ) {
-                    visitFromCompositeFactPattern( (FromCompositeFactPattern) pattern.getRightPattern(),
-                                                   isSubPattern );
-                } else if ( pattern.getRightPattern() instanceof FreeFormLine ) {
-                    visitFreeFormLine( (FreeFormLine) pattern.getRightPattern() );
-                } else {
-                    throw new IllegalArgumentException( "Unsupported pattern " + pattern.getRightPattern() + " for FROM COLLECT" );
+                final LHSGeneratorContext gctx = generatorContextFactory.newChildGeneratorContext( rootContext,
+                                                                                                   pattern.getFactPattern() );
+                generateFactPattern( pattern.getFactPattern(),
+                                     gctx );
+
+                buf.append( " from collect ( " );
+                if ( pattern.getRightPattern() != null ) {
+                    if ( pattern.getRightPattern() instanceof FactPattern ) {
+                        generateFactPattern( (FactPattern) pattern.getRightPattern(),
+                                             generatorContextFactory.newGeneratorContext() );
+                    } else if ( pattern.getRightPattern() instanceof FromAccumulateCompositeFactPattern ) {
+                        visitFromAccumulateCompositeFactPattern( (FromAccumulateCompositeFactPattern) pattern.getRightPattern(),
+                                                                 isSubPattern );
+                    } else if ( pattern.getRightPattern() instanceof FromCollectCompositeFactPattern ) {
+                        visitFromCollectCompositeFactPattern( (FromCollectCompositeFactPattern) pattern.getRightPattern(),
+                                                              isSubPattern );
+                    } else if ( pattern.getRightPattern() instanceof FromEntryPointFactPattern ) {
+                        visitFromEntryPointFactPattern( (FromEntryPointFactPattern) pattern.getRightPattern(),
+                                                        isSubPattern );
+                    } else if ( pattern.getRightPattern() instanceof FromCompositeFactPattern ) {
+                        visitFromCompositeFactPattern( (FromCompositeFactPattern) pattern.getRightPattern(),
+                                                       isSubPattern );
+                    } else if ( pattern.getRightPattern() instanceof FreeFormLine ) {
+                        visitFreeFormLine( (FreeFormLine) pattern.getRightPattern() );
+                    } else {
+                        throw new IllegalArgumentException( "Unsupported pattern " + pattern.getRightPattern() + " for FROM COLLECT" );
+                    }
                 }
+                buf.append( ") \n" );
             }
-            buf.append( ") \n" );
         }
 
         public void visitFromAccumulateCompositeFactPattern( final FromAccumulateCompositeFactPattern pattern ) {
@@ -568,52 +720,63 @@ public class RuleModelDRLPersistenceImpl
                 // adding passthrough markup
                 buf.append( ">" );
             }
+
             if ( pattern.getFactPattern() != null ) {
-                generateFactPattern( pattern.getFactPattern() );
-            }
-            buf.append( " from accumulate ( " );
-            if ( pattern.getSourcePattern() != null ) {
-                if ( pattern.getSourcePattern() instanceof FactPattern ) {
-                    generateFactPattern( (FactPattern) pattern.getSourcePattern() );
-                } else if ( pattern.getSourcePattern() instanceof FromAccumulateCompositeFactPattern ) {
-                    visitFromAccumulateCompositeFactPattern( (FromAccumulateCompositeFactPattern) pattern.getSourcePattern(),
-                                                             isSubPattern );
-                } else if ( pattern.getSourcePattern() instanceof FromCollectCompositeFactPattern ) {
-                    visitFromCollectCompositeFactPattern( (FromCollectCompositeFactPattern) pattern.getSourcePattern(),
-                                                          isSubPattern );
-                } else if ( pattern.getSourcePattern() instanceof FromEntryPointFactPattern ) {
-                    visitFromEntryPointFactPattern( (FromEntryPointFactPattern) pattern.getSourcePattern(),
-                                                    isSubPattern );
-                } else if ( pattern.getSourcePattern() instanceof FromCompositeFactPattern ) {
-                    visitFromCompositeFactPattern( (FromCompositeFactPattern) pattern.getSourcePattern(),
-                                                   isSubPattern );
+                final LHSGeneratorContext gctx = generatorContextFactory.newChildGeneratorContext( rootContext,
+                                                                                                   pattern.getFactPattern() );
+                generateFactPattern( pattern.getFactPattern(),
+                                     gctx );
+
+                buf.append( " from accumulate ( " );
+                if ( pattern.getSourcePattern() != null ) {
+                    if ( pattern.getSourcePattern() instanceof FactPattern ) {
+                        final LHSGeneratorContext soucrceGctx = generatorContextFactory.newGeneratorContext();
+                        generateFactPattern( (FactPattern) pattern.getSourcePattern(),
+                                             soucrceGctx );
+
+                    } else if ( pattern.getSourcePattern() instanceof FromAccumulateCompositeFactPattern ) {
+                        visitFromAccumulateCompositeFactPattern( (FromAccumulateCompositeFactPattern) pattern.getSourcePattern(),
+                                                                 isSubPattern );
+
+                    } else if ( pattern.getSourcePattern() instanceof FromCollectCompositeFactPattern ) {
+                        visitFromCollectCompositeFactPattern( (FromCollectCompositeFactPattern) pattern.getSourcePattern(),
+                                                              isSubPattern );
+
+                    } else if ( pattern.getSourcePattern() instanceof FromEntryPointFactPattern ) {
+                        visitFromEntryPointFactPattern( (FromEntryPointFactPattern) pattern.getSourcePattern(),
+                                                        isSubPattern );
+
+                    } else if ( pattern.getSourcePattern() instanceof FromCompositeFactPattern ) {
+                        visitFromCompositeFactPattern( (FromCompositeFactPattern) pattern.getSourcePattern(),
+                                                       isSubPattern );
+
+                    } else {
+                        throw new IllegalArgumentException( "Unsupported pattern " + pattern.getSourcePattern() + " for FROM ACCUMULATE" );
+                    }
+                }
+                buf.append( ",\n" );
+
+                if ( pattern.useFunctionOrCode().equals( FromAccumulateCompositeFactPattern.USE_FUNCTION ) ) {
+                    buf.append( indentation + "\t" );
+                    buf.append( pattern.getFunction() );
                 } else {
-                    throw new IllegalArgumentException( "Unsupported pattern " + pattern.getSourcePattern() + " for FROM ACCUMULATE" );
-                }
-            }
-            buf.append( ",\n" );
-
-            if ( pattern.useFunctionOrCode().equals( FromAccumulateCompositeFactPattern.USE_FUNCTION ) ) {
-                buf.append( indentation + "\t" );
-                buf.append( pattern.getFunction() );
-            } else {
-                buf.append( indentation + "\tinit( " );
-                buf.append( pattern.getInitCode() );
-                buf.append( " ),\n" );
-                buf.append( indentation + "\taction( " );
-                buf.append( pattern.getActionCode() );
-                buf.append( " ),\n" );
-                if ( pattern.getReverseCode() != null && !pattern.getReverseCode().trim().equals( "" ) ) {
-                    buf.append( indentation + "\treverse( " );
-                    buf.append( pattern.getReverseCode() );
+                    buf.append( indentation + "\tinit( " );
+                    buf.append( pattern.getInitCode() );
                     buf.append( " ),\n" );
+                    buf.append( indentation + "\taction( " );
+                    buf.append( pattern.getActionCode() );
+                    buf.append( " ),\n" );
+                    if ( pattern.getReverseCode() != null && !pattern.getReverseCode().trim().equals( "" ) ) {
+                        buf.append( indentation + "\treverse( " );
+                        buf.append( pattern.getReverseCode() );
+                        buf.append( " ),\n" );
+                    }
+                    buf.append( indentation + "\tresult( " );
+                    buf.append( pattern.getResultCode() );
+                    buf.append( " )\n" );
                 }
-                buf.append( indentation + "\tresult( " );
-                buf.append( pattern.getResultCode() );
-                buf.append( " )\n" );
+                buf.append( ") \n" );
             }
-            buf.append( ") \n" );
-
         }
 
         public void visitFromEntryPointFactPattern( final FromEntryPointFactPattern pattern ) {
@@ -628,10 +791,14 @@ public class RuleModelDRLPersistenceImpl
                 // adding passthrough markup
                 buf.append( ">" );
             }
+
             if ( pattern.getFactPattern() != null ) {
-                generateFactPattern( pattern.getFactPattern() );
+                final LHSGeneratorContext gctx = generatorContextFactory.newChildGeneratorContext( rootContext,
+                                                                                                   pattern.getFactPattern() );
+                generateFactPattern( pattern.getFactPattern(),
+                                     gctx );
+                buf.append( " from entry-point \"" + pattern.getEntryPointName() + "\"\n" );
             }
-            buf.append( " from entry-point \"" + pattern.getEntryPointName() + "\"\n" );
         }
 
         private void renderCompositeFOL( final CompositeFactPattern pattern ) {
@@ -656,23 +823,31 @@ public class RuleModelDRLPersistenceImpl
             }
             IFactPattern subPattern = pattern.getPatterns()[ subIndex ];
             if ( subPattern instanceof FactPattern ) {
-                this.generateFactPattern( (FactPattern) subPattern );
+                final LHSGeneratorContext gctx = generatorContextFactory.newChildGeneratorContext( rootContext,
+                                                                                                   subPattern );
+                this.generateFactPattern( (FactPattern) subPattern,
+                                          gctx );
+
             } else if ( subPattern instanceof FromAccumulateCompositeFactPattern ) {
                 this.visitFromAccumulateCompositeFactPattern( (FromAccumulateCompositeFactPattern) subPattern,
                                                               true );
+
             } else if ( subPattern instanceof FromCollectCompositeFactPattern ) {
                 this.visitFromCollectCompositeFactPattern( (FromCollectCompositeFactPattern) subPattern,
                                                            true );
+
             } else if ( subPattern instanceof FromCompositeFactPattern ) {
                 this.visitFromCompositeFactPattern( (FromCompositeFactPattern) subPattern,
                                                     true );
+
             } else {
                 throw new IllegalStateException( "Unsupported Pattern: " + subPattern.getClass().getName() );
             }
         }
 
         private void renderExpression( final ExpressionFormLine expression ) {
-            buf.append( expression.getText() );
+            final ToStringExpressionVisitor visitor = new ToStringExpressionVisitor( constraintValueBuilder );
+            buf.append( expression.getText( visitor ) );
         }
 
         public void visitDSLSentence( final DSLSentence sentence ) {
@@ -681,7 +856,8 @@ public class RuleModelDRLPersistenceImpl
             buf.append( "\n" );
         }
 
-        private void generateFactPattern( final FactPattern pattern ) {
+        private void generateFactPattern( final FactPattern pattern,
+                                          final LHSGeneratorContext gctx ) {
             if ( pattern.isNegated() ) {
                 buf.append( "not " );
             } else if ( pattern.isBound() ) {
@@ -697,7 +873,8 @@ public class RuleModelDRLPersistenceImpl
 
             // top level constraints
             if ( pattern.getConstraintList() != null ) {
-                generateConstraints( pattern );
+                generateConstraints( pattern,
+                                     gctx );
             }
             buf.append( ")" );
 
@@ -710,50 +887,48 @@ public class RuleModelDRLPersistenceImpl
             }
         }
 
-        private void generateConstraints( final FactPattern pattern ) {
-            GeneratorContext gctx = generatorContextFactory.newGeneratorContext();
-            preGenerateConstraints( gctx );
+        private void generateConstraints( final FactPattern pattern,
+                                          final LHSGeneratorContext parentContext ) {
+            LHSGeneratorContext gctx = null;
             for ( int constraintIndex = 0; constraintIndex < pattern.getFieldConstraints().length; constraintIndex++ ) {
                 FieldConstraint constr = pattern.getConstraintList().getConstraints()[ constraintIndex ];
-                gctx.setFieldConstraint( constr );
+
+                if ( constraintIndex == 0 ) {
+                    gctx = generatorContextFactory.newChildGeneratorContext( parentContext,
+                                                                             constr );
+                } else {
+                    gctx = generatorContextFactory.newPeerGeneratorContext( gctx,
+                                                                            constr );
+                }
+
                 generateConstraint( constr,
                                     gctx );
             }
         }
 
-        public void preGenerateConstraints( GeneratorContext gctx ) {
-            // empty, overridden by rule templates
-        }
-
-        public void preGenerateNestedConnector( GeneratorContext gctx ) {
-            // empty, overridden by rule templates
-        }
-
-        public void postGenerateNestedConnector( GeneratorContext gctx ) {
-            // empty, overridden by rule templates
-        }
-
-        public void preGenerateNestedConstraint( GeneratorContext gctx ) {
-            // empty, overridden by rule templates
-        }
-
-        public void postGenerateNestedConstraint( GeneratorContext gctx ) {
-            // empty, overridden by rule templates
-        }
-
-        public void generateSeparator( FieldConstraint constr,
-                                       GeneratorContext gctx ) {
-            if ( !gctx.isHasOutput() ) {
+        public void generateSeparator( final FieldConstraint constr,
+                                       final LHSGeneratorContext gctx ) {
+            if ( !doesPeerHaveOutput( gctx ) ) {
                 return;
             }
-            if ( gctx.getDepth() == 0 ) {
+            if ( gctx.getParent().getFieldConstraint() instanceof CompositeFieldConstraint ) {
+                CompositeFieldConstraint cconstr = (CompositeFieldConstraint) gctx.getParent().getFieldConstraint();
+                buf.append( cconstr.getCompositeJunctionType() + " " );
+            } else {
                 if ( buf.length() > 2 && !( buf.charAt( buf.length() - 2 ) == ',' ) ) {
                     buf.append( ", " );
                 }
-            } else {
-                CompositeFieldConstraint cconstr = (CompositeFieldConstraint) gctx.getParent().getFieldConstraint();
-                buf.append( cconstr.getCompositeJunctionType() + " " );
             }
+        }
+
+        protected boolean doesPeerHaveOutput( final LHSGeneratorContext gctx ) {
+            final List<LHSGeneratorContext> peers = generatorContextFactory.getPeers( gctx );
+            for ( LHSGeneratorContext c : peers ) {
+                if ( c.isHasOutput() ) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         /**
@@ -762,41 +937,53 @@ public class RuleModelDRLPersistenceImpl
          * readable DRL in the most common cases.
          */
         protected void generateConstraint( final FieldConstraint con,
-                                           GeneratorContext gctx ) {
-            generateSeparator( con, gctx );
+                                           final LHSGeneratorContext parentContext ) {
+            generateSeparator( con,
+                               parentContext );
             if ( con instanceof CompositeFieldConstraint ) {
                 CompositeFieldConstraint cfc = (CompositeFieldConstraint) con;
                 FieldConstraint[] nestedConstraints = cfc.getConstraints();
                 if ( nestedConstraints != null ) {
-                    GeneratorContext nestedGctx = generatorContextFactory.newChildGeneratorContext( gctx );
-                    preGenerateConstraints( nestedGctx );
-                    preGenerateNestedConstraint( gctx );
-                    if ( gctx.getDepth() > 0 ) {
+                    LHSGeneratorContext nestedGctx = generatorContextFactory.newChildGeneratorContext( parentContext,
+                                                                                                       con );
+                    preGenerateNestedConstraint( nestedGctx );
+                    if ( parentContext.getParent().getFieldConstraint() instanceof CompositeFieldConstraint ) {
                         buf.append( "( " );
                     }
+                    LHSGeneratorContext gctx = null;
                     for ( int nestedConstraintIndex = 0; nestedConstraintIndex < nestedConstraints.length; nestedConstraintIndex++ ) {
                         FieldConstraint nestedConstr = nestedConstraints[ nestedConstraintIndex ];
-                        nestedGctx.setFieldConstraint( nestedConstr );
+
+                        if ( nestedConstraintIndex == 0 ) {
+                            gctx = generatorContextFactory.newChildGeneratorContext( nestedGctx,
+                                                                                     nestedConstr );
+                        } else {
+                            gctx = generatorContextFactory.newPeerGeneratorContext( gctx,
+                                                                                    nestedConstr );
+                        }
+
                         generateConstraint( nestedConstr,
-                                            nestedGctx );
+                                            gctx );
                     }
-                    gctx.setHasOutput( nestedGctx.isHasOutput() );
-                    if ( gctx.getDepth() > 0 ) {
+                    if ( parentContext.getParent().getFieldConstraint() instanceof CompositeFieldConstraint ) {
                         buf.append( ")" );
                     }
-                    postGenerateNestedConstraint( gctx );
+                    postGenerateNestedConstraint( parentContext );
                 }
             } else {
-                generateSingleFieldConstraint( (SingleFieldConstraint) con, gctx );
+                generateSingleFieldConstraint( (SingleFieldConstraint) con,
+                                               parentContext );
             }
         }
 
         private void generateSingleFieldConstraint( final SingleFieldConstraint constr,
-                                                    GeneratorContext gctx ) {
+                                                    final LHSGeneratorContext gctx ) {
             if ( constr.getConstraintValueType() == BaseSingleFieldConstraint.TYPE_PREDICATE ) {
                 buf.append( "eval( " );
                 buf.append( constr.getValue() );
                 buf.append( " )" );
+                gctx.setHasOutput( true );
+
             } else {
                 if ( constr.isBound() ) {
                     bindingsFields.put( constr.getFieldBinding(),
@@ -809,7 +996,9 @@ public class RuleModelDRLPersistenceImpl
 
                 if ( isConstraintComplete( constr ) ) {
                     if ( constr instanceof SingleFieldConstraintEBLeftSide ) {
-                        buf.append( ( (SingleFieldConstraintEBLeftSide) constr ).getExpressionLeftSide().getText() );
+                        final SingleFieldConstraintEBLeftSide sfcexp = ( (SingleFieldConstraintEBLeftSide) constr );
+                        final ToStringExpressionVisitor visitor = new ToStringExpressionVisitor( constraintValueBuilder );
+                        buf.append( sfcexp.getExpressionLeftSide().getText( visitor ) );
                     } else {
                         SingleFieldConstraint parent = (SingleFieldConstraint) constr.getParent();
                         StringBuilder parentBuf = new StringBuilder();
@@ -824,23 +1013,22 @@ public class RuleModelDRLPersistenceImpl
                         buf.append( fieldName );
                     }
 
-                    Map<String, String> parameters = null;
-                    if ( constr instanceof HasParameterizedOperator ) {
-                        HasParameterizedOperator hop = constr;
-                        parameters = hop.getParameters();
-                    }
+                    final Map<String, String> parameters = constr.getParameters();
                     if ( constr.getConnectives() == null ) {
-                        generateNormalFieldRestriction( constr, parameters );
+                        generateNormalFieldRestriction( constr,
+                                                        parameters );
                     } else {
-                        generateConnectiveFieldRestriction( constr, parameters, gctx );
+                        generateConnectiveFieldRestriction( constr,
+                                                            parameters,
+                                                            gctx );
                     }
                     gctx.setHasOutput( true );
                 }
             }
         }
 
-        private void generateNormalFieldRestriction( SingleFieldConstraint constr,
-                                                     Map<String, String> parameters ) {
+        private void generateNormalFieldRestriction( final SingleFieldConstraint constr,
+                                                     final Map<String, String> parameters ) {
             if ( constr instanceof SingleFieldConstraintEBLeftSide ) {
                 SingleFieldConstraintEBLeftSide sfexp = (SingleFieldConstraintEBLeftSide) constr;
                 addFieldRestriction( buf,
@@ -863,12 +1051,11 @@ public class RuleModelDRLPersistenceImpl
             }
         }
 
-        private void generateConnectiveFieldRestriction( SingleFieldConstraint constr,
-                                                         Map<String, String> parameters,
-                                                         GeneratorContext gctx ) {
-            GeneratorContext cctx = generatorContextFactory.newChildGeneratorContext( gctx );
-            preGenerateConstraints( cctx );
-            cctx.setFieldConstraint( constr );
+        private void generateConnectiveFieldRestriction( final SingleFieldConstraint constr,
+                                                         final Map<String, String> parameters,
+                                                         final LHSGeneratorContext gctx ) {
+            LHSGeneratorContext cctx = generatorContextFactory.newChildGeneratorContext( gctx,
+                                                                                         constr );
             if ( constr instanceof SingleFieldConstraintEBLeftSide ) {
                 SingleFieldConstraintEBLeftSide sfexp = (SingleFieldConstraintEBLeftSide) constr;
                 addConnectiveFieldRestriction( buf,
@@ -894,17 +1081,13 @@ public class RuleModelDRLPersistenceImpl
 
             for ( int j = 0; j < constr.getConnectives().length; j++ ) {
                 final ConnectiveConstraint conn = constr.getConnectives()[ j ];
-
-                if ( conn instanceof HasParameterizedOperator ) {
-                    HasParameterizedOperator hop = (HasParameterizedOperator) conn;
-                    parameters = hop.getParameters();
-                }
+                final Map<String, String> connectiveParameters = conn.getParameters();
 
                 addConnectiveFieldRestriction( buf,
                                                conn.getConstraintValueType(),
                                                conn.getFieldType(),
                                                conn.getOperator(),
-                                               parameters,
+                                               connectiveParameters,
                                                conn.getValue(),
                                                conn.getExpressionValue(),
                                                cctx,
@@ -951,7 +1134,7 @@ public class RuleModelDRLPersistenceImpl
                                                       final Map<String, String> parameters,
                                                       final String value,
                                                       final ExpressionFormLine expression,
-                                                      GeneratorContext gctx,
+                                                      LHSGeneratorContext gctx,
                                                       final boolean spaceBeforeOperator ) {
             addFieldRestriction( buf, type, fieldType, operator, parameters, value, expression, spaceBeforeOperator );
         }
@@ -994,7 +1177,8 @@ public class RuleModelDRLPersistenceImpl
                                                buf );
                     break;
                 case BaseSingleFieldConstraint.TYPE_TEMPLATE:
-                    buildTemplateFieldValue( type,
+                    buildTemplateFieldValue( operator,
+                                             type,
                                              fieldType,
                                              value,
                                              buf );
@@ -1066,10 +1250,10 @@ public class RuleModelDRLPersistenceImpl
             buf.append( " " );
         }
 
-        private void populateValueList( final StringBuilder buf,
-                                        final int type,
-                                        final String fieldType,
-                                        final String value ) {
+        protected void populateValueList( final StringBuilder buf,
+                                          final int type,
+                                          final String fieldType,
+                                          final String value ) {
             String workingValue = value.trim();
             if ( workingValue.startsWith( "(" ) ) {
                 workingValue = workingValue.substring( 1 );
@@ -1104,21 +1288,32 @@ public class RuleModelDRLPersistenceImpl
                                                   final StringBuilder buf ) {
             if ( expression != null ) {
                 buf.append( " " );
-                buf.append( expression.getText() );
+                final ToStringExpressionVisitor visitor = new ToStringExpressionVisitor( constraintValueBuilder );
+                buf.append( expression.getText( visitor ) );
                 buf.append( " " );
             }
         }
 
-        protected void buildTemplateFieldValue( final int type,
+        protected void buildTemplateFieldValue( final String operator,
+                                                final int type,
                                                 final String fieldType,
                                                 final String value,
                                                 final StringBuilder buf ) {
-            buf.append( " " );
-            constraintValueBuilder.buildLHSFieldValue( buf,
-                                                       type,
-                                                       fieldType,
-                                                       "@{" + value + "}" );
-            buf.append( " " );
+            if ( OperatorsOracle.operatorRequiresList( operator ) ) {
+                buf.append( " " );
+                constraintValueBuilder.buildLHSFieldValue( buf,
+                                                           type,
+                                                           DataType.TYPE_COLLECTION,
+                                                           "@{makeValueList(" + value + ")}" );
+                buf.append( " " );
+            } else {
+                buf.append( " " );
+                constraintValueBuilder.buildLHSFieldValue( buf,
+                                                           type,
+                                                           fieldType,
+                                                           "@{removeDelimitingQuotes(" + value + ")}" );
+                buf.append( " " );
+            }
         }
 
         private void buildEnumFieldValue( final String operator,
@@ -1161,10 +1356,12 @@ public class RuleModelDRLPersistenceImpl
         protected StringBuilder buf;
         private boolean isDSLEnhanced;
         private String indentation;
-        //        private int idx = 0;
         private Map<String, IFactPattern> bindingsPatterns;
         private Map<String, FieldConstraint> bindingsFields;
         protected DRLConstraintValueBuilder constraintValueBuilder;
+        protected RHSGeneratorContextFactory generatorContextFactory;
+
+        protected final RHSGeneratorContext rootContext;
 
         //Keep a record of Work Items that are instantiated for Actions that depend on them
         private Set<String> instantiatedWorkItems;
@@ -1173,15 +1370,31 @@ public class RuleModelDRLPersistenceImpl
                                  final Map<String, IFactPattern> bindingsPatterns,
                                  final Map<String, FieldConstraint> bindingsFields,
                                  final DRLConstraintValueBuilder constraintValueBuilder,
+                                 final RHSGeneratorContextFactory generatorContextFactory,
                                  final StringBuilder b,
                                  final String indentation ) {
             this.isDSLEnhanced = isDSLEnhanced;
             this.bindingsPatterns = bindingsPatterns;
             this.bindingsFields = bindingsFields;
             this.constraintValueBuilder = constraintValueBuilder;
+            this.generatorContextFactory = generatorContextFactory;
+            this.rootContext = generatorContextFactory.newGeneratorContext();
             this.indentation = indentation;
             this.instantiatedWorkItems = new HashSet<String>();
-            buf = b;
+            this.buf = b;
+        }
+
+        protected void preGenerateAction( final RHSGeneratorContext gctx ) {
+            // empty, overridden by rule templates
+        }
+
+        protected void postGenerateAction( final RHSGeneratorContext gctx ) {
+            // empty, overridden by rule templates
+        }
+
+        protected void preGenerateSetMethodCallParameterValue( final RHSGeneratorContext gctx,
+                                                               final ActionFieldValue fieldValue ) {
+            gctx.setHasOutput( true );
         }
 
         public void visitActionInsertFact( final ActionInsertFact action ) {
@@ -1247,14 +1460,24 @@ public class RuleModelDRLPersistenceImpl
         }
 
         public void visitActionUpdateField( final ActionUpdateField action ) {
-            this.visitActionSetField( action );
+            final RHSGeneratorContext gctx = generatorContextFactory.newChildGeneratorContext( rootContext,
+                                                                                               action );
+            preGenerateAction( gctx );
+
             buf.append( indentation );
             if ( isDSLEnhanced ) {
                 buf.append( ">" );
             }
-            buf.append( "update( " );
-            buf.append( action.getVariable() );
-            buf.append( " );\n" );
+            buf.append( "modify( " ).append( action.getVariable() ).append( " ) {\n" );
+            this.generateModifyMethodCalls( action.getFieldValues(),
+                                            gctx );
+            buf.append( "\n" ).append( indentation );
+            if ( isDSLEnhanced ) {
+                buf.append( ">" );
+            }
+            buf.append( "}\n" );
+
+            postGenerateAction( gctx );
         }
 
         public void visitActionGlobalCollectionAdd( final ActionGlobalCollectionAdd add ) {
@@ -1399,6 +1622,65 @@ public class RuleModelDRLPersistenceImpl
             }
         }
 
+        private void generateModifyMethodCalls( final ActionFieldValue[] fieldValues,
+                                                final RHSGeneratorContext parentContext ) {
+            RHSGeneratorContext gctx = null;
+            for ( int index = 0; index < fieldValues.length; index++ ) {
+                final ActionFieldValue fieldValue = fieldValues[ index ];
+                if ( index == 0 ) {
+                    gctx = generatorContextFactory.newChildGeneratorContext( parentContext,
+                                                                             fieldValue );
+                } else {
+                    gctx = generatorContextFactory.newPeerGeneratorContext( gctx,
+                                                                            fieldValue );
+                }
+
+                preGenerateSetMethodCallParameterValue( gctx,
+                                                        fieldValue );
+                generateModifyMethodSeparator( gctx,
+                                               fieldValue );
+                generateModifyMethodCall( gctx,
+                                          fieldValue );
+            }
+        }
+
+        protected void generateModifyMethodCall( final RHSGeneratorContext gctx,
+                                                 final ActionFieldValue fieldValue ) {
+            buf.append( indentation ).append( indentation );
+            if ( isDSLEnhanced ) {
+                buf.append( ">" );
+            }
+
+            if ( fieldValue instanceof ActionFieldFunction ) {
+                buf.append( fieldValue.getField() );
+            } else {
+                buf.append( "set" );
+                buf.append( Character.toUpperCase( fieldValue.getField().charAt( 0 ) ) );
+                buf.append( fieldValue.getField().substring( 1 ) );
+            }
+            buf.append( "( " );
+            generateSetMethodCallParameterValue( buf,
+                                                 fieldValue );
+            buf.append( " )" );
+        }
+
+        protected void generateModifyMethodSeparator( final RHSGeneratorContext gctx,
+                                                      final ActionFieldValue fieldValue ) {
+            if ( doesPeerHaveOutput( gctx ) ) {
+                buf.append( ", \n" );
+            }
+        }
+
+        private boolean doesPeerHaveOutput( final RHSGeneratorContext gctx ) {
+            final List<RHSGeneratorContext> peers = generatorContextFactory.getPeers( gctx );
+            for ( RHSGeneratorContext c : peers ) {
+                if ( c.isHasOutput() ) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         protected void buildFormulaFieldValue( final ActionFieldValue fieldValue,
                                                final StringBuilder buf ) {
             buf.append( fieldValue.getValue() );
@@ -1413,7 +1695,7 @@ public class RuleModelDRLPersistenceImpl
                                                 final StringBuilder buf ) {
             constraintValueBuilder.buildRHSFieldValue( buf,
                                                        fieldValue.getType(),
-                                                       "@{" + fieldValue.getValue() + "}" );
+                                                       "@{removeDelimitingQuotes(" + fieldValue.getValue() + ")}" );
         }
 
         protected void buildWorkItemFieldValue( final ActionWorkItemFieldValue afv,
@@ -1470,7 +1752,6 @@ public class RuleModelDRLPersistenceImpl
                 }
             }
             buf.append( " );\n" );
-
         }
     }
 
@@ -1542,10 +1823,15 @@ public class RuleModelDRLPersistenceImpl
         if ( str == null || str.isEmpty() ) {
             return new RuleModel();
         }
-        return getRuleModel( preprocessDRL( str,
-                                            false ).registerGlobals( dmo,
-                                                                     globals ),
-                             dmo );
+        try {
+            return getRuleModel( preprocessDRL( str,
+                                                false ).registerGlobals( dmo,
+                                                                         globals ),
+                                 dmo );
+
+        } catch ( RuleModelUnmarshallingException e ) {
+            return getSimpleRuleModel( str );
+        }
     }
 
     public RuleModel unmarshalUsingDSL( final String str,
@@ -1555,27 +1841,38 @@ public class RuleModelDRLPersistenceImpl
         if ( str == null || str.isEmpty() ) {
             return new RuleModel();
         }
-        return getRuleModel( parseDSLs( preprocessDRL( str,
-                                                       true ),
-                                        dsls ).registerGlobals( dmo,
-                                                                globals ),
-                             dmo );
+        try {
+            return getRuleModel( parseDSLs( preprocessDRL( str,
+                                                           true ),
+                                            dsls ).registerGlobals( dmo,
+                                                                    globals ),
+                                 dmo );
+
+        } catch ( RuleModelUnmarshallingException e ) {
+            return getSimpleRuleModel( str );
+        }
     }
 
-    private ExpandedDRLInfo parseDSLs( ExpandedDRLInfo expandedDRLInfo,
-                                       String[] dsls ) {
+    private ExpandedDRLInfo parseDSLs( final ExpandedDRLInfo expandedDRLInfo,
+                                       final String[] dsls ) {
         for ( String dsl : dsls ) {
             for ( String line : dsl.split( "\n" ) ) {
                 String dslPattern = line.trim();
                 if ( dslPattern.length() > 0 ) {
                     if ( dslPattern.startsWith( "[when]" ) ) {
-                        expandedDRLInfo.lhsDslPatterns.add( extractDslPattern( dslPattern.substring( "[when]".length() ) ) );
+                        final String dslDefinition = dslPattern.substring( "[when]".length() );
+                        expandedDRLInfo.lhsDslPatterns.add( new SimpleDSLSentence( extractDslPattern( dslDefinition ),
+                                                                                   extractDslDrl( dslDefinition ) ) );
                     } else if ( dslPattern.startsWith( "[then]" ) ) {
-                        expandedDRLInfo.rhsDslPatterns.add( extractDslPattern( dslPattern.substring( "[then]".length() ) ) );
+                        final String dslDefinition = dslPattern.substring( "[then]".length() );
+                        expandedDRLInfo.rhsDslPatterns.add( new SimpleDSLSentence( extractDslPattern( dslDefinition ),
+                                                                                   extractDslDrl( dslDefinition ) ) );
                     } else if ( dslPattern.startsWith( "[" ) ) {
-                        String pattern = extractDslPattern( removeDslTopics( dslPattern ) );
-                        expandedDRLInfo.lhsDslPatterns.add( pattern );
-                        expandedDRLInfo.rhsDslPatterns.add( pattern );
+                        final String dslDefinition = removeDslTopics( dslPattern );
+                        expandedDRLInfo.lhsDslPatterns.add( new SimpleDSLSentence( extractDslPattern( dslDefinition ),
+                                                                                   extractDslDrl( dslDefinition ) ) );
+                        expandedDRLInfo.rhsDslPatterns.add( new SimpleDSLSentence( extractDslPattern( dslDefinition ),
+                                                                                   extractDslDrl( dslDefinition ) ) );
                     }
                 }
             }
@@ -1583,7 +1880,7 @@ public class RuleModelDRLPersistenceImpl
         return expandedDRLInfo;
     }
 
-    private String removeDslTopics( String line ) {
+    private String removeDslTopics( final String line ) {
         int lastClosedSquare = -1;
         boolean lookForOpen = true;
         for ( int i = 0; i < line.length(); i++ ) {
@@ -1604,23 +1901,26 @@ public class RuleModelDRLPersistenceImpl
         return line.substring( lastClosedSquare + 1 );
     }
 
-    private String extractDslPattern( String line ) {
-        return line.substring( 0, line.indexOf( '=' ) ).trim();
+    private String extractDslPattern( final String line ) {
+        return line.substring( 0,
+                               line.indexOf( '=' ) ).trim();
     }
 
-    private RuleModel getRuleModel( ExpandedDRLInfo expandedDRLInfo,
-                                    PackageDataModelOracle dmo ) {
+    private String extractDslDrl( final String line ) {
+        return line.substring( line.indexOf( '=' ) + 1 ).trim();
+    }
+
+    private RuleModel getRuleModel( final ExpandedDRLInfo expandedDRLInfo,
+                                    final PackageDataModelOracle dmo ) {
         //De-serialize model
         RuleDescr ruleDescr = parseDrl( expandedDRLInfo );
         RuleModel model = new RuleModel();
         model.name = ruleDescr.getName();
         model.parentName = ruleDescr.getParentName();
 
-        Map<String, AnnotationDescr> annotations = ruleDescr.getAnnotations();
-        if ( annotations != null ) {
-            for ( AnnotationDescr annotation : annotations.values() ) {
-                model.addMetadata( new RuleMetadata( annotation.getName(), annotation.getValuesAsString() ) );
-            }
+        for ( AnnotationDescr annotation : ruleDescr.getAnnotations() ) {
+            model.addMetadata( new RuleMetadata( annotation.getName(),
+                                                 annotation.getValuesAsString() ) );
         }
 
         //De-serialize Package name
@@ -1635,7 +1935,11 @@ public class RuleModelDRLPersistenceImpl
 
         boolean isJavaDialect = parseAttributes( model,
                                                  ruleDescr.getAttributes() );
-        Map<String, String> boundParams = parseLhs( model, ruleDescr.getLhs(), expandedDRLInfo, dmo );
+        Map<String, String> boundParams = parseLhs( model,
+                                                    ruleDescr.getLhs(),
+                                                    isJavaDialect,
+                                                    expandedDRLInfo,
+                                                    dmo );
         parseRhs( model,
                   expandedDRLInfo.consequence != null ? expandedDRLInfo.consequence : (String) ruleDescr.getConsequence(),
                   isJavaDialect,
@@ -1645,10 +1949,10 @@ public class RuleModelDRLPersistenceImpl
         return model;
     }
 
-    private ExpandedDRLInfo preprocessDRL( String str,
-                                           boolean hasDsl ) {
+    private ExpandedDRLInfo preprocessDRL( final String str,
+                                           final boolean hasDsl ) {
         StringBuilder drl = new StringBuilder();
-        String thenLine = null;
+        String thenLine = "";
         List<String> lhsStatements = new ArrayList<String>();
         List<String> rhsStatements = new ArrayList<String>();
 
@@ -1657,14 +1961,17 @@ public class RuleModelDRLPersistenceImpl
         int lhsParenthesisBalance = 0;
 
         for ( String line : lines ) {
+            if ( line.trim().length() == 0 ) {
+                continue;
+            }
             if ( ruleSection == RuleSection.HEADER ) {
                 drl.append( line ).append( "\n" );
-                if ( line.contains( "when" ) ) {
+                if ( isLHSStartMarker( line ) ) {
                     ruleSection = RuleSection.LHS;
                 }
                 continue;
             }
-            if ( ruleSection == RuleSection.LHS && line.contains( "then" ) ) {
+            if ( ruleSection == RuleSection.LHS && isRHSStartMarker( line ) ) {
                 thenLine = line;
                 ruleSection = RuleSection.RHS;
                 continue;
@@ -1689,6 +1996,16 @@ public class RuleModelDRLPersistenceImpl
                                       rhsStatements );
     }
 
+    private boolean isLHSStartMarker( final String line ) {
+        final String lhsMarker = line.trim() + " ";
+        return lhsMarker.startsWith( "when " );
+    }
+
+    private boolean isRHSStartMarker( final String line ) {
+        final String rhsMarker = line.trim() + " ";
+        return rhsMarker.startsWith( "then " );
+    }
+
     private int parenthesisBalance( String str ) {
         int balance = 0;
         for ( char ch : str.toCharArray() ) {
@@ -1701,11 +2018,11 @@ public class RuleModelDRLPersistenceImpl
         return balance;
     }
 
-    private ExpandedDRLInfo createExpandedDRLInfo( boolean hasDsl,
-                                                   StringBuilder drl,
-                                                   String thenLine,
-                                                   List<String> lhsStatements,
-                                                   List<String> rhsStatements ) {
+    private ExpandedDRLInfo createExpandedDRLInfo( final boolean hasDsl,
+                                                   final StringBuilder drl,
+                                                   final String thenLine,
+                                                   final List<String> lhsStatements,
+                                                   final List<String> rhsStatements ) {
         if ( !hasDsl ) {
             return processFreeFormStatement( drl,
                                              thenLine,
@@ -1738,14 +2055,18 @@ public class RuleModelDRLPersistenceImpl
             lineCounter++;
             String trimmed = statement.trim();
             if ( trimmed.endsWith( "end" ) ) {
-                trimmed = trimmed.substring( 0, trimmed.length() - 3 ).trim();
+                trimmed = trimmed.substring( 0,
+                                             trimmed.length() - 3 ).trim();
             }
             if ( trimmed.length() > 0 ) {
                 if ( hasDsl && trimmed.startsWith( ">" ) ) {
                     drl.append( trimmed.substring( 1 ) ).append( "\n" );
                 } else {
-                    expandedDRLInfo.dslStatementsInRhs.put( lineCounter, trimmed );
+                    expandedDRLInfo.dslStatementsInRhs.put( lineCounter,
+                                                            trimmed );
                 }
+            } else {
+                drl.append( "end" );
             }
         }
 
@@ -1754,10 +2075,10 @@ public class RuleModelDRLPersistenceImpl
         return expandedDRLInfo;
     }
 
-    private ExpandedDRLInfo processFreeFormStatement( StringBuilder drl,
-                                                      String thenLine,
-                                                      List<String> lhsStatements,
-                                                      List<String> rhsStatements ) {
+    private ExpandedDRLInfo processFreeFormStatement( final StringBuilder drl,
+                                                      final String thenLine,
+                                                      final List<String> lhsStatements,
+                                                      final List<String> rhsStatements ) {
         ExpandedDRLInfo expandedDRLInfo = new ExpandedDRLInfo( false );
 
         int lineCounter = -1;
@@ -1775,11 +2096,11 @@ public class RuleModelDRLPersistenceImpl
         drl.append( thenLine ).append( "\n" );
 
         expandedDRLInfo.consequence = "";
-        lineCounter = -1;
         for ( String statement : rhsStatements ) {
             String trimmed = statement.trim();
             if ( trimmed.endsWith( "end" ) ) {
-                trimmed = trimmed.substring( 0, trimmed.length() - 3 );
+                trimmed = trimmed.substring( 0,
+                                             trimmed.length() - 3 ).trim();
             }
             if ( trimmed.length() > 0 ) {
                 expandedDRLInfo.consequence += ( trimmed + "\n" );
@@ -1791,7 +2112,7 @@ public class RuleModelDRLPersistenceImpl
         return expandedDRLInfo;
     }
 
-    private boolean isValidLHSStatement( String lhs ) {
+    private boolean isValidLHSStatement( final String lhs ) {
         // TODO: How to identify a non valid (free form) lhs statement?
         return ( lhs.indexOf( '(' ) >= 0 || lhs.indexOf( ':' ) >= 0 ) && lhs.indexOf( "//" ) == -1;
     }
@@ -1809,26 +2130,26 @@ public class RuleModelDRLPersistenceImpl
 
         private Map<Integer, String> freeFormStatementsInLhs;
 
-        private List<String> lhsDslPatterns;
-        private List<String> rhsDslPatterns;
+        private List<SimpleDSLSentence> lhsDslPatterns;
+        private List<SimpleDSLSentence> rhsDslPatterns;
 
         private Set<String> globals = new HashSet<String>();
 
-        private ExpandedDRLInfo( boolean hasDsl ) {
+        private ExpandedDRLInfo( final boolean hasDsl ) {
             this.hasDsl = hasDsl;
             dslStatementsInLhs = new HashMap<Integer, String>();
             dslStatementsInRhs = new HashMap<Integer, String>();
             freeFormStatementsInLhs = new HashMap<Integer, String>();
-            lhsDslPatterns = new ArrayList<String>();
-            rhsDslPatterns = new ArrayList<String>();
+            lhsDslPatterns = new ArrayList<SimpleDSLSentence>();
+            rhsDslPatterns = new ArrayList<SimpleDSLSentence>();
         }
 
-        public boolean hasGlobal( String name ) {
+        public boolean hasGlobal( final String name ) {
             return globals.contains( name );
         }
 
-        public ExpandedDRLInfo registerGlobals( PackageDataModelOracle dmo,
-                                                List<String> globalStatements ) {
+        public ExpandedDRLInfo registerGlobals( final PackageDataModelOracle dmo,
+                                                final List<String> globalStatements ) {
             if ( globalStatements != null ) {
                 for ( String globalStatement : globalStatements ) {
                     String identifier = getIdentifier( globalStatement );
@@ -1855,12 +2176,13 @@ public class RuleModelDRLPersistenceImpl
             }
             String identifier = globalStatement.substring( lastSpace + 1 );
             if ( identifier.endsWith( ";" ) ) {
-                identifier = identifier.substring( 0, identifier.length() - 1 );
+                identifier = identifier.substring( 0,
+                                                   identifier.length() - 1 );
             }
             return identifier;
         }
 
-        public ExpandedDRLInfo registerGlobalDescrs( List<GlobalDescr> globalDescrs ) {
+        public ExpandedDRLInfo registerGlobalDescrs( final List<GlobalDescr> globalDescrs ) {
             if ( globalDescrs != null ) {
                 for ( GlobalDescr globalDescr : globalDescrs ) {
                     globals.add( globalDescr.getIdentifier() );
@@ -1870,11 +2192,14 @@ public class RuleModelDRLPersistenceImpl
         }
     }
 
-    private RuleDescr parseDrl( ExpandedDRLInfo expandedDRLInfo ) {
+    private RuleDescr parseDrl( final ExpandedDRLInfo expandedDRLInfo ) {
         DrlParser drlParser = new DrlParser();
         PackageDescr packageDescr;
         try {
             packageDescr = drlParser.parse( true, expandedDRLInfo.plainDrl );
+            if ( drlParser.hasErrors() ) {
+                throw new RuleModelUnmarshallingException();
+            }
         } catch ( DroolsParserException e ) {
             throw new RuntimeException( e );
         }
@@ -1882,13 +2207,14 @@ public class RuleModelDRLPersistenceImpl
         return packageDescr.getRules().get( 0 );
     }
 
-    private boolean parseAttributes( RuleModel m,
-                                     Map<String, AttributeDescr> attributes ) {
+    private boolean parseAttributes( final RuleModel m,
+                                     final Map<String, AttributeDescr> attributes ) {
         boolean isJavaDialect = false;
         for ( Map.Entry<String, AttributeDescr> entry : attributes.entrySet() ) {
             String name = entry.getKey();
             String value = normalizeAttributeValue( entry.getValue().getValue().trim() );
-            RuleAttribute ruleAttribute = new RuleAttribute( name, value );
+            RuleAttribute ruleAttribute = new RuleAttribute( name,
+                                                             value );
             m.addAttribute( ruleAttribute );
             isJavaDialect |= name.equals( "dialect" ) && value.equals( "java" );
         }
@@ -1918,47 +2244,61 @@ public class RuleModelDRLPersistenceImpl
         return value;
     }
 
-    private Map<String, String> parseLhs( RuleModel m,
-                                          AndDescr lhs,
-                                          ExpandedDRLInfo expandedDRLInfo,
-                                          PackageDataModelOracle dmo ) {
+    private Map<String, String> parseLhs( final RuleModel m,
+                                          final AndDescr lhs,
+                                          final boolean isJavaDialect,
+                                          final ExpandedDRLInfo expandedDRLInfo,
+                                          final PackageDataModelOracle dmo ) {
         Map<String, String> boundParams = new HashMap<String, String>();
         int lineCounter = -1;
         for ( BaseDescr descr : lhs.getDescrs() ) {
-            lineCounter = parseNonDrlInLhs( m, expandedDRLInfo, lineCounter );
-            IPattern pattern = parseBaseDescr( m, descr, boundParams, dmo );
+            lineCounter = parseNonDrlInLhs( m,
+                                            expandedDRLInfo,
+                                            lineCounter );
+            IPattern pattern = parseBaseDescr( m,
+                                               descr,
+                                               isJavaDialect,
+                                               boundParams,
+                                               dmo );
             if ( pattern != null ) {
                 m.addLhsItem( pattern );
             }
         }
-        parseNonDrlInLhs( m, expandedDRLInfo, lineCounter );
+        parseNonDrlInLhs( m,
+                          expandedDRLInfo,
+                          lineCounter );
         return boundParams;
     }
 
-    private int parseNonDrlInLhs( RuleModel m,
-                                  ExpandedDRLInfo expandedDRLInfo,
+    private int parseNonDrlInLhs( final RuleModel m,
+                                  final ExpandedDRLInfo expandedDRLInfo,
                                   int lineCounter ) {
         lineCounter++;
-        lineCounter = parseDslInLhs( m, expandedDRLInfo, lineCounter );
-        lineCounter = parseFreeForm( m, expandedDRLInfo, lineCounter );
+        lineCounter = parseDslInLhs( m,
+                                     expandedDRLInfo,
+                                     lineCounter );
+        lineCounter = parseFreeForm( m,
+                                     expandedDRLInfo,
+                                     lineCounter );
         return lineCounter;
     }
 
-    private int parseDslInLhs( RuleModel m,
-                               ExpandedDRLInfo expandedDRLInfo,
+    private int parseDslInLhs( final RuleModel m,
+                               final ExpandedDRLInfo expandedDRLInfo,
                                int lineCounter ) {
         if ( expandedDRLInfo.hasDsl ) {
             String dslLine = expandedDRLInfo.dslStatementsInLhs.get( lineCounter );
             while ( dslLine != null ) {
-                m.addLhsItem( toDSLSentence( expandedDRLInfo.lhsDslPatterns, dslLine ) );
+                m.addLhsItem( toDSLSentence( expandedDRLInfo.lhsDslPatterns,
+                                             dslLine ) );
                 dslLine = expandedDRLInfo.dslStatementsInLhs.get( ++lineCounter );
             }
         }
         return lineCounter;
     }
 
-    private int parseFreeForm( RuleModel m,
-                               ExpandedDRLInfo expandedDRLInfo,
+    private int parseFreeForm( final RuleModel m,
+                               final ExpandedDRLInfo expandedDRLInfo,
                                int lineCounter ) {
         String freeForm = expandedDRLInfo.freeFormStatementsInLhs.get( lineCounter );
         while ( freeForm != null ) {
@@ -1970,39 +2310,63 @@ public class RuleModelDRLPersistenceImpl
         return lineCounter;
     }
 
-    private IPattern parseBaseDescr( RuleModel m,
-                                     BaseDescr descr,
-                                     Map<String, String> boundParams,
-                                     PackageDataModelOracle dmo ) {
+    private IPattern parseBaseDescr( final RuleModel m,
+                                     final BaseDescr descr,
+                                     final boolean isJavaDialect,
+                                     final Map<String, String> boundParams,
+                                     final PackageDataModelOracle dmo ) {
         if ( descr instanceof PatternDescr ) {
-            return parsePatternDescr( m, (PatternDescr) descr, boundParams, dmo );
+            return parsePatternDescr( m,
+                                      (PatternDescr) descr,
+                                      isJavaDialect,
+                                      boundParams,
+                                      dmo );
         } else if ( descr instanceof AndDescr ) {
             AndDescr andDescr = (AndDescr) descr;
-            return parseBaseDescr( m, andDescr.getDescrs().get( 0 ), boundParams, dmo );
+            return parseBaseDescr( m,
+                                   andDescr.getDescrs().get( 0 ),
+                                   isJavaDialect,
+                                   boundParams,
+                                   dmo );
         } else if ( descr instanceof EvalDescr ) {
             FreeFormLine freeFormLine = new FreeFormLine();
             freeFormLine.setText( "eval( " + ( (EvalDescr) descr ).getContent() + " )" );
             return freeFormLine;
         } else if ( descr instanceof ConditionalElementDescr ) {
-            return parseExistentialElementDescr( m, (ConditionalElementDescr) descr, boundParams, dmo );
+            return parseExistentialElementDescr( m,
+                                                 (ConditionalElementDescr) descr,
+                                                 isJavaDialect,
+                                                 boundParams,
+                                                 dmo );
         }
         return null;
     }
 
-    private IFactPattern parsePatternDescr( RuleModel m,
-                                            PatternDescr pattern,
-                                            Map<String, String> boundParams,
-                                            PackageDataModelOracle dmo ) {
+    private IFactPattern parsePatternDescr( final RuleModel m,
+                                            final PatternDescr pattern,
+                                            final boolean isJavaDialect,
+                                            final Map<String, String> boundParams,
+                                            final PackageDataModelOracle dmo ) {
         if ( pattern.getSource() != null ) {
-            return parsePatternSource( m, pattern, pattern.getSource(), boundParams, dmo );
+            return parsePatternSource( m,
+                                       pattern,
+                                       pattern.getSource(),
+                                       isJavaDialect,
+                                       boundParams,
+                                       dmo );
         }
-        return getFactPattern( m, pattern, boundParams, dmo );
+        return getFactPattern( m,
+                               pattern,
+                               isJavaDialect,
+                               boundParams,
+                               dmo );
     }
 
-    private FactPattern getFactPattern( RuleModel m,
-                                        PatternDescr pattern,
-                                        Map<String, String> boundParams,
-                                        PackageDataModelOracle dmo ) {
+    private FactPattern getFactPattern( final RuleModel m,
+                                        final PatternDescr pattern,
+                                        final boolean isJavaDialect,
+                                        final Map<String, String> boundParams,
+                                        final PackageDataModelOracle dmo ) {
         String type = pattern.getObjectType();
         FactPattern factPattern = new FactPattern( getSimpleFactType( type,
                                                                       dmo ) );
@@ -2016,6 +2380,7 @@ public class RuleModelDRLPersistenceImpl
         parseConstraint( m,
                          factPattern,
                          pattern.getConstraint(),
+                         isJavaDialect,
                          boundParams,
                          dmo );
 
@@ -2038,23 +2403,36 @@ public class RuleModelDRLPersistenceImpl
         return factPattern;
     }
 
-    private IFactPattern parsePatternSource( RuleModel m,
-                                             PatternDescr pattern,
-                                             PatternSourceDescr patternSource,
-                                             Map<String, String> boundParams,
-                                             PackageDataModelOracle dmo ) {
+    private IFactPattern parsePatternSource( final RuleModel m,
+                                             final PatternDescr pattern,
+                                             final PatternSourceDescr patternSource,
+                                             final boolean isJavaDialect,
+                                             final Map<String, String> boundParams,
+                                             final PackageDataModelOracle dmo ) {
+        if ( pattern.getIdentifier() != null ) {
+            boundParams.put( pattern.getIdentifier(),
+                             pattern.getObjectType() );
+        }
         if ( patternSource instanceof AccumulateDescr ) {
             AccumulateDescr accumulate = (AccumulateDescr) patternSource;
             FromAccumulateCompositeFactPattern fac = new FromAccumulateCompositeFactPattern();
-            fac.setSourcePattern( parseBaseDescr( m, accumulate.getInput(), boundParams, dmo ) );
+            fac.setSourcePattern( parseBaseDescr( m,
+                                                  accumulate.getInput(),
+                                                  isJavaDialect,
+                                                  boundParams,
+                                                  dmo ) );
+            fac.setInitCode( accumulate.getInitCode() );
+            fac.setActionCode( accumulate.getActionCode() );
+            fac.setReverseCode( accumulate.getReverseCode() );
+            fac.setResultCode( accumulate.getResultCode() );
 
             FactPattern factPattern = new FactPattern( pattern.getObjectType() );
             factPattern.setBoundName( pattern.getIdentifier() );
-            boundParams.put( factPattern.getBoundName(),
-                             factPattern.getFactType() );
+
             parseConstraint( m,
                              factPattern,
                              pattern.getConstraint(),
+                             isJavaDialect,
                              boundParams,
                              dmo );
 
@@ -2080,10 +2458,12 @@ public class RuleModelDRLPersistenceImpl
             FromCollectCompositeFactPattern fac = new FromCollectCompositeFactPattern();
             fac.setRightPattern( parseBaseDescr( m,
                                                  collect.getInputPattern(),
+                                                 isJavaDialect,
                                                  boundParams,
                                                  dmo ) );
             fac.setFactPattern( getFactPattern( m,
                                                 pattern,
+                                                isJavaDialect,
                                                 boundParams,
                                                 dmo ) );
             return fac;
@@ -2093,6 +2473,7 @@ public class RuleModelDRLPersistenceImpl
             fep.setEntryPointName( entryPoint.getText() );
             fep.setFactPattern( getFactPattern( m,
                                                 pattern,
+                                                isJavaDialect,
                                                 boundParams,
                                                 dmo ) );
             return fep;
@@ -2104,6 +2485,7 @@ public class RuleModelDRLPersistenceImpl
             parseConstraint( m,
                              factPattern,
                              pattern.getConstraint(),
+                             isJavaDialect,
                              boundParams,
                              dmo );
 
@@ -2118,14 +2500,20 @@ public class RuleModelDRLPersistenceImpl
                 String sourcePart = splitSource[ i ];
                 if ( i == 0 ) {
                     String type = boundParams.get( sourcePart );
-                    expression.appendPart( new ExpressionVariable( sourcePart, type, DataType.TYPE_NUMERIC ) );
-                    fields = findFields( dmo, m, type );
+                    expression.appendPart( new ExpressionVariable( sourcePart,
+                                                                   type,
+                                                                   DataType.TYPE_NUMERIC ) );
+                    fields = findFields( m,
+                                         dmo,
+                                         type );
                 } else {
                     ModelField modelField = null;
-                    for ( ModelField field : fields ) {
-                        if ( field.getName().equals( sourcePart ) ) {
-                            modelField = field;
-                            break;
+                    if ( fields != null ) {
+                        for ( ModelField field : fields ) {
+                            if ( field.getName().equals( sourcePart ) ) {
+                                modelField = field;
+                                break;
+                            }
                         }
                     }
                     if ( modelField == null ) {
@@ -2151,8 +2539,8 @@ public class RuleModelDRLPersistenceImpl
                         expression.appendPart( new ExpressionField( sourcePart,
                                                                     modelField.getClassName(),
                                                                     modelField.getType() ) );
-                        fields = findFields( dmo,
-                                             m,
+                        fields = findFields( m,
+                                             dmo,
                                              modelField.getClassName() );
                     }
                 }
@@ -2163,58 +2551,95 @@ public class RuleModelDRLPersistenceImpl
         throw new RuntimeException( "Unknown pattern source " + patternSource );
     }
 
-    private CompositeFactPattern parseExistentialElementDescr( RuleModel m,
-                                                               ConditionalElementDescr conditionalDescr,
-                                                               Map<String, String> boundParams,
-                                                               PackageDataModelOracle dmo ) {
+    private CompositeFactPattern parseExistentialElementDescr( final RuleModel m,
+                                                               final ConditionalElementDescr conditionalDescr,
+                                                               final boolean isJavaDialect,
+                                                               final Map<String, String> boundParams,
+                                                               final PackageDataModelOracle dmo ) {
         CompositeFactPattern comp = conditionalDescr instanceof NotDescr ?
                 new CompositeFactPattern( CompositeFactPattern.COMPOSITE_TYPE_NOT ) :
                 conditionalDescr instanceof OrDescr ?
                         new CompositeFactPattern( CompositeFactPattern.COMPOSITE_TYPE_OR ) :
                         new CompositeFactPattern( CompositeFactPattern.COMPOSITE_TYPE_EXISTS );
-        addPatternToComposite( m, conditionalDescr, comp, boundParams, dmo );
+        addPatternToComposite( m,
+                               conditionalDescr,
+                               comp,
+                               isJavaDialect,
+                               boundParams,
+                               dmo );
         IFactPattern[] patterns = comp.getPatterns();
         return patterns != null && patterns.length > 0 ? comp : null;
     }
 
-    private void addPatternToComposite( RuleModel m,
-                                        ConditionalElementDescr conditionalDescr,
-                                        CompositeFactPattern comp,
-                                        Map<String, String> boundParams,
-                                        PackageDataModelOracle dmo ) {
+    private void addPatternToComposite( final RuleModel m,
+                                        final ConditionalElementDescr conditionalDescr,
+                                        final CompositeFactPattern comp,
+                                        final boolean isJavaDialect,
+                                        final Map<String, String> boundParams,
+                                        final PackageDataModelOracle dmo ) {
         for ( Object descr : conditionalDescr.getDescrs() ) {
             if ( descr instanceof PatternDescr ) {
-                comp.addFactPattern( parsePatternDescr( m, (PatternDescr) descr, boundParams, dmo ) );
+                comp.addFactPattern( parsePatternDescr( m,
+                                                        (PatternDescr) descr,
+                                                        isJavaDialect,
+                                                        boundParams,
+                                                        dmo ) );
             } else if ( descr instanceof ConditionalElementDescr ) {
-                addPatternToComposite( m, (ConditionalElementDescr) descr, comp, boundParams, dmo );
+                addPatternToComposite( m,
+                                       (ConditionalElementDescr) descr,
+                                       comp,
+                                       isJavaDialect,
+                                       boundParams,
+                                       dmo );
             }
         }
     }
 
-    private void parseConstraint( RuleModel m,
-                                  FactPattern factPattern,
-                                  ConditionalElementDescr constraint,
-                                  Map<String, String> boundParams,
-                                  PackageDataModelOracle dmo ) {
+    private void parseConstraint( final RuleModel m,
+                                  final FactPattern factPattern,
+                                  final ConditionalElementDescr constraint,
+                                  final boolean isJavaDialect,
+                                  final Map<String, String> boundParams,
+                                  final PackageDataModelOracle dmo ) {
         for ( BaseDescr descr : constraint.getDescrs() ) {
             if ( descr instanceof ExprConstraintDescr ) {
                 ExprConstraintDescr exprConstraint = (ExprConstraintDescr) descr;
-                Expr expr = parseExpr( exprConstraint.getExpression(), boundParams, dmo );
-                factPattern.addConstraint( expr.asFieldConstraint( m, factPattern ) );
+                Expr expr = parseExpr( exprConstraint.getExpression(),
+                                       isJavaDialect,
+                                       boundParams,
+                                       dmo );
+                factPattern.addConstraint( expr.asFieldConstraint( m,
+                                                                   factPattern ) );
             }
         }
     }
 
     private static String findOperator( String expr ) {
+        //ConnectiveConstraints are handled SimpleExpr.setOperatorAndValueOnConstraint(). Therefore we
+        //only need to try to find the first operator before the ConnectiveConstraint separator.
+        if ( expr.contains( "&&" ) ) {
+            expr = expr.substring( 0,
+                                   expr.indexOf( "&&" ) ).trim();
+        }
+        if ( expr.contains( "||" ) ) {
+            expr = expr.substring( 0,
+                                   expr.indexOf( "||" ) ).trim();
+        }
+
         final Set<String> potentialOperators = new HashSet<String>();
         for ( Operator op : Operator.getAllOperators() ) {
+            String opString = op.getOperatorString();
             if ( op.isNegated() ) {
-                if ( expr.contains( " not " + op.getOperatorString() ) ) {
-                    return "not " + op.getOperatorString();
+                if ( expr.contains( " not " + opString ) ) {
+                    return "not " + opString;
                 }
             }
-            if ( expr.contains( op.getOperatorString() ) ) {
-                potentialOperators.add( op.getOperatorString() );
+            int opPos = expr.indexOf( opString );
+            if ( opPos >= 0 && !isInQuote( expr, opPos ) &&
+                    !( Character.isLetter( opString.charAt( 0 ) ) &&
+                            ( expr.length() == opPos + opString.length() || Character.isLetter( expr.charAt( opPos + opString.length() ) ) ||
+                                    ( opPos > 0 && Character.isLetter( expr.charAt( opPos - 1 ) ) ) ) ) ) {
+                potentialOperators.add( opString );
             }
         }
         String operator = "";
@@ -2229,18 +2654,29 @@ public class RuleModelDRLPersistenceImpl
             return operator;
         }
 
-        if ( expr.contains( "not in" ) ) {
-            return "not in";
+        if ( expr.contains( " not in " ) ) {
+            return " not in ";
         }
-        if ( expr.contains( " in" ) ) {
-            return "in";
+        if ( expr.contains( " in " ) ) {
+            return " in ";
         }
         return null;
     }
 
+    private static boolean isInQuote( final String expr,
+                                      final int pos ) {
+        boolean isInQuote = false;
+        for ( int i = pos - 1; i >= 0; i-- ) {
+            if ( expr.charAt( i ) == '"' ) {
+                isInQuote = !isInQuote;
+            }
+        }
+        return isInQuote;
+    }
+
     private static final String[] NULL_OPERATORS = new String[]{ "== null", "!= null" };
 
-    private static String findNullOrNotNullOperator( String expr ) {
+    private static String findNullOrNotNullOperator( final String expr ) {
         for ( String op : NULL_OPERATORS ) {
             if ( expr.contains( op ) ) {
                 return op;
@@ -2249,16 +2685,19 @@ public class RuleModelDRLPersistenceImpl
         return null;
     }
 
-    private void parseRhs( RuleModel m,
-                           String rhs,
-                           boolean isJavaDialect,
-                           Map<String, String> boundParams,
-                           ExpandedDRLInfo expandedDRLInfo,
-                           PackageDataModelOracle dmo ) {
+    private void parseRhs( final RuleModel m,
+                           final String rhs,
+                           final boolean isJavaDialect,
+                           final Map<String, String> boundParams,
+                           final ExpandedDRLInfo expandedDRLInfo,
+                           final PackageDataModelOracle dmo ) {
         PortableWorkDefinition pwd = null;
         Map<String, List<String>> setStatements = new HashMap<String, List<String>>();
         Map<String, Integer> setStatementsPosition = new HashMap<String, Integer>();
         Map<String, String> factsType = new HashMap<String, String>();
+
+        String modifiedVariable = null;
+        String modifiers = null;
 
         int lineCounter = -1;
         String[] lines = rhs.split( "\n" );
@@ -2267,14 +2706,44 @@ public class RuleModelDRLPersistenceImpl
             if ( expandedDRLInfo.hasDsl ) {
                 String dslLine = expandedDRLInfo.dslStatementsInRhs.get( lineCounter );
                 while ( dslLine != null ) {
-                    m.addRhsItem( toDSLSentence( expandedDRLInfo.rhsDslPatterns, dslLine ) );
+                    m.addRhsItem( toDSLSentence( expandedDRLInfo.rhsDslPatterns,
+                                                 dslLine ) );
                     dslLine = expandedDRLInfo.dslStatementsInRhs.get( ++lineCounter );
                 }
             }
             line = line.trim();
-            if ( line.startsWith( "insertLogical" ) ) {
+            if ( modifiedVariable != null ) {
+                int modifyBlockEnd = line.lastIndexOf( '}' );
+                if ( modifiers == null ) {
+                    modifiers = modifyBlockEnd > 0 ?
+                            line.substring( line.indexOf( '{' ) + 1,
+                                            modifyBlockEnd ).trim() :
+                            line.substring( line.indexOf( '{' ) + 1 ).trim();
+                } else if ( modifyBlockEnd != 0 ) {
+                    modifiers += modifyBlockEnd > 0 ?
+                            line.substring( 0,
+                                            modifyBlockEnd ).trim() :
+                            line;
+                }
+                if ( modifyBlockEnd >= 0 ) {
+                    ActionUpdateField action = new ActionUpdateField();
+                    action.setVariable( modifiedVariable );
+                    m.addRhsItem( action );
+                    addModifiersToAction( modifiers,
+                                          action,
+                                          modifiedVariable,
+                                          boundParams,
+                                          dmo,
+                                          m,
+                                          isJavaDialect );
+                    modifiedVariable = null;
+                    modifiers = null;
+                }
+
+            } else if ( line.startsWith( "insertLogical" ) ) {
                 String fact = unwrapParenthesis( line );
-                String type = getStatementType( fact, factsType );
+                String type = getStatementType( fact,
+                                                factsType );
                 if ( type != null ) {
                     ActionInsertLogicalFact action = new ActionInsertLogicalFact( type );
                     m.addRhsItem( action );
@@ -2284,13 +2753,15 @@ public class RuleModelDRLPersistenceImpl
                                             action,
                                             boundParams,
                                             dmo,
-                                            m.getImports(),
+                                            m,
                                             isJavaDialect );
                     }
                 }
+
             } else if ( line.startsWith( "insert" ) ) {
                 String fact = unwrapParenthesis( line );
-                String type = getStatementType( fact, factsType );
+                String type = getStatementType( fact,
+                                                factsType );
                 if ( type != null ) {
                     ActionInsertFact action = new ActionInsertFact( type );
                     m.addRhsItem( action );
@@ -2301,10 +2772,11 @@ public class RuleModelDRLPersistenceImpl
                                             action,
                                             boundParams,
                                             dmo,
-                                            m.getImports(),
+                                            m,
                                             isJavaDialect );
                     }
                 }
+
             } else if ( line.startsWith( "update" ) ) {
                 String variable = unwrapParenthesis( line );
                 ActionUpdateField action = new ActionUpdateField();
@@ -2315,52 +2787,104 @@ public class RuleModelDRLPersistenceImpl
                                     action,
                                     boundParams,
                                     dmo,
-                                    m.getImports(),
+                                    m,
                                     isJavaDialect );
-            } else if ( line.startsWith( "retract" ) ) {
+
+            } else if ( line.startsWith( "modify" ) ) {
+                int modifyBlockEnd = line.lastIndexOf( '}' );
+                if ( modifyBlockEnd > 0 ) {
+                    String variable = line.substring( line.indexOf( '(' ) + 1,
+                                                      line.indexOf( ')' ) ).trim();
+                    ActionUpdateField action = new ActionUpdateField();
+                    action.setVariable( variable );
+                    m.addRhsItem( action );
+                    addModifiersToAction( line.substring( line.indexOf( '{' ) + 1,
+                                                          modifyBlockEnd ).trim(),
+                                          action,
+                                          variable,
+                                          boundParams,
+                                          dmo,
+                                          m,
+                                          isJavaDialect );
+                } else {
+                    modifiedVariable = line.substring( line.indexOf( '(' ) + 1,
+                                                       line.indexOf( ')' ) ).trim();
+                    int modifyBlockStart = line.indexOf( '{' );
+                    if ( modifyBlockStart > 0 ) {
+                        modifiers = line.substring( modifyBlockStart + 1 ).trim();
+                    }
+                }
+
+            } else if ( line.startsWith( "retract" ) || line.startsWith( "delete" ) ) {
                 String variable = unwrapParenthesis( line );
                 m.addRhsItem( new ActionRetractFact( variable ) );
+
             } else if ( line.startsWith( "org.drools.core.process.instance.impl.WorkItemImpl wiWorkItem" ) ) {
                 ActionExecuteWorkItem awi = new ActionExecuteWorkItem();
                 pwd = new PortableWorkDefinition();
                 pwd.setName( "WorkItem" );
                 awi.setWorkDefinition( pwd );
                 m.addRhsItem( awi );
+
             } else if ( line.startsWith( "wiWorkItem.getParameters().put" ) ) {
                 String statement = line.substring( "wiWorkItem.getParameters().put".length() );
                 statement = unwrapParenthesis( statement );
                 int commaPos = statement.indexOf( ',' );
-                String name = statement.substring( 0, commaPos ).trim();
+                String name = statement.substring( 0,
+                                                   commaPos ).trim();
                 String value = statement.substring( commaPos + 1 ).trim();
-                pwd.addParameter( buildPortableParameterDefinition( name, value, boundParams ) );
+                pwd.addParameter( buildPortableParameterDefinition( name,
+                                                                    value,
+                                                                    boundParams ) );
+
             } else if ( line.startsWith( "wim.internalExecuteWorkItem" ) || line.startsWith( "wiWorkItem.setName" ) ) {
                 // ignore
+
             } else {
                 int dotPos = line.indexOf( '.' );
                 int argStart = line.indexOf( '(' );
                 if ( dotPos > 0 && argStart > dotPos ) {
-                    String variable = line.substring( 0, dotPos ).trim();
-                    if ( isJavaIdentifier( variable ) ) {
-                        String methodName = line.substring( dotPos + 1, argStart ).trim();
-                        if ( isJavaIdentifier( methodName ) ) {
-                            if ( getSettedField( methodName ) != null ) {
-                                List<String> setters = setStatements.get( variable );
-                                if ( setters == null ) {
-                                    setters = new ArrayList<String>();
-                                    setStatements.put( variable, setters );
+                    String variable = line.substring( 0,
+                                                      dotPos ).trim();
+
+                    if ( boundParams.containsKey( variable ) || factsType.containsKey( variable ) || expandedDRLInfo.hasGlobal( variable ) ) {
+                        if ( isJavaIdentifier( variable ) ) {
+                            String methodName = line.substring( dotPos + 1,
+                                                                argStart ).trim();
+                            if ( isJavaIdentifier( methodName ) ) {
+                                if ( getSettedField( m,
+                                                     methodName,
+                                                     boundParams.get( variable ),
+                                                     dmo ) != null ) {
+                                    List<String> setters = setStatements.get( variable );
+                                    if ( setters == null ) {
+                                        setters = new ArrayList<String>();
+                                        setStatements.put( variable,
+                                                           setters );
+                                    }
+                                    if ( !setStatementsPosition.containsKey( variable ) ) {
+                                        setStatementsPosition.put( variable,
+                                                                   lineCounter );
+                                    }
+                                    setters.add( line );
+                                } else if ( methodName.equals( "add" ) && expandedDRLInfo.hasGlobal( variable ) ) {
+                                    String factName = line.substring( argStart + 1,
+                                                                      line.lastIndexOf( ')' ) ).trim();
+                                    ActionGlobalCollectionAdd actionGlobalCollectionAdd = new ActionGlobalCollectionAdd();
+                                    actionGlobalCollectionAdd.setGlobalName( variable );
+                                    actionGlobalCollectionAdd.setFactName( factName );
+                                    m.addRhsItem( actionGlobalCollectionAdd );
+                                } else {
+                                    m.addRhsItem( getActionCallMethod( m,
+                                                                       isJavaDialect,
+                                                                       boundParams,
+                                                                       dmo,
+                                                                       line,
+                                                                       variable,
+                                                                       methodName ) );
                                 }
-                                setStatementsPosition.put( variable, lineCounter );
-                                setters.add( line );
-                            } else if ( methodName.equals( "add" ) && expandedDRLInfo.hasGlobal( variable ) ) {
-                                String factName = line.substring( argStart + 1, line.lastIndexOf( ')' ) ).trim();
-                                ActionGlobalCollectionAdd actionGlobalCollectionAdd = new ActionGlobalCollectionAdd();
-                                actionGlobalCollectionAdd.setGlobalName( variable );
-                                actionGlobalCollectionAdd.setFactName( factName );
-                                m.addRhsItem( actionGlobalCollectionAdd );
-                            } else {
-                                m.addRhsItem( getActionCallMethod( m, isJavaDialect, boundParams, dmo, line, variable, methodName ) );
+                                continue;
                             }
-                            continue;
                         }
                     }
                 }
@@ -2368,14 +2892,18 @@ public class RuleModelDRLPersistenceImpl
                 int eqPos = line.indexOf( '=' );
                 boolean addFreeFormLine = line.trim().length() > 0;
                 if ( eqPos > 0 ) {
-                    String field = line.substring( 0, eqPos ).trim();
+                    String field = line.substring( 0,
+                                                   eqPos ).trim();
                     if ( "java.text.SimpleDateFormat sdf".equals( field ) || "org.drools.core.process.instance.WorkItemManager wim".equals( field ) ) {
                         addFreeFormLine = false;
                     }
                     String[] split = field.split( " " );
                     if ( split.length == 2 ) {
-                        factsType.put( split[ 1 ], split[ 0 ] );
-                        addFreeFormLine &= !isInsertedFact( lines, lineCounter, split[ 1 ] );
+                        factsType.put( split[ 1 ],
+                                       split[ 0 ] );
+                        addFreeFormLine &= !isInsertedFact( lines,
+                                                            lineCounter,
+                                                            split[ 1 ] );
                     }
                 }
                 if ( addFreeFormLine ) {
@@ -2386,50 +2914,68 @@ public class RuleModelDRLPersistenceImpl
             }
         }
 
+        //The "setStatements" variable, at this point, contains a record of unmatched "set" calls. Unmatched means that they do not
+        //have a relationship with a resolved "insert", "insertLogical", "update" or "modify" action. Resolved means the action had been
+        //identified as an explicit operation above; normally where the RHS line began with such a call. Therefore it is likely the
+        // variable they are modifying was recorded as Free Format DRL and hence the "sets" need to be Free Format DRL too.
         for ( Map.Entry<String, List<String>> entry : setStatements.entrySet() ) {
-            ActionSetField action = new ActionSetField( entry.getKey() );
-            addSettersToAction( entry.getValue(),
-                                action,
-                                boundParams,
-                                dmo,
-                                m.getImports(),
-                                isJavaDialect );
-            m.addRhsItem( action, setStatementsPosition.get( entry.getKey() ) );
+            if ( boundParams.containsKey( entry.getKey() ) ) {
+                ActionSetField action = new ActionSetField( entry.getKey() );
+                addSettersToAction( entry.getValue(),
+                                    action,
+                                    entry.getKey(),
+                                    boundParams,
+                                    dmo,
+                                    m,
+                                    isJavaDialect );
+                m.addRhsItem( action,
+                              setStatementsPosition.get( entry.getKey() ) );
+            } else {
+                FreeFormLine action = new FreeFormLine();
+                StringBuilder sb = new StringBuilder();
+                for ( String setter : entry.getValue() ) {
+                    sb.append( setter ).append( "\n" );
+                }
+                action.setText( sb.toString() );
+                m.addRhsItem( action,
+                              setStatementsPosition.get( entry.getKey() ) );
+            }
         }
 
         if ( expandedDRLInfo.hasDsl ) {
             String dslLine = expandedDRLInfo.dslStatementsInRhs.get( ++lineCounter );
             while ( dslLine != null ) {
-                m.addRhsItem( toDSLSentence( expandedDRLInfo.rhsDslPatterns, dslLine ) );
+                m.addRhsItem( toDSLSentence( expandedDRLInfo.rhsDslPatterns,
+                                             dslLine ) );
                 dslLine = expandedDRLInfo.dslStatementsInRhs.get( ++lineCounter );
             }
         }
     }
 
-    private ActionCallMethod getActionCallMethod(
-            RuleModel model,
-            boolean isJavaDialect,
-            Map<String, String> boundParams,
-            PackageDataModelOracle dmo,
-            String line,
-            String variable,
-            String methodName ) {
-
-        return new ActionCallMethodBuilder(
-                model,
-                dmo,
-                isJavaDialect,
-                boundParams
-        ).get(
-                variable,
-                methodName,
-                unwrapParenthesis( line ).split( "," )
-             );
+    private IAction getActionCallMethod( final RuleModel model,
+                                         final boolean isJavaDialect,
+                                         final Map<String, String> boundParams,
+                                         final PackageDataModelOracle dmo,
+                                         final String line,
+                                         final String variable,
+                                         final String methodName ) {
+        final ActionCallMethodBuilder builder = new ActionCallMethodBuilder( model,
+                                                                             dmo,
+                                                                             isJavaDialect,
+                                                                             boundParams );
+        if ( !builder.supports( line ) ) {
+            final FreeFormLine ffl = new FreeFormLine();
+            ffl.setText( line );
+            return ffl;
+        }
+        return builder.get( variable,
+                            methodName,
+                            unwrapParenthesis( line ).split( "," ) );
     }
 
-    private boolean isInsertedFact( String[] lines,
-                                    int lineCounter,
-                                    String fact ) {
+    private boolean isInsertedFact( final String[] lines,
+                                    final int lineCounter,
+                                    final String fact ) {
         for ( int i = lineCounter; i < lines.length; i++ ) {
             String line = lines[ i ].trim();
             if ( line.startsWith( "insert" ) ) {
@@ -2441,17 +2987,22 @@ public class RuleModelDRLPersistenceImpl
         return false;
     }
 
-    private DSLSentence toDSLSentence( List<String> dslPatterns,
-                                       String dslLine ) {
+    private DSLSentence toDSLSentence( final List<SimpleDSLSentence> simpleDslSentences,
+                                       final String dslLine ) {
         DSLSentence dslSentence = new DSLSentence();
-        for ( String dslPattern : dslPatterns ) {
+        for ( SimpleDSLSentence simpleDslSentence : simpleDslSentences ) {
+            String dslPattern = simpleDslSentence.getDsl();
             // Dollar breaks the matcher, need to escape them.
-            dslPattern = dslPattern.replace( "$", "\\$" );
+            dslPattern = dslPattern.replace( "$",
+                                             "\\$" );
             //A DSL Pattern can contain Regex itself, for example "When the ages is less than {num:1?[0-9]?[0-9]}"
-            String regex = dslPattern.replaceAll( "\\{.*?\\}", "(.*)" );
+            String regex = dslPattern.replaceAll( "\\{.*?\\}",
+                                                  "(.*)" );
             Matcher matcher = Pattern.compile( regex ).matcher( dslLine );
             if ( matcher.matches() ) {
-                dslPattern = dslPattern.replace( "\\$", "$" );
+                dslPattern = dslPattern.replace( "\\$",
+                                                 "$" );
+                dslSentence.setDrl( simpleDslSentence.getDrl() );
                 dslSentence.setDefinition( dslPattern );
                 for ( int i = 0; i < matcher.groupCount(); i++ ) {
                     dslSentence.getValues().get( i ).setValue( matcher.group( i + 1 ) );
@@ -2463,9 +3014,9 @@ public class RuleModelDRLPersistenceImpl
         return dslSentence;
     }
 
-    private PortableParameterDefinition buildPortableParameterDefinition( String name,
-                                                                          String value,
-                                                                          Map<String, String> boundParams ) {
+    private PortableParameterDefinition buildPortableParameterDefinition( final String name,
+                                                                          final String value,
+                                                                          final Map<String, String> boundParams ) {
         PortableParameterDefinition paramDef;
         String type = boundParams.get( value );
         if ( type != null ) {
@@ -2487,7 +3038,8 @@ public class RuleModelDRLPersistenceImpl
             ( (PortableBooleanParameterDefinition) paramDef ).setValue( b );
         } else if ( value.startsWith( "\"" ) ) {
             paramDef = new PortableStringParameterDefinition();
-            ( (PortableStringParameterDefinition) paramDef ).setValue( value.substring( 1, value.length() - 1 ) );
+            ( (PortableStringParameterDefinition) paramDef ).setValue( value.substring( 1,
+                                                                                        value.length() - 1 ) );
         } else if ( Character.isDigit( value.charAt( 0 ) ) ) {
             if ( value.endsWith( "f" ) ) {
                 paramDef = new PortableFloatParameterDefinition();
@@ -2499,90 +3051,166 @@ public class RuleModelDRLPersistenceImpl
         } else {
             throw new RuntimeException( "Unknown parameter " + value );
         }
-        paramDef.setName( name.substring( 1, name.length() - 1 ) );
+        paramDef.setName( name.substring( 1,
+                                          name.length() - 1 ) );
         return paramDef;
     }
 
-    private void addSettersToAction( Map<String, List<String>> setStatements,
-                                     String variable,
-                                     ActionFieldList action,
-                                     Map<String, String> boundParams,
-                                     PackageDataModelOracle dmo,
-                                     Imports imports,
-                                     boolean isJavaDialect ) {
+    private void addSettersToAction( final Map<String, List<String>> setStatements,
+                                     final String variable,
+                                     final ActionFieldList action,
+                                     final Map<String, String> boundParams,
+                                     final PackageDataModelOracle dmo,
+                                     final RuleModel model,
+                                     final boolean isJavaDialect ) {
         addSettersToAction( setStatements.remove( variable ),
                             action,
+                            variable,
                             boundParams,
                             dmo,
-                            imports,
+                            model,
                             isJavaDialect );
     }
 
-    private void addSettersToAction( List<String> setters,
-                                     ActionFieldList action,
-                                     Map<String, String> boundParams,
-                                     PackageDataModelOracle dmo,
-                                     Imports imports,
-                                     boolean isJavaDialect ) {
+    private void addSettersToAction( final List<String> setters,
+                                     final ActionFieldList action,
+                                     final String variable,
+                                     final Map<String, String> boundParams,
+                                     final PackageDataModelOracle dmo,
+                                     final RuleModel model,
+                                     final boolean isJavaDialect ) {
         if ( setters != null ) {
             for ( String statement : setters ) {
                 int dotPos = statement.indexOf( '.' );
                 int argStart = statement.indexOf( '(' );
-                String methodName = statement.substring( dotPos + 1, argStart ).trim();
-                String field = getSettedField( methodName );
-                String value = unwrapParenthesis( statement );
-                String dataType = inferDataType( action,
-                                                 field,
-                                                 boundParams,
-                                                 dmo,
-                                                 imports );
-                if ( dataType == null ) {
-                    dataType = inferDataType( value,
-                                              boundParams,
-                                              isJavaDialect );
-                }
-                action.addFieldValue( buildFieldValue( isJavaDialect,
-                                                       field,
-                                                       value,
-                                                       dataType,
-                                                       boundParams,
-                                                       dmo ) );
+                String methodName = statement.substring( dotPos + 1,
+                                                         argStart ).trim();
+                addSetterToAction( action,
+                                   variable,
+                                   boundParams,
+                                   dmo,
+                                   model,
+                                   isJavaDialect,
+                                   statement,
+                                   methodName );
             }
         }
     }
 
-    private ActionFieldValue buildFieldValue( boolean isJavaDialect,
+    private void addModifiersToAction( final String modifiers,
+                                       final ActionFieldList action,
+                                       final String variable,
+                                       final Map<String, String> boundParams,
+                                       final PackageDataModelOracle dmo,
+                                       final RuleModel model,
+                                       final boolean isJavaDialect ) {
+        for ( String statement : splitArgumentsList( modifiers ) ) {
+            int argStart = statement.indexOf( '(' );
+            String methodName = statement.substring( 0,
+                                                     argStart ).trim();
+            addSetterToAction( action,
+                               variable,
+                               boundParams,
+                               dmo,
+                               model,
+                               isJavaDialect,
+                               statement,
+                               methodName );
+        }
+    }
+
+    private void addSetterToAction( final ActionFieldList action,
+                                    final String variable,
+                                    final Map<String, String> boundParams,
+                                    final PackageDataModelOracle dmo,
+                                    final RuleModel model,
+                                    final boolean isJavaDialect,
+                                    final String statement,
+                                    final String methodName ) {
+        String field = getSettedField( model,
+                                       methodName,
+                                       boundParams.get( variable ),
+                                       dmo );
+        String value = unwrapParenthesis( statement );
+        String dataType = inferDataType( action,
+                                         field,
+                                         boundParams,
+                                         dmo,
+                                         model.getImports() );
+        if ( dataType == null ) {
+            dataType = inferDataType( value,
+                                      boundParams,
+                                      isJavaDialect );
+        }
+        action.addFieldValue( buildFieldValue( isJavaDialect,
+                                               field,
+                                               value,
+                                               dataType,
+                                               boundParams ) );
+    }
+
+    private ActionFieldValue buildFieldValue( final boolean isJavaDialect,
                                               String field,
-                                              String value,
-                                              String dataType,
-                                              Map<String, String> boundParams,
-                                              PackageDataModelOracle dmo ) {
+                                              final String value,
+                                              final String dataType,
+                                              final Map<String, String> boundParams ) {
         if ( value.contains( "wiWorkItem.getResult" ) ) {
             field = field.substring( 0, 1 ).toUpperCase() + field.substring( 1 );
             String wiParam = field.substring( "Results".length() );
             if ( wiParam.equals( "BooleanResult" ) ) {
-                return new ActionWorkItemFieldValue( field, DataType.TYPE_BOOLEAN, "WorkItem", wiParam, Boolean.class.getName() );
+                return new ActionWorkItemFieldValue( field,
+                                                     DataType.TYPE_BOOLEAN,
+                                                     "WorkItem",
+                                                     wiParam,
+                                                     Boolean.class.getName() );
             } else if ( wiParam.equals( "StringResult" ) ) {
-                return new ActionWorkItemFieldValue( field, DataType.TYPE_STRING, "WorkItem", wiParam, String.class.getName() );
+                return new ActionWorkItemFieldValue( field,
+                                                     DataType.TYPE_STRING,
+                                                     "WorkItem",
+                                                     wiParam,
+                                                     String.class.getName() );
             } else if ( wiParam.equals( "IntegerResult" ) ) {
-                return new ActionWorkItemFieldValue( field, DataType.TYPE_NUMERIC_INTEGER, "WorkItem", wiParam, Integer.class.getName() );
+                return new ActionWorkItemFieldValue( field,
+                                                     DataType.TYPE_NUMERIC_INTEGER,
+                                                     "WorkItem",
+                                                     wiParam,
+                                                     Integer.class.getName() );
             } else if ( wiParam.equals( "FloatResult" ) ) {
-                return new ActionWorkItemFieldValue( field, DataType.TYPE_NUMERIC_FLOAT, "WorkItem", wiParam, Float.class.getName() );
+                return new ActionWorkItemFieldValue( field,
+                                                     DataType.TYPE_NUMERIC_FLOAT,
+                                                     "WorkItem",
+                                                     wiParam,
+                                                     Float.class.getName() );
             }
         }
+
+        final int fieldNature = inferFieldNature( dataType,
+                                                  value,
+                                                  boundParams,
+                                                  isJavaDialect );
+
+        //If the field is a formula don't adjust the param value
+        String paramValue = value;
+        switch ( fieldNature ) {
+            case FieldNatureType.TYPE_FORMULA:
+                break;
+            case FieldNatureType.TYPE_VARIABLE:
+                paramValue = "=" + paramValue;
+                break;
+            default:
+                paramValue = adjustParam( dataType,
+                                          value,
+                                          boundParams,
+                                          isJavaDialect );
+        }
         ActionFieldValue fieldValue = new ActionFieldValue( field,
-                                                            adjustParam( dataType,
-                                                                         value,
-                                                                         boundParams,
-                                                                         isJavaDialect ),
+                                                            paramValue,
                                                             dataType );
-        fieldValue.setNature( inferFieldNature( boundParams,
-                                                dataType,
-                                                value ) );
+        fieldValue.setNature( fieldNature );
         return fieldValue;
     }
 
-    private boolean isJavaIdentifier( String name ) {
+    private boolean isJavaIdentifier( final String name ) {
         if ( name == null || name.length() == 0 || !Character.isJavaIdentifierStart( name.charAt( 0 ) ) ) {
             return false;
         }
@@ -2594,23 +3222,43 @@ public class RuleModelDRLPersistenceImpl
         return true;
     }
 
-    private String getSettedField( String methodName ) {
+    private String getSettedField( final RuleModel model,
+                                   final String methodName,
+                                   final String variableType,
+                                   final PackageDataModelOracle dmo ) {
+        //Check if method is MethodInformation as multiple parameter "setters" are handled as methods and not field mutators
+        List<MethodInfo> mis = RuleModelPersistenceHelper.getMethodInfosForType( model,
+                                                                                 dmo,
+                                                                                 variableType );
+        if ( mis != null ) {
+            for ( MethodInfo mi : mis ) {
+                if ( mi.getName().equals( methodName ) ) {
+                    return null;
+                }
+            }
+        }
+
+        //Check if method is a field mutator
         if ( methodName.length() > 3 && methodName.startsWith( "set" ) ) {
             String field = methodName.substring( 3 );
             if ( Character.isUpperCase( field.charAt( 0 ) ) ) {
-                return field.substring( 0, 1 ).toLowerCase() + field.substring( 1 );
+                return field.substring( 0,
+                                        1 ).toLowerCase() + field.substring( 1 );
+            } else {
+                return field;
             }
         }
         return null;
     }
 
-    private String getStatementType( String fact,
-                                     Map<String, String> factsType ) {
+    private String getStatementType( final String fact,
+                                     final Map<String, String> factsType ) {
         String type = null;
         if ( fact.startsWith( "new " ) ) {
             String inserted = fact.substring( 4 ).trim();
             if ( inserted.endsWith( "()" ) ) {
-                type = inserted.substring( 0, inserted.length() - 2 ).trim();
+                type = inserted.substring( 0,
+                                           inserted.length() - 2 ).trim();
             }
         } else {
             type = factsType.get( fact );
@@ -2618,23 +3266,33 @@ public class RuleModelDRLPersistenceImpl
         return type;
     }
 
-    private Expr parseExpr( String expr,
-                            Map<String, String> boundParams,
-                            PackageDataModelOracle dmo ) {
+    private Expr parseExpr( final String expr,
+                            final boolean isJavaDialect,
+                            final Map<String, String> boundParams,
+                            final PackageDataModelOracle dmo ) {
         List<String> splittedExpr = splitExpression( expr );
         if ( splittedExpr.size() == 1 ) {
             String singleExpr = splittedExpr.get( 0 );
             if ( singleExpr.startsWith( "(" ) ) {
-                return parseExpr( singleExpr.substring( 1 ), boundParams, dmo );
-            } else if ( singleExpr.startsWith( "eval" ) ) {
+                return parseExpr( singleExpr.substring( 1 ),
+                                  isJavaDialect,
+                                  boundParams,
+                                  dmo );
+            } else if ( singleExpr.startsWith( "eval(" ) ) {
                 return new EvalExpr( unwrapParenthesis( singleExpr ) );
             } else {
-                return new SimpleExpr( singleExpr, boundParams, dmo );
+                return new SimpleExpr( singleExpr,
+                                       isJavaDialect,
+                                       boundParams,
+                                       dmo );
             }
         }
         ComplexExpr complexExpr = new ComplexExpr( splittedExpr.get( 1 ) );
         for ( int i = 0; i < splittedExpr.size(); i += 2 ) {
-            complexExpr.subExprs.add( parseExpr( splittedExpr.get( i ), boundParams, dmo ) );
+            complexExpr.subExprs.add( parseExpr( splittedExpr.get( i ),
+                                                 isJavaDialect,
+                                                 boundParams,
+                                                 dmo ) );
         }
         return complexExpr;
     }
@@ -2643,7 +3301,7 @@ public class RuleModelDRLPersistenceImpl
         START, EXPR, PIPE, OR, AMPERSAND, AND, NESTED
     }
 
-    private List<String> splitExpression( String expr ) {
+    private List<String> splitExpression( final String expr ) {
         List<String> splittedExpr = new ArrayList<String>();
         int nestingLevel = 0;
         SplitterState status = SplitterState.START;
@@ -2654,6 +3312,7 @@ public class RuleModelDRLPersistenceImpl
                 case START:
                     if ( ch == '(' ) {
                         status = SplitterState.NESTED;
+                        sb.append( ch );
                         nestingLevel++;
                     } else {
                         status = SplitterState.EXPR;
@@ -2743,26 +3402,29 @@ public class RuleModelDRLPersistenceImpl
 
     private interface Expr {
 
-        FieldConstraint asFieldConstraint( RuleModel m,
-                                           FactPattern factPattern );
+        FieldConstraint asFieldConstraint( final RuleModel m,
+                                           final FactPattern factPattern );
     }
 
     private static class SimpleExpr implements Expr {
 
         private final String expr;
+        private final boolean isJavaDialect;
         private final Map<String, String> boundParams;
         private final PackageDataModelOracle dmo;
 
-        private SimpleExpr( String expr,
-                            Map<String, String> boundParams,
-                            PackageDataModelOracle dmo ) {
+        private SimpleExpr( final String expr,
+                            final boolean isJavaDialect,
+                            final Map<String, String> boundParams,
+                            final PackageDataModelOracle dmo ) {
             this.expr = expr;
+            this.isJavaDialect = isJavaDialect;
             this.boundParams = boundParams;
             this.dmo = dmo;
         }
 
-        public FieldConstraint asFieldConstraint( RuleModel m,
-                                                  FactPattern factPattern ) {
+        public FieldConstraint asFieldConstraint( final RuleModel m,
+                                                  final FactPattern factPattern ) {
             String fieldName = expr;
 
             String value = null;
@@ -2782,17 +3444,18 @@ public class RuleModelDRLPersistenceImpl
                 }
             }
 
+            boolean isExpression = fieldName.contains( "." ) || fieldName.endsWith( "()" );
             return createFieldConstraint( m,
                                           factPattern,
                                           fieldName,
                                           value,
-                                          operator,
-                                          fieldName.contains( "." ) );
+                                          operator == null ? null : operator.trim(),
+                                          isExpression );
         }
 
-        private SingleFieldConstraint createNullCheckFieldConstraint( RuleModel m,
-                                                                      FactPattern factPattern,
-                                                                      String fieldName ) {
+        private SingleFieldConstraint createNullCheckFieldConstraint( final RuleModel m,
+                                                                      final FactPattern factPattern,
+                                                                      final String fieldName ) {
             return createFieldConstraint( m,
                                           factPattern,
                                           fieldName,
@@ -2801,16 +3464,17 @@ public class RuleModelDRLPersistenceImpl
                                           true );
         }
 
-        private SingleFieldConstraint createFieldConstraint( RuleModel m,
-                                                             FactPattern factPattern,
-                                                             String fieldName,
+        private SingleFieldConstraint createFieldConstraint( final RuleModel m,
+                                                             final FactPattern factPattern,
+                                                             final String fieldName,
                                                              String value,
-                                                             String operator,
-                                                             boolean isExpression ) {
+                                                             final String operator,
+                                                             final boolean isExpression ) {
             String operatorParams = null;
             if ( value != null && value.startsWith( "[" ) ) {
                 int endSquare = value.indexOf( ']' );
-                operatorParams = value.substring( 1, endSquare ).trim();
+                operatorParams = value.substring( 1,
+                                                  endSquare ).trim();
                 value = value.substring( endSquare + 1 ).trim();
             }
 
@@ -2829,11 +3493,13 @@ public class RuleModelDRLPersistenceImpl
             if ( operatorParams != null ) {
                 int i = 0;
                 for ( String param : operatorParams.split( "," ) ) {
-                    ( (BaseSingleFieldConstraint) fieldConstraint ).setParameter( "" + i++, param.trim() );
+                    fieldConstraint.setParameter( "" + i++,
+                                                  param.trim() );
                 }
-                ( (BaseSingleFieldConstraint) fieldConstraint ).setParameter( "org.drools.workbench.models.commons.backend.rule.visibleParameterSet", "" + i );
-                ( (BaseSingleFieldConstraint) fieldConstraint ).setParameter( "org.drools.workbench.models.commons.backend.rule.operatorParameterGenerator",
-                                                                              "org.drools.workbench.models.commons.backend.rule.CEPOperatorParameterDRLBuilder" );
+                fieldConstraint.setParameter( "org.drools.workbench.models.commons.backend.rule.visibleParameterSet",
+                                              "" + i );
+                fieldConstraint.setParameter( "org.drools.workbench.models.commons.backend.rule.operatorParameterGenerator",
+                                              "org.drools.workbench.models.commons.backend.rule.CEPOperatorParameterDRLBuilder" );
             }
 
             if ( fieldName.equals( "this" ) && ( operator == null || operator.equals( "!= null" ) ) ) {
@@ -2841,7 +3507,9 @@ public class RuleModelDRLPersistenceImpl
             }
             fieldConstraint.setFactType( factPattern.getFactType() );
 
-            ModelField field = findField( findFields( dmo, m, factPattern.getFactType() ),
+            ModelField field = findField( findFields( m,
+                                                      dmo,
+                                                      factPattern.getFactType() ),
                                           fieldConstraint.getFieldName() );
 
             if ( field != null && ( fieldConstraint.getFieldType() == null || fieldConstraint.getFieldType().trim().length() == 0 ) ) {
@@ -2850,11 +3518,11 @@ public class RuleModelDRLPersistenceImpl
             return fieldConstraint;
         }
 
-        private SingleFieldConstraint createExpressionBuilderConstraint( RuleModel m,
-                                                                         FactPattern factPattern,
-                                                                         String fieldName,
-                                                                         String operator,
-                                                                         String value ) {
+        private SingleFieldConstraint createExpressionBuilderConstraint( final RuleModel m,
+                                                                         final FactPattern factPattern,
+                                                                         final String fieldName,
+                                                                         final String operator,
+                                                                         final String value ) {
             // TODO: we should find a way to know when the expression uses a getter and in this case create a plain SingleFieldConstraint
             //int dotPos = fieldName.lastIndexOf('.');
             //SingleFieldConstraint con = createSingleFieldConstraint(dotPos > 0 ? fieldName.substring(dotPos+1) : fieldName, operator, value);
@@ -2865,10 +3533,32 @@ public class RuleModelDRLPersistenceImpl
                                                                                operator,
                                                                                value );
 
+            return con;
+        }
+
+        private SingleFieldConstraint createSingleFieldConstraint( final RuleModel m,
+                                                                   final FactPattern factPattern,
+                                                                   String fieldName,
+                                                                   final String operator,
+                                                                   final String value ) {
+            SingleFieldConstraint con = new SingleFieldConstraint();
+            fieldName = setFieldBindingOnContraint( factPattern.getFactType(),
+                                                    fieldName,
+                                                    m,
+                                                    con,
+                                                    boundParams );
+            con.setFieldName( fieldName );
+            setOperatorAndValueOnConstraint( m,
+                                             operator,
+                                             value,
+                                             factPattern,
+                                             con );
+
+            //Setup parent relationships for SingleFieldConstraints
             for ( FieldConstraint fieldConstraint : factPattern.getFieldConstraints() ) {
                 if ( fieldConstraint instanceof SingleFieldConstraint ) {
                     SingleFieldConstraint sfc = (SingleFieldConstraint) fieldConstraint;
-                    if ( sfc.getOperator().equals( "!= null" ) ) {
+                    if ( sfc.getOperator() != null && sfc.getOperator().equals( "!= null" ) ) {
                         int parentPos = fieldName.indexOf( sfc.getFieldName() + "." );
                         if ( parentPos >= 0 && !fieldName.substring( parentPos + sfc.getFieldName().length() + 1 ).contains( "." ) ) {
                             con.setParent( sfc );
@@ -2878,33 +3568,18 @@ public class RuleModelDRLPersistenceImpl
                 }
             }
 
-            if ( con.getParent() == null && !( con instanceof SingleFieldConstraintEBLeftSide ) ) {
+            if ( con.getParent() == null ) {
                 con.setParent( createParentFor( m, factPattern, fieldName ) );
             }
 
             return con;
         }
 
-        private SingleFieldConstraint createSingleFieldConstraint( RuleModel m,
-                                                                   FactPattern factPattern,
-                                                                   String fieldName,
-                                                                   String operator,
-                                                                   String value ) {
-            SingleFieldConstraint con = new SingleFieldConstraint();
-            fieldName = setFieldBindingOnContraint( factPattern.getFactType(),
-                                                    fieldName,
-                                                    m, con,
-                                                    boundParams );
-            con.setFieldName( fieldName );
-            setOperatorAndValueOnConstraint( m, operator, value, factPattern, con );
-            return con;
-        }
-
-        private SingleFieldConstraintEBLeftSide createSingleFieldConstraintEBLeftSide( RuleModel m,
-                                                                                       FactPattern factPattern,
+        private SingleFieldConstraintEBLeftSide createSingleFieldConstraintEBLeftSide( final RuleModel m,
+                                                                                       final FactPattern factPattern,
                                                                                        String fieldName,
-                                                                                       String operator,
-                                                                                       String value ) {
+                                                                                       final String operator,
+                                                                                       final String value ) {
             SingleFieldConstraintEBLeftSide con = new SingleFieldConstraintEBLeftSide();
 
             fieldName = setFieldBindingOnContraint( factPattern.getFactType(),
@@ -2912,10 +3587,14 @@ public class RuleModelDRLPersistenceImpl
                                                     m,
                                                     con,
                                                     boundParams );
-            String classType = getFQFactType( m, factPattern.getFactType() );
-            con.getExpressionLeftSide().appendPart( new ExpressionUnboundFact( factPattern ) );
+            String classType = getFQFactType( m,
+                                              factPattern.getFactType() );
+            con.getExpressionLeftSide().appendPart( new ExpressionUnboundFact( factPattern.getFactType() ) );
 
-            parseExpression( m, classType, fieldName, con.getExpressionLeftSide() );
+            parseExpression( m,
+                             classType,
+                             fieldName,
+                             con.getExpressionLeftSide() );
 
             setOperatorAndValueOnConstraint( m,
                                              operator,
@@ -2926,10 +3605,10 @@ public class RuleModelDRLPersistenceImpl
             return con;
         }
 
-        private ExpressionFormLine parseExpression( RuleModel m,
+        private ExpressionFormLine parseExpression( final RuleModel m,
                                                     String factType,
-                                                    String fieldName,
-                                                    ExpressionFormLine expression ) {
+                                                    final String fieldName,
+                                                    final ExpressionFormLine expression ) {
             String[] splits = fieldName.split( "\\." );
 
             boolean isBoundParam = false;
@@ -2939,17 +3618,36 @@ public class RuleModelDRLPersistenceImpl
                 isBoundParam = true;
             }
 
-            ModelField[] typeFields = findFields( dmo,
-                                                  m,
+            //An ExpressionPart can be a Field or a Method
+            ModelField[] typeFields = findFields( m,
+                                                  dmo,
                                                   factType );
+            List<MethodInfo> methodInfos = getMethodInfosForType( m,
+                                                                  dmo,
+                                                                  factType );
 
             //Handle all but last expression part
             for ( int i = 0; i < splits.length - 1; i++ ) {
-                String expressionPart = normalizeExpressionPart( splits[ i ] );
+                String expressionPart = splits[ i ];
+
+                //The first part of the expression may be a bound variable
+                if ( boundParams.containsKey( expressionPart ) ) {
+                    factType = getFQFactType( m,
+                                              boundParams.get( expressionPart ) );
+                    isBoundParam = true;
+
+                    typeFields = findFields( m,
+                                             dmo,
+                                             factType );
+                    methodInfos = getMethodInfosForType( m,
+                                                         dmo,
+                                                         factType );
+                }
                 if ( "this".equals( expressionPart ) ) {
                     expression.appendPart( new ExpressionField( expressionPart,
                                                                 factType,
                                                                 DataType.TYPE_THIS ) );
+
                 } else if ( isBoundParam ) {
                     ModelField currentFact = findFact( dmo.getProjectModelFields(),
                                                        factType );
@@ -2957,72 +3655,94 @@ public class RuleModelDRLPersistenceImpl
                                                                    currentFact.getClassName(),
                                                                    currentFact.getType() ) );
                     isBoundParam = false;
+
                 } else {
+                    //An ExpressionPart can be a Field or a Method
+                    String currentClassName = null;
                     ModelField currentField = findField( typeFields,
                                                          expressionPart );
+                    if ( currentField != null ) {
+                        currentClassName = currentField.getClassName();
+                    }
+                    MethodInfo currentMethodInfo = findMethodInfo( methodInfos,
+                                                                   expressionPart );
+                    if ( currentMethodInfo != null ) {
+                        currentClassName = currentMethodInfo.getReturnClassType();
+                    }
 
-                    processExpressionPart( factType,
+                    processExpressionPart( m,
+                                           factType,
                                            currentField,
+                                           currentMethodInfo,
                                            expression,
                                            expressionPart );
 
-                    typeFields = findFields( dmo,
-                                             m,
-                                             currentField.getClassName() );
+                    //Refresh field and method information based on current expression part
+                    typeFields = findFields( m,
+                                             dmo,
+                                             currentClassName );
+                    methodInfos = getMethodInfosForType( m,
+                                                         dmo,
+                                                         currentClassName );
                 }
             }
 
             //Handle last expression part
-            String expressionPart = normalizeExpressionPart( splits[ splits.length - 1 ] );
+            String expressionPart = splits[ splits.length - 1 ];
             ModelField currentField = findField( typeFields,
                                                  expressionPart );
+            MethodInfo currentMethodInfo = findMethodInfo( methodInfos,
+                                                           expressionPart );
 
-            processExpressionPart( factType,
+            processExpressionPart( m,
+                                   factType,
                                    currentField,
+                                   currentMethodInfo,
                                    expression,
                                    expressionPart );
 
             return expression;
         }
 
-        private String normalizeExpressionPart( String expressionPart ) {
-            int parenthesisPos = expressionPart.indexOf( '(' );
-            if ( parenthesisPos > 0 ) {
-                expressionPart = expressionPart.substring( 0, parenthesisPos );
-            }
-            return expressionPart.trim();
-        }
-
-        private void processExpressionPart( final String factType,
+        private void processExpressionPart( final RuleModel m,
+                                            final String factType,
                                             final ModelField currentField,
+                                            final MethodInfo currentMethodInfo,
                                             final ExpressionFormLine expression,
                                             final String expressionPart ) {
             if ( currentField == null ) {
-                final String previousClassName = expression.getClassType();
-                final List<MethodInfo> mis = dmo.getProjectMethodInformation().get( previousClassName );
-                boolean isMethod = false;
-                if ( mis != null ) {
-                    for ( MethodInfo mi : mis ) {
-                        if ( mi.getName().equals( expressionPart ) ) {
-                            expression.appendPart( new ExpressionMethod( mi.getName(),
-                                                                         mi.getReturnClassType(),
-                                                                         mi.getGenericType(),
-                                                                         mi.getParametricReturnType() ) );
-                            isMethod = true;
-                            break;
+                boolean isMethod = currentMethodInfo != null;
+                if ( isMethod ) {
+                    final ExpressionMethod em = new ExpressionMethod( currentMethodInfo.getName(),
+                                                                      currentMethodInfo.getReturnClassType(),
+                                                                      currentMethodInfo.getGenericType(),
+                                                                      currentMethodInfo.getParametricReturnType() );
+                    //Add applicable parameter values
+                    final List<String> parameters = parseExpressionParameters( expressionPart );
+                    for ( int index = 0; index < currentMethodInfo.getParams().size(); index++ ) {
+                        final String paramDataType = currentMethodInfo.getParams().get( index );
+                        final String paramValue = getParameterValue( paramDataType,
+                                                                     parameters,
+                                                                     index );
+                        if ( paramValue != null ) {
+                            final ExpressionFormLine param = new ExpressionFormLine( index );
+                            param.appendPart( new ExpressionMethodParameter( paramValue,
+                                                                             paramDataType,
+                                                                             paramDataType ) );
+                            em.putParam( paramDataType,
+                                         param );
                         }
                     }
-                }
-                if ( isMethod == false ) {
+                    expression.appendPart( em );
+                } else {
                     expression.appendPart( new ExpressionText( expressionPart ) );
                 }
 
             } else if ( "Collection".equals( currentField.getType() ) ) {
-                expression.appendPart(
-                        new ExpressionCollection( expressionPart,
-                                                  currentField.getClassName(),
-                                                  currentField.getType(),
-                                                  dmo.getProjectFieldParametersType().get( factType + "#" + expressionPart ) )
+                expression.appendPart( new ExpressionCollection( expressionPart,
+                                                                 currentField.getClassName(),
+                                                                 currentField.getType(),
+                                                                 dmo.getProjectFieldParametersType().get( factType + "#" + expressionPart ) )
                                      );
             } else {
                 expression.appendPart( new ExpressionField( expressionPart,
@@ -3032,8 +3752,24 @@ public class RuleModelDRLPersistenceImpl
 
         }
 
-        private String getFQFactType( RuleModel ruleModel,
-                                      String factType ) {
+        private String getParameterValue( final String paramDataType,
+                                          final List<String> parameters,
+                                          final int index ) {
+            if ( parameters == null || parameters.isEmpty() ) {
+                return null;
+            }
+            if ( index < 0 || index > parameters.size() - 1 ) {
+                return null;
+            }
+
+            return RuleModelPersistenceHelper.adjustParam( paramDataType,
+                                                           parameters.get( index ).trim(),
+                                                           boundParams,
+                                                           isJavaDialect );
+        }
+
+        private String getFQFactType( final RuleModel ruleModel,
+                                      final String factType ) {
 
             Set<String> factTypes = dmo.getProjectModelFields().keySet();
 
@@ -3056,8 +3792,8 @@ public class RuleModelDRLPersistenceImpl
             return factType;
         }
 
-        private ModelField findFact( Map<String, ModelField[]> modelFields,
-                                     String factType ) {
+        private ModelField findFact( final Map<String, ModelField[]> modelFields,
+                                     final String factType ) {
             final ModelField[] typeFields = modelFields.get( factType );
             if ( typeFields == null ) {
                 return null;
@@ -3070,35 +3806,41 @@ public class RuleModelDRLPersistenceImpl
             return null;
         }
 
-        private SingleFieldConstraint createParentFor( RuleModel m,
-                                                       FactPattern factPattern,
-                                                       String fieldName ) {
+        private SingleFieldConstraint createParentFor( final RuleModel m,
+                                                       final FactPattern factPattern,
+                                                       final String fieldName ) {
             int dotPos = fieldName.lastIndexOf( '.' );
             if ( dotPos > 0 ) {
-                SingleFieldConstraint constraint = createNullCheckFieldConstraint( m, factPattern, fieldName.substring( 0, dotPos ) );
+                SingleFieldConstraint constraint = createNullCheckFieldConstraint( m,
+                                                                                   factPattern,
+                                                                                   fieldName.substring( 0,
+                                                                                                        dotPos ) );
                 factPattern.addConstraint( constraint );
                 return constraint;
             }
             return null;
         }
 
-        private String setFieldBindingOnContraint(
-                String factType,
-                String fieldName,
-                RuleModel model,
-                SingleFieldConstraint con,
-                Map<String, String> boundParams ) {
+        private String setFieldBindingOnContraint( final String factType,
+                                                   String fieldName,
+                                                   final RuleModel model,
+                                                   final SingleFieldConstraint con,
+                                                   final Map<String, String> boundParams ) {
             int colonPos = fieldName.indexOf( ':' );
             if ( colonPos > 0 ) {
-                String fieldBinding = fieldName.substring( 0, colonPos ).trim();
+                String fieldBinding = fieldName.substring( 0,
+                                                           colonPos ).trim();
                 con.setFieldBinding( fieldBinding );
                 fieldName = fieldName.substring( colonPos + 1 ).trim();
 
-                ModelField[] fields = findFields( dmo, model, factType );
+                ModelField[] fields = findFields( model,
+                                                  dmo,
+                                                  factType );
                 if ( fields != null ) {
                     for ( ModelField field : fields ) {
                         if ( field.getName().equals( fieldName ) ) {
-                            boundParams.put( fieldBinding, field.getType() );
+                            boundParams.put( fieldBinding,
+                                             field.getType() );
                         }
                     }
                 }
@@ -3107,11 +3849,11 @@ public class RuleModelDRLPersistenceImpl
             return fieldName;
         }
 
-        private String setOperatorAndValueOnConstraint( RuleModel m,
-                                                        String operator,
-                                                        String value,
-                                                        FactPattern factPattern,
-                                                        SingleFieldConstraint con ) {
+        private String setOperatorAndValueOnConstraint( final RuleModel m,
+                                                        final String operator,
+                                                        final String value,
+                                                        final FactPattern factPattern,
+                                                        final SingleFieldConstraint con ) {
             con.setOperator( operator );
             String type = null;
             boolean isAnd = false;
@@ -3119,7 +3861,11 @@ public class RuleModelDRLPersistenceImpl
             if ( value != null ) {
                 isAnd = value.contains( "&&" );
                 splittedValue = isAnd ? value.split( "\\&\\&" ) : value.split( "\\|\\|" );
-                type = setValueOnConstraint( m, operator, factPattern, con, splittedValue[ 0 ].trim() );
+                type = setValueOnConstraint( m,
+                                             operator,
+                                             factPattern,
+                                             con,
+                                             splittedValue[ 0 ].trim() );
             }
 
             if ( splittedValue.length > 1 ) {
@@ -3130,24 +3876,32 @@ public class RuleModelDRLPersistenceImpl
                     String connectiveValue = constraint.substring( connectiveOperator.length() ).trim();
 
                     connectiveConstraints[ i ] = new ConnectiveConstraint();
-                    connectiveConstraints[ i ].setOperator( ( isAnd ? "&& " : "|| " ) + connectiveOperator );
-                    setValueOnConstraint( m, operator, factPattern, connectiveConstraints[ i ], connectiveValue );
+                    connectiveConstraints[ i ].setOperator( ( isAnd ? "&& " : "|| " ) + ( connectiveOperator == null ? null : connectiveOperator.trim() ) );
+                    connectiveConstraints[ i ].setFactType( factPattern.getFactType() );
+                    connectiveConstraints[ i ].setFieldName( con.getFieldName() );
+                    connectiveConstraints[ i ].setFieldType( con.getFieldType() );
+                    setValueOnConstraint( m,
+                                          operator,
+                                          factPattern,
+                                          connectiveConstraints[ i ],
+                                          connectiveValue );
                 }
                 con.setConnectives( connectiveConstraints );
             }
             return type;
         }
 
-        private String setValueOnConstraint( RuleModel m,
-                                             String operator,
-                                             FactPattern factPattern,
-                                             BaseSingleFieldConstraint con,
+        private String setValueOnConstraint( final RuleModel m,
+                                             final String operator,
+                                             final FactPattern factPattern,
+                                             final BaseSingleFieldConstraint con,
                                              String value ) {
             String type = null;
             if ( value.startsWith( "\"" ) ) {
                 type = DataType.TYPE_STRING;
                 con.setConstraintValueType( SingleFieldConstraint.TYPE_LITERAL );
-                con.setValue( value.substring( 1, value.length() - 1 ) );
+                con.setValue( value.substring( 1,
+                                               value.length() - 1 ) );
             } else if ( value.startsWith( "(" ) ) {
                 if ( operator != null && operator.contains( "in" ) ) {
                     value = unwrapParenthesis( value );
@@ -3168,20 +3922,28 @@ public class RuleModelDRLPersistenceImpl
                                                     con ) ) {
                         type = DataType.TYPE_COMPARABLE;
                         con.setConstraintValueType( SingleFieldConstraint.TYPE_ENUM );
-                    } else if ( value.indexOf( '.' ) > 0 && boundParams.containsKey( value.substring( 0, value.indexOf( '.' ) ).trim() ) ) {
-                        con.setExpressionValue( parseExpression( m, null, value, new ExpressionFormLine() ) );
+                    } else if ( value.indexOf( '.' ) > 0 && boundParams.containsKey( value.substring( 0,
+                                                                                                      value.indexOf( '.' ) ).trim() ) ) {
+                        con.setExpressionValue( parseExpression( m,
+                                                                 null,
+                                                                 value,
+                                                                 new ExpressionFormLine() ) );
                         con.setConstraintValueType( BaseSingleFieldConstraint.TYPE_EXPR_BUILDER_VALUE );
                         value = "";
-                    } else {
+                    } else if ( boundParams.containsKey( value ) ) {
                         con.setConstraintValueType( SingleFieldConstraint.TYPE_VARIABLE );
+                    } else {
+                        con.setConstraintValueType( SingleFieldConstraint.TYPE_RET_VALUE );
                     }
                 } else {
                     if ( value.endsWith( "I" ) ) {
                         type = DataType.TYPE_NUMERIC_BIGINTEGER;
-                        value = value.substring( 0, value.length() - 1 );
+                        value = value.substring( 0,
+                                                 value.length() - 1 );
                     } else if ( value.endsWith( "B" ) ) {
                         type = DataType.TYPE_NUMERIC_BIGDECIMAL;
-                        value = value.substring( 0, value.length() - 1 );
+                        value = value.substring( 0,
+                                                 value.length() - 1 );
                     } else if ( value.endsWith( "f" ) ) {
                         type = DataType.TYPE_NUMERIC_FLOAT;
                     } else if ( value.endsWith( "d" ) ) {
@@ -3201,9 +3963,9 @@ public class RuleModelDRLPersistenceImpl
             return type;
         }
 
-        private boolean isEnumerationValue( RuleModel ruleModel,
-                                            FactPattern factPattern,
-                                            BaseSingleFieldConstraint con ) {
+        private boolean isEnumerationValue( final RuleModel ruleModel,
+                                            final FactPattern factPattern,
+                                            final BaseSingleFieldConstraint con ) {
             String factType = null;
             String fieldName = null;
             if ( con instanceof SingleFieldConstraintEBLeftSide ) {
@@ -3223,7 +3985,8 @@ public class RuleModelDRLPersistenceImpl
                 return false;
             }
 
-            final String fullyQualifiedFactType = getFQFactType( ruleModel, factType );
+            final String fullyQualifiedFactType = getFQFactType( ruleModel,
+                                                                 factType );
             final String key = fullyQualifiedFactType + "#" + fieldName;
             final Map<String, String[]> projectJavaEnumDefinitions = dmo.getProjectJavaEnumDefinitions();
 
@@ -3236,16 +3999,17 @@ public class RuleModelDRLPersistenceImpl
         private final List<Expr> subExprs = new ArrayList<Expr>();
         private final String connector;
 
-        private ComplexExpr( String connector ) {
+        private ComplexExpr( final String connector ) {
             this.connector = connector;
         }
 
-        public FieldConstraint asFieldConstraint( RuleModel m,
-                                                  FactPattern factPattern ) {
+        public FieldConstraint asFieldConstraint( final RuleModel m,
+                                                  final FactPattern factPattern ) {
             CompositeFieldConstraint comp = new CompositeFieldConstraint();
             comp.setCompositeJunctionType( connector.equals( "&&" ) ? CompositeFieldConstraint.COMPOSITE_TYPE_AND : CompositeFieldConstraint.COMPOSITE_TYPE_OR );
             for ( Expr expr : subExprs ) {
-                comp.addConstraint( expr.asFieldConstraint( m, factPattern ) );
+                comp.addConstraint( expr.asFieldConstraint( m,
+                                                            factPattern ) );
             }
             return comp;
         }
@@ -3255,17 +4019,86 @@ public class RuleModelDRLPersistenceImpl
 
         private final String expr;
 
-        private EvalExpr( String expr ) {
+        private EvalExpr( final String expr ) {
             this.expr = expr;
         }
 
-        public FieldConstraint asFieldConstraint( RuleModel m,
-                                                  FactPattern factPattern ) {
+        public FieldConstraint asFieldConstraint( final RuleModel m,
+                                                  final FactPattern factPattern ) {
             SingleFieldConstraint con = new SingleFieldConstraint();
             con.setConstraintValueType( SingleFieldConstraint.TYPE_PREDICATE );
             con.setValue( expr );
             return con;
         }
+    }
+
+    private static class SimpleDSLSentence {
+
+        private String dsl;
+        private String drl;
+
+        private SimpleDSLSentence( final String dsl,
+                                   final String drl ) {
+            this.dsl = dsl;
+            this.drl = drl;
+        }
+
+        private String getDsl() {
+            return this.dsl;
+        }
+
+        private String getDrl() {
+            return this.drl;
+        }
+
+    }
+
+    //Exception to indicate the DrlParser encountered a problem parsing the DRL. This fails-fast the unmarshalling.
+    public static class RuleModelUnmarshallingException extends RuntimeException {
+
+    }
+
+    //Simple fall-back parser of DRL
+    public RuleModel getSimpleRuleModel( final String drl ) {
+        final RuleModel rm = new RuleModel();
+        rm.setPackageName( PackageNameParser.parsePackageName( drl ) );
+        rm.setImports( ImportsParser.parseImports( drl ) );
+
+        final Pattern rulePattern = Pattern.compile( "\\s?rule\\s+(.+?)\\s+.*",
+                                                     Pattern.DOTALL );
+        final Pattern lhsPattern = Pattern.compile( ".*\\s+when\\s+(.+?)\\s+then.*",
+                                                    Pattern.DOTALL );
+        final Pattern rhsPattern = Pattern.compile( ".*\\s+then\\s+(.+?)\\s+end.*",
+                                                    Pattern.DOTALL );
+
+        final Matcher ruleMatcher = rulePattern.matcher( drl );
+        if ( ruleMatcher.matches() ) {
+            String name = ruleMatcher.group( 1 );
+            if ( name.startsWith( "\"" ) ) {
+                name = name.substring( 1 );
+            }
+            if ( name.endsWith( "\"" ) ) {
+                name = name.substring( 0,
+                                       name.length() - 1 );
+            }
+            rm.name = name;
+        }
+
+        final Matcher lhsMatcher = lhsPattern.matcher( drl );
+        if ( lhsMatcher.matches() ) {
+            final FreeFormLine lhs = new FreeFormLine();
+            lhs.setText( lhsMatcher.group( 1 ) == null ? "" : lhsMatcher.group( 1 ).trim() );
+            rm.addLhsItem( lhs );
+        }
+
+        final Matcher rhsMatcher = rhsPattern.matcher( drl );
+        if ( rhsMatcher.matches() ) {
+            final FreeFormLine rhs = new FreeFormLine();
+            rhs.setText( rhsMatcher.group( 1 ) == null ? "" : rhsMatcher.group( 1 ).trim() );
+            rm.addRhsItem( rhs );
+        }
+
+        return rm;
     }
 
 }
